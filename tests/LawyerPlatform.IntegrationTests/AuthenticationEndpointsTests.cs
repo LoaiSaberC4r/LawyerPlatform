@@ -34,6 +34,34 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         Assert.True(paths.TryGetProperty("/api/v1/public/governorates/{governorateId}/cities", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/cities/{cityId}/areas", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/legal-specializations", out _));
+
+        string[] lawyerOnboardingPaths =
+        [
+            "/api/v1/lawyer/profile",
+            "/api/v1/lawyer/profile/image",
+            "/api/v1/lawyer/office",
+            "/api/v1/lawyer/specializations",
+            "/api/v1/lawyer/documents",
+            "/api/v1/lawyer/documents/{documentId}/content",
+            "/api/v1/lawyer/approval-status",
+            "/api/v1/lawyer/submit-for-approval",
+            "/api/v1/admin/lawyers",
+            "/api/v1/admin/lawyers/{lawyerId}",
+            "/api/v1/admin/lawyers/{lawyerId}/profile-image",
+            "/api/v1/admin/lawyers/{lawyerId}/documents/{documentId}/content",
+            "/api/v1/admin/lawyers/{lawyerId}/approve",
+            "/api/v1/admin/lawyers/{lawyerId}/reject",
+            "/api/v1/admin/lawyers/{lawyerId}/request-changes",
+            "/api/v1/admin/lawyers/{lawyerId}/suspend",
+            "/api/v1/admin/lawyers/{lawyerId}/reactivate",
+            "/api/v1/public/lawyers",
+            "/api/v1/public/lawyers/{lawyerId}",
+            "/api/v1/public/lawyers/{lawyerId}/profile-image"
+        ];
+        foreach (var path in lawyerOnboardingPaths)
+        {
+            Assert.True(paths.TryGetProperty(path, out _), $"Swagger path '{path}' is missing.");
+        }
     }
 
     [Fact]

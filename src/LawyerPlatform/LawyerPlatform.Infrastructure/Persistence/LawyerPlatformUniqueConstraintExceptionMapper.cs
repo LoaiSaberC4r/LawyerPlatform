@@ -1,6 +1,7 @@
 using BuildingBlock.Application.Exceptions;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 using Microsoft.EntityFrameworkCore;
 
 namespace LawyerPlatform.Infrastructure.Persistence;
@@ -10,6 +11,12 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
     public bool TryMap(Exception exception, out Error error)
     {
         ArgumentNullException.ThrowIfNull(exception);
+
+        if (exception is DbUpdateConcurrencyException)
+        {
+            error = LawyerErrors.ConcurrencyConflict;
+            return true;
+        }
 
         if (exception is not DbUpdateException)
         {
@@ -25,6 +32,8 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_UserAccounts_PhoneNumber", StringComparison.Ordinal) => AccountErrors.PhoneNumberAlreadyExists,
             var message when message.Contains("UX_ClientProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("ClientProfile.AccountAlreadyLinked", "The account already has a client profile."),
             var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", "The account already has a lawyer profile."),
+            var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,
+            var message when message.Contains("UX_LawyerOffices_LawyerProfileId_Primary", StringComparison.Ordinal) => Error.Conflict("Lawyer.OfficeEditNotAllowed", "A primary office already exists."),
             _ => null!
         };
 

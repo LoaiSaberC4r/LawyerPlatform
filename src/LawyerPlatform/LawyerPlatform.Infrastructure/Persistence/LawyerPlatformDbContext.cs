@@ -21,6 +21,22 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     public DbSet<City> Cities => Set<City>();
     public DbSet<Area> Areas => Set<Area>();
     public DbSet<LegalSpecialization> LegalSpecializations => Set<LegalSpecialization>();
+    public DbSet<LawyerOffice> LawyerOffices => Set<LawyerOffice>();
+    public DbSet<LawyerSpecialization> LawyerSpecializations => Set<LawyerSpecialization>();
+    public DbSet<LawyerDocument> LawyerDocuments => Set<LawyerDocument>();
+    public DbSet<LawyerApprovalStatusHistory> LawyerApprovalStatusHistory => Set<LawyerApprovalStatusHistory>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        PrepareSqliteRowVersions();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        PrepareSqliteRowVersions();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +63,23 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
             rowVersion.ValueGenerated = ValueGenerated.Never;
             rowVersion.SetBeforeSaveBehavior(PropertySaveBehavior.Save);
             rowVersion.SetAfterSaveBehavior(PropertySaveBehavior.Save);
+        }
+    }
+
+    private void PrepareSqliteRowVersions()
+    {
+        if (!string.Equals(Database.ProviderName, "Microsoft.EntityFrameworkCore.Sqlite", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        foreach (var entry in ChangeTracker.Entries().Where(entry => entry.State is EntityState.Added or EntityState.Modified))
+        {
+            var rowVersion = entry.Metadata.FindProperty("RowVersion");
+            if (rowVersion is not null)
+            {
+                entry.Property("RowVersion").CurrentValue = Guid.NewGuid().ToByteArray()[..8];
+            }
         }
     }
 }

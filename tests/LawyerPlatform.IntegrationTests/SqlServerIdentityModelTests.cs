@@ -14,7 +14,8 @@ public sealed class SqlServerIdentityModelTests
         var requiredTables = new[]
         {
             "UserAccounts", "ClientProfiles", "LawyerProfiles", "Governorates",
-            "Cities", "Areas", "LegalSpecializations"
+            "Cities", "Areas", "LegalSpecializations", "LawyerOffices",
+            "LawyerSpecializations", "LawyerDocuments", "LawyerApprovalStatusHistory"
         };
 
         foreach (var table in requiredTables)
@@ -32,9 +33,16 @@ public sealed class SqlServerIdentityModelTests
         Assert.Contains("UX_ClientProfiles_UserAccountId", indexNames);
         Assert.Contains("UX_LawyerProfiles_UserAccountId", indexNames);
         Assert.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", indexNames);
+        Assert.Contains("UX_LawyerOffices_LawyerProfileId_Primary", indexNames);
+        Assert.Contains("IX_LawyerOffices_GovernorateId_CityId_AreaId", indexNames);
+        Assert.Contains("IX_LawyerSpecializations_LegalSpecializationId_LawyerProfileId", indexNames);
+        Assert.Contains("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted", indexNames);
+        Assert.Contains("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc", indexNames);
+        Assert.Contains("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc", indexNames);
 
         var identityForeignKeys = model.GetEntityTypes()
-            .Where(entity => entity.GetTableName() is "ClientProfiles" or "LawyerProfiles" or "Cities" or "Areas")
+            .Where(entity => entity.GetTableName() is "ClientProfiles" or "LawyerProfiles" or "Cities" or "Areas" or
+                "LawyerOffices" or "LawyerSpecializations" or "LawyerDocuments" or "LawyerApprovalStatusHistory")
             .SelectMany(entity => entity.GetForeignKeys())
             .ToArray();
         Assert.All(identityForeignKeys, foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
@@ -51,7 +59,7 @@ public sealed class SqlServerIdentityModelTests
             .Cast<IProperty>()
             .ToArray();
 
-        Assert.True(rowVersions.Length >= 7);
+        Assert.True(rowVersions.Length >= 10);
         Assert.All(rowVersions, property =>
         {
             Assert.True(property.IsConcurrencyToken);

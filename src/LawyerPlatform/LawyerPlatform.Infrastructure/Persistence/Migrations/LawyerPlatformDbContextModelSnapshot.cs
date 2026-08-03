@@ -192,6 +192,165 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("ClientProfiles", (string)null);
                 });
 
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc");
+
+                    b.ToTable("LawyerApprovalStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "DocumentType", "IsDeleted")
+                        .HasDatabaseName("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted");
+
+                    b.ToTable("LawyerDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AreaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DetailedAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublicPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AreaId");
+
+                    b.HasIndex("CityId");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerOffices_LawyerProfileId_Primary")
+                        .HasFilter("[IsPrimary] = 1");
+
+                    b.HasIndex("GovernorateId", "CityId", "AreaId")
+                        .HasDatabaseName("IX_LawyerOffices_GovernorateId_CityId_AreaId");
+
+                    b.ToTable("LawyerOffices", (string)null);
+                });
+
             modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -253,6 +412,9 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<DateTime?>("SubmittedOnUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("SuspendedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -268,9 +430,6 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ApprovalStatus")
-                        .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus");
-
                     b.HasIndex("ProfessionalRegistrationNumber")
                         .IsUnique()
                         .HasDatabaseName("UX_LawyerProfiles_ProfessionalRegistrationNumber")
@@ -280,7 +439,26 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_LawyerProfiles_UserAccountId");
 
+                    b.HasIndex("ApprovalStatus", "SubmittedOnUtc")
+                        .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc");
+
                     b.ToTable("LawyerProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("LawyerProfileId", "LegalSpecializationId");
+
+                    b.HasIndex("LegalSpecializationId", "LawyerProfileId")
+                        .HasDatabaseName("IX_LawyerSpecializations_LegalSpecializationId_LawyerProfileId");
+
+                    b.ToTable("LawyerSpecializations", (string)null);
                 });
 
             modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
@@ -470,6 +648,63 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                     b.Navigation("UserAccount");
                 });
 
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Documents")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Area", "Area")
+                        .WithMany()
+                        .HasForeignKey("AreaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Offices")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Area");
+
+                    b.Navigation("City");
+
+                    b.Navigation("Governorate");
+
+                    b.Navigation("LawyerProfile");
+                });
+
             modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
                 {
                     b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
@@ -479,6 +714,25 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Specializations")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
                 });
 
             modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
@@ -501,6 +755,17 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Governorate");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Navigation("Documents");
+
+                    b.Navigation("Offices");
+
+                    b.Navigation("Specializations");
+
+                    b.Navigation("StatusHistory");
                 });
 #pragma warning restore 612, 618
         }

@@ -38,6 +38,10 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
         Assert.Contains("Cities", tables);
         Assert.Contains("Areas", tables);
         Assert.Contains("LegalSpecializations", tables);
+        Assert.Contains("LawyerOffices", tables);
+        Assert.Contains("LawyerSpecializations", tables);
+        Assert.Contains("LawyerDocuments", tables);
+        Assert.Contains("LawyerApprovalStatusHistory", tables);
     }
 
     [Fact]

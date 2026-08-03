@@ -31,7 +31,26 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["InitialSuperAdmin:PhoneNumber"] = "01000000000",
                 ["InitialSuperAdmin:Password"] = "InitialPassword1",
                 ["PasswordLifecycle:ExpiryDays"] = "90",
-                ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false"
+                ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
+                ["MediaStorage:RootPath"] = Path.Combine(Path.GetTempPath(), "LawyerPlatformTests", Guid.NewGuid().ToString("N")),
+                ["MediaStorage:MaxFileSizeBytes"] = "1048576",
+                ["MediaStorage:AllowedExtensions:0"] = ".jpg",
+                ["MediaStorage:AllowedExtensions:1"] = ".jpeg",
+                ["MediaStorage:AllowedExtensions:2"] = ".png",
+                ["MediaStorage:AllowedExtensions:3"] = ".pdf",
+                ["MediaStorage:AllowedMimeTypes:0"] = "image/jpeg",
+                ["MediaStorage:AllowedMimeTypes:1"] = "image/png",
+                ["MediaStorage:AllowedMimeTypes:2"] = "application/pdf",
+                ["LawyerDocuments:RequiredDocumentTypes:0"] = "IdentityVerification",
+                ["LawyerDocuments:RequiredDocumentTypes:1"] = "ProfessionalMembership",
+                ["LawyerDocuments:AllowedExtensions:0"] = ".jpg",
+                ["LawyerDocuments:AllowedExtensions:1"] = ".jpeg",
+                ["LawyerDocuments:AllowedExtensions:2"] = ".png",
+                ["LawyerDocuments:AllowedExtensions:3"] = ".pdf",
+                ["LawyerDocuments:AllowedContentTypes:0"] = "image/jpeg",
+                ["LawyerDocuments:AllowedContentTypes:1"] = "image/png",
+                ["LawyerDocuments:AllowedContentTypes:2"] = "application/pdf",
+                ["LawyerDocuments:MaximumFileSizeBytes"] = "1048576"
             });
         });
         builder.ConfigureServices(services =>

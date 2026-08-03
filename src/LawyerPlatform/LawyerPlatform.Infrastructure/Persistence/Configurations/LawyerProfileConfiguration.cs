@@ -31,7 +31,11 @@ internal sealed class LawyerProfileConfiguration : IWriteEntityConfiguration<Law
             .IsUnique()
             .HasFilter("[ProfessionalRegistrationNumber] IS NOT NULL")
             .HasDatabaseName("UX_LawyerProfiles_ProfessionalRegistrationNumber");
-        builder.HasIndex(profile => profile.ApprovalStatus)
-            .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus");
+        builder.HasIndex(profile => new { profile.ApprovalStatus, profile.SubmittedOnUtc })
+            .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc");
+        builder.Navigation(profile => profile.Offices).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(profile => profile.Documents).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(profile => profile.Specializations).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(profile => profile.StatusHistory).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
