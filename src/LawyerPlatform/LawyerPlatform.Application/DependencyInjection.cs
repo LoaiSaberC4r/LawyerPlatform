@@ -4,6 +4,8 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using LawyerPlatform.Application.Catalog.DomainEvents;
 using LawyerPlatform.Domain.Catalog;
+using LawyerPlatform.Application.Features.Lawyers.Common;
+using LawyerPlatform.Application.Features.AdminLawyers.Common;
 
 namespace LawyerPlatform.Application;
 
@@ -20,6 +22,8 @@ public static class DependencyInjection
 
         services.AddBuildingBlockApplicationBehaviors();
         services.AddScoped<IDomainEventHandler<CatalogItemCreatedDomainEvent>, CatalogItemCreatedDomainEventHandler>();
+        services.AddScoped<LawyerAggregateCompletionService>();
+        services.AddScoped<AdminLawyerDecisionService>();
 
         return services;
     }

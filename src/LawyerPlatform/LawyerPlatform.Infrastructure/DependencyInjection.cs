@@ -10,6 +10,8 @@ using LawyerPlatform.Infrastructure.Authentication;
 using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
+using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Infrastructure.Lawyers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,11 +36,13 @@ public static class DependencyInjection
             .Name
             ?? throw new InvalidOperationException("Unable to resolve the migrations assembly name.");
 
+        services.AddSingleton<IExceptionToErrorMapper, LawyerPlatformUniqueConstraintExceptionMapper>();
         services.AddBuildingBlockEntityFrameworkCore<LawyerPlatformWritePersistence>();
         services.AddBuildingBlockInterceptors();
         services.AddBuildingBlockCaching();
         services.AddBuildingBlockPasswordHashing(configuration);
-        services.AddSingleton<IExceptionToErrorMapper, LawyerPlatformUniqueConstraintExceptionMapper>();
+        services.AddBuildingBlockMedia(configuration);
+        services.AddBuildingBlockFileSystemMediaStorage();
         services.AddBuildingBlockSqlServerExceptionMapping();
 
         services.AddOptions<InitialSuperAdminOptions>()
@@ -55,10 +59,18 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddOptions<DatabaseInitializationOptions>()
             .Bind(configuration.GetSection(DatabaseInitializationOptions.SectionName));
+        services.AddOptions<LawyerDocumentOptions>()
+            .Bind(configuration.GetSection(LawyerDocumentOptions.SectionName))
+            .Validate(ValidateLawyerDocuments, "Lawyer document options are invalid.")
+            .ValidateOnStart();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
         services.AddSingleton<IJwtProvider, JwtProvider>();
+        services.AddSingleton<ILawyerDocumentPolicy, LawyerDocumentPolicy>();
+        services.AddSingleton<IStoredFileReader, StoredFileReader>();
+        services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
+        services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
 
         services.AddScoped<ISeeder, SuperAdminSeeder>();
         services.AddScoped<ISeeder, GovernorateSeeder>();
@@ -93,4 +105,13 @@ public static class DependencyInjection
            !string.IsNullOrWhiteSpace(options.Audience) &&
            options.Key.Length >= 64 &&
            options.AccessTokenExpirationMinutes > 0;
+
+    private static bool ValidateLawyerDocuments(LawyerDocumentOptions options)
+        => options.MaximumFileSizeBytes > 0 &&
+           options.RequiredDocumentTypes.All(value => !string.IsNullOrWhiteSpace(value)) &&
+           options.RequiredDocumentTypes.Distinct(StringComparer.OrdinalIgnoreCase).Count() == options.RequiredDocumentTypes.Length &&
+           options.AllowedExtensions.Length > 0 &&
+           options.AllowedExtensions.All(value => value.StartsWith('.') && !value.Contains('/') && !value.Contains('\\')) &&
+           options.AllowedContentTypes.Length > 0 &&
+           options.AllowedContentTypes.All(value => !string.IsNullOrWhiteSpace(value));
 }
