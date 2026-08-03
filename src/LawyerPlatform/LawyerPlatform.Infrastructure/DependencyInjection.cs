@@ -1,10 +1,18 @@
+using System.Net.Mail;
+using BuildingBlock.Application.Exceptions;
 using BuildingBlock.Infrastructure.Bootstrap;
 using BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Application.Abstractions.Seeding;
+using LawyerPlatform.Application.Features.Auth.Common;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Infrastructure.Authentication;
+using LawyerPlatform.Infrastructure.Options;
+using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Infrastructure.Persistence;
 
 namespace LawyerPlatform.Infrastructure;
 
@@ -29,7 +37,36 @@ public static class DependencyInjection
         services.AddBuildingBlockEntityFrameworkCore<LawyerPlatformWritePersistence>();
         services.AddBuildingBlockInterceptors();
         services.AddBuildingBlockCaching();
+        services.AddBuildingBlockPasswordHashing(configuration);
+        services.AddSingleton<IExceptionToErrorMapper, LawyerPlatformUniqueConstraintExceptionMapper>();
         services.AddBuildingBlockSqlServerExceptionMapping();
+
+        services.AddOptions<InitialSuperAdminOptions>()
+            .Bind(configuration.GetSection(InitialSuperAdminOptions.SectionName))
+            .Validate(ValidateInitialSuperAdmin, "Initial SuperAdmin options are invalid.")
+            .ValidateOnStart();
+        services.AddOptions<PasswordLifecycleOptions>()
+            .Bind(configuration.GetSection(PasswordLifecycleOptions.SectionName))
+            .Validate(options => options.ExpiryDays > 0, "Password expiry days must be greater than zero.")
+            .ValidateOnStart();
+        services.AddOptions<JwtOptions>()
+            .Bind(configuration.GetSection(JwtOptions.SectionName))
+            .Validate(ValidateJwt, "JWT options are invalid.")
+            .ValidateOnStart();
+        services.AddOptions<DatabaseInitializationOptions>()
+            .Bind(configuration.GetSection(DatabaseInitializationOptions.SectionName));
+
+        services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
+        services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
+        services.AddSingleton<IJwtProvider, JwtProvider>();
+
+        services.AddScoped<ISeeder, SuperAdminSeeder>();
+        services.AddScoped<ISeeder, GovernorateSeeder>();
+        services.AddScoped<ISeeder, CitySeeder>();
+        services.AddScoped<ISeeder, AreaSeeder>();
+        services.AddScoped<ISeeder, LegalSpecializationSeeder>();
+        services.AddScoped<IEnsureSeeding, EnsureSeeding>();
+        services.AddHostedService<DatabaseInitializationHostedService>();
 
         services.AddDbContext<LawyerPlatformDbContext>((serviceProvider, options) =>
             options
@@ -42,4 +79,18 @@ public static class DependencyInjection
 
         return services;
     }
+
+    private static bool ValidateInitialSuperAdmin(InitialSuperAdminOptions options)
+        => !options.Enabled ||
+           options.Id != Guid.Empty &&
+           UserNameRules.IsValid(options.UserName) &&
+           MailAddress.TryCreate(options.Email, out _) &&
+           !string.IsNullOrWhiteSpace(options.PhoneNumber) &&
+           !string.IsNullOrWhiteSpace(options.Password);
+
+    private static bool ValidateJwt(JwtOptions options)
+        => !string.IsNullOrWhiteSpace(options.Issuer) &&
+           !string.IsNullOrWhiteSpace(options.Audience) &&
+           options.Key.Length >= 64 &&
+           options.AccessTokenExpirationMinutes > 0;
 }

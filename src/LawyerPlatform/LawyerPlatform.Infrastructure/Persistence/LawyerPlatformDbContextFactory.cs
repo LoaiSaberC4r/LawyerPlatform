@@ -7,6 +7,8 @@ namespace LawyerPlatform.Infrastructure.Persistence;
 public sealed class LawyerPlatformDbContextFactory
     : IDesignTimeDbContextFactory<LawyerPlatformDbContext>
 {
+    private const string EnvironmentFileName = ".env";
+
     public LawyerPlatformDbContext CreateDbContext(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -17,8 +19,10 @@ public sealed class LawyerPlatformDbContextFactory
             ?? "Development";
 
         var apiProjectPath = ResolveApiProjectPath();
+        var environmentFilePath = ResolveEnvironmentFilePath(
+            apiProjectPath);
 
-        var configuration = new ConfigurationBuilder()
+        var configurationBuilder = new ConfigurationBuilder()
             .SetBasePath(apiProjectPath)
             .AddJsonFile(
                 "appsettings.json",
@@ -27,14 +31,29 @@ public sealed class LawyerPlatformDbContextFactory
             .AddJsonFile(
                 $"appsettings.{environment}.json",
                 optional: true,
-                reloadOnChange: false)
-            .AddEnvironmentVariables()
-            .Build();
+                reloadOnChange: false);
+
+        if (environmentFilePath is not null)
+        {
+            var environmentValues =
+                ReadEnvironmentFile(environmentFilePath);
+
+            configurationBuilder.AddInMemoryCollection(
+                environmentValues);
+        }
+
+        // Real operating-system or container environment variables
+        // override appsettings files and the local .env file.
+        configurationBuilder.AddEnvironmentVariables();
+
+        var configuration = configurationBuilder.Build();
 
         var connectionString =
             configuration.GetConnectionString("Database")
             ?? throw new InvalidOperationException(
-                "Connection string 'DefaultConnection' was not found.");
+                "Connection string 'Database' was not found. " +
+                "Configure 'ConnectionStrings__Database' in .env " +
+                "or as an environment variable.");
 
         var migrationsAssemblyName =
             typeof(LawyerPlatformDbContext)
@@ -55,6 +74,124 @@ public sealed class LawyerPlatformDbContextFactory
 
         return new LawyerPlatformDbContext(
             optionsBuilder.Options);
+    }
+
+    private static Dictionary<string, string?>
+        ReadEnvironmentFile(string filePath)
+    {
+        var values = new Dictionary<string, string?>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var lines = File.ReadAllLines(filePath);
+
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var line = lines[index].Trim();
+
+            if (string.IsNullOrWhiteSpace(line) ||
+                line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            if (line.StartsWith(
+                "export ",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                line = line["export ".Length..].Trim();
+            }
+
+            var separatorIndex = line.IndexOf('=');
+
+            if (separatorIndex <= 0)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid .env entry at line {index + 1}.");
+            }
+
+            var key = line[..separatorIndex].Trim();
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                throw new InvalidOperationException(
+                    $"Invalid .env key at line {index + 1}.");
+            }
+
+            var value = line[(separatorIndex + 1)..].Trim();
+
+            value = RemoveSurroundingQuotes(value);
+
+            values[key] = value;
+        }
+
+        return values;
+    }
+
+    private static string RemoveSurroundingQuotes(
+        string value)
+    {
+        if (value.Length < 2)
+        {
+            return value;
+        }
+
+        var startsAndEndsWithDoubleQuotes =
+            value.StartsWith('"') &&
+            value.EndsWith('"');
+
+        var startsAndEndsWithSingleQuotes =
+            value.StartsWith('\'') &&
+            value.EndsWith('\'');
+
+        return startsAndEndsWithDoubleQuotes ||
+               startsAndEndsWithSingleQuotes
+            ? value[1..^1]
+            : value;
+    }
+
+    private static string? ResolveEnvironmentFilePath(
+        string apiProjectPath)
+    {
+        var currentDirectory = new DirectoryInfo(
+            Directory.GetCurrentDirectory());
+
+        var environmentFilePath =
+            FindFileInCurrentOrParentDirectories(
+                currentDirectory,
+                EnvironmentFileName);
+
+        if (environmentFilePath is not null)
+        {
+            return environmentFilePath;
+        }
+
+        var apiDirectory = new DirectoryInfo(apiProjectPath);
+
+        return FindFileInCurrentOrParentDirectories(
+            apiDirectory,
+            EnvironmentFileName);
+    }
+
+    private static string?
+        FindFileInCurrentOrParentDirectories(
+            DirectoryInfo? directory,
+            string fileName)
+    {
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                fileName);
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static string ResolveApiProjectPath()
@@ -94,6 +231,7 @@ public sealed class LawyerPlatformDbContextFactory
         }
 
         throw new DirectoryNotFoundException(
-            "Unable to locate LawyerPlatform.Api/appsettings.json.");
+            "Unable to locate " +
+            "LawyerPlatform.Api/appsettings.json.");
     }
 }

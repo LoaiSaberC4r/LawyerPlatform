@@ -1,16 +1,30 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Text;
+using System.Threading.RateLimiting;
 using Asp.Versioning;
+using BuildingBlock.Api;
 using BuildingBlock.Api.Bootstrap;
 using BuildingBlock.Api.Logging;
 using BuildingBlock.Api.OpenApi;
 using BuildingBlock.Api.ProblemDetails;
 using BuildingBlock.Api.Security;
+using BuildingBlock.Domain.Results;
 using BuildingBlock.Infrastructure.Bootstrap;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+using LawyerPlatform.Api.Authorization;
+using LawyerPlatform.Api.Configuration;
+using LawyerPlatform.Api.Middleware;
 using LawyerPlatform.Application;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Infrastructure;
+using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
-using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.Tokens;
+
+EnvironmentFileLoader.LoadIfDevelopment(args);
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,24 +60,29 @@ builder.Services.AddBuildingBlockProblemDetails();
 builder.Services.AddBuildingBlockCurrentUser();
 builder.Services.AddBuildingBlockTokenReader(builder.Configuration);
 
-var jwtKey = builder.Configuration["Authentication:Jwt:SigningKey"]
-    ?? throw new InvalidOperationException("Authentication:Jwt:SigningKey is not configured.");
-
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+    });
+
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<Microsoft.Extensions.Options.IOptions<JwtOptions>>((options, jwtOptionsAccessor) =>
+    {
+        var jwtOptions = jwtOptionsAccessor.Value;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Authentication:Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Authentication:Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            ClockSkew = TimeSpan.FromMinutes(1)
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
+            ClockSkew = TimeSpan.FromMinutes(1),
+            NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
+            RoleClaimType = LawyerPlatformClaimTypes.Role
         };
     });
 
@@ -71,6 +90,31 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("BuildingBlockDiagnostics", policy =>
         policy.RequireAuthenticatedUser());
+    options.AddPolicy("SuperAdminOnly", policy =>
+        policy.RequireRole(AccountRole.SuperAdmin.ToString()));
+    options.AddPolicy("LawyerOnly", policy =>
+        policy.RequireRole(AccountRole.Lawyer.ToString()));
+    options.AddPolicy("ClientOnly", policy =>
+        policy.RequireRole(AccountRole.Client.ToString()));
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("auth", limiter =>
+    {
+        limiter.PermitLimit = 20;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+        limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var error = Error.RateLimit("Auth.RateLimitExceeded", "Too many authentication attempts.", TimeSpan.FromMinutes(1));
+        await new[] { error }.ToProblem(context.HttpContext).ExecuteAsync(context.HttpContext);
+    };
 });
 
 builder.Services.AddHealthChecks()
@@ -84,7 +128,9 @@ var app = builder.Build();
 app.UseBuildingBlockSerilog();
 app.UseHttpsRedirection();
 app.UseBuildingBlockLocalization();
+app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<PasswordChangeRequiredMiddleware>();
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
@@ -106,7 +152,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health")
+    .WithMetadata(new AllowPasswordChangeRequiredAttribute());
 app.MapBuildingBlockLoggingDiagnostics();
 
 app.Run();

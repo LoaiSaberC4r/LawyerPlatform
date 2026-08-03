@@ -5,9 +5,14 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/BuildingBlock/BuildingBlock.Application/BuildingBlock.Application.csproj" />
     <ProjectReference Include="../../src/LawyerPlatform/LawyerPlatform.Domain/LawyerPlatform.Domain.csproj" />
+    <ProjectReference Include="../../src/LawyerPlatform/LawyerPlatform.Application/LawyerPlatform.Application.csproj" />
+    <ProjectReference Include="../../src/LawyerPlatform/LawyerPlatform.Infrastructure/LawyerPlatform.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="coverlet.collector">
       <PrivateAssets>all</PrivateAssets>
