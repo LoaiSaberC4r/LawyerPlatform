@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "BuildingBlock Team",
+  "classifications": [ "Web", "Web API", "Clean Architecture", "DDD", "CQRS", ".NET 10" ],
+  "identity": "BuildingBlock.Templates.CleanArchitecture",
+  "name": "BuildingBlock Clean Architecture Solution",
+  "shortName": "buildingblock-sln",
+  "sourceName": "LawyerPlatform",
+  "defaultName": "Company.Product",
+  "preferNameDirectory": true,
+  "description": "A .NET 10 Clean Architecture solution containing the reusable BuildingBlock and a production-oriented reference API.",
+  "tags": {
+    "language": "C#",
+    "type": "solution"
+  },
+  "primaryOutputs": [
+    { "path": "LawyerPlatform.sln" },
+    { "path": "src/LawyerPlatform/LawyerPlatform.Api/LawyerPlatform.Api.csproj" }
+  ],
+  "sources": [
+    {
+      "modifiers": [
+        {
+          "exclude": [
+            ".git/**",
+            ".vs/**",
+            "**/bin/**",
+            "**/obj/**",
+            "artifacts/**",
+            "*.zip"
+          ]
+        }
+      ]
+    }
+  ]
+}

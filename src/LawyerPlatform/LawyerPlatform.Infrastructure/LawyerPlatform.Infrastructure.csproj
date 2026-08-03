@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<ItemGroup>
+		<ProjectReference Include="../../BuildingBlock/BuildingBlock.Infrastructure/BuildingBlock.Infrastructure.csproj" />
+
+		<ProjectReference Include="../../BuildingBlock/BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer/BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer.csproj" />
+
+		<ProjectReference Include="../LawyerPlatform.Application/LawyerPlatform.Application.csproj" />
+
+		<ProjectReference Include="../LawyerPlatform.Domain/LawyerPlatform.Domain.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>
+				runtime;
+				build;
+				native;
+				contentfiles;
+				analyzers;
+				buildtransitive
+			</IncludeAssets>
+		</PackageReference>
+
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+
+		<PackageReference Include="Microsoft.Extensions.Configuration" />
+
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+
+		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
+
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+	</ItemGroup>
+
+</Project>
