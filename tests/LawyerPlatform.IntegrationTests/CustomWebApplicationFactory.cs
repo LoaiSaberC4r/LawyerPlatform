@@ -1,4 +1,5 @@
 using BuildingBlock.Infrastructure.Bootstrap;
+using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -13,6 +14,14 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
+    public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        await scope.ServiceProvider
+            .GetRequiredService<IEnsureSeeding>()
+            .SeedDatabaseAsync(cancellationToken);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");

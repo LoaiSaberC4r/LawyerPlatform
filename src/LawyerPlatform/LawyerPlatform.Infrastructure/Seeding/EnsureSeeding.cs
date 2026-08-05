@@ -10,11 +10,25 @@ internal sealed partial class EnsureSeeding(
 {
     public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
     {
-        foreach (var seeder in seeders.OrderBy(seeder => seeder.ExecutionOrder))
+        var orderedSeeders = seeders
+            .OrderBy(seeder => seeder.ExecutionOrder)
+            .ThenBy(seeder => seeder.GetType().FullName, StringComparer.Ordinal);
+
+        foreach (var seeder in orderedSeeders)
         {
-            SeedingStarted(logger, seeder.GetType().Name);
-            await seeder.SeedAsync(cancellationToken);
-            SeedingCompleted(logger, seeder.GetType().Name);
+            var seederName = seeder.GetType().Name;
+            SeedingStarted(logger, seederName);
+            try
+            {
+                await seeder.SeedAsync(cancellationToken);
+            }
+            catch (Exception)
+            {
+                SeedingFailed(logger, seederName);
+                throw;
+            }
+
+            SeedingCompleted(logger, seederName);
         }
     }
 
@@ -23,4 +37,7 @@ internal sealed partial class EnsureSeeding(
 
     [LoggerMessage(EventId = 4101, Level = LogLevel.Information, Message = "Seeder {SeederName} completed.")]
     private static partial void SeedingCompleted(ILogger logger, string seederName);
+
+    [LoggerMessage(EventId = 4102, Level = LogLevel.Error, Message = "Seeder {SeederName} failed.")]
+    private static partial void SeedingFailed(ILogger logger, string seederName);
 }

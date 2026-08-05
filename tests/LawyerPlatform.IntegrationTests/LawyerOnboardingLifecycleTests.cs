@@ -23,6 +23,7 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             BaseAddress = new Uri("https://localhost")
         });
         var cancellationToken = TestContext.Current.CancellationToken;
+        await factory.SeedDatabaseAsync(cancellationToken);
         await SeedReferenceDataAsync(cancellationToken);
 
         var registration = await client.PostAsJsonAsync("/api/v1/auth/lawyers/register", new

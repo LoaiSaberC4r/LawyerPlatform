@@ -78,6 +78,7 @@ public static class DependencyInjection
         services.AddScoped<ISeeder, AreaSeeder>();
         services.AddScoped<ISeeder, LegalSpecializationSeeder>();
         services.AddScoped<IEnsureSeeding, EnsureSeeding>();
+        services.AddSingleton<IDatabaseMigrationService, EfCoreDatabaseMigrationService>();
         services.AddHostedService<DatabaseInitializationHostedService>();
 
         services.AddDbContext<LawyerPlatformDbContext>((serviceProvider, options) =>

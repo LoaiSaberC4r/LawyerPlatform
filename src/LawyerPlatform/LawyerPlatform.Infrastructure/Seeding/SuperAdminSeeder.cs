@@ -7,37 +7,39 @@ using LawyerPlatform.Application.Features.Auth.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.Infrastructure.Seeding;
 
-internal sealed class SuperAdminSeeder(
+internal sealed partial class SuperAdminSeeder(
     IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IOptions<InitialSuperAdminOptions> options,
     IAccountIdentifierNormalizer normalizer,
     IPasswordService passwordService,
-    IDateTimeProvider clock)
+    IDateTimeProvider clock,
+    ILogger<SuperAdminSeeder>? logger = null)
     : ISeeder
 {
+    private readonly ILogger<SuperAdminSeeder> _logger =
+        logger ?? NullLogger<SuperAdminSeeder>.Instance;
+
     public int ExecutionOrder => SeedingOrder.SuperAdmin;
 
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
         var configured = options.Value;
+        if (!configured.Enabled)
+        {
+            SeedingDisabled(_logger);
+            return;
+        }
+
         var existingSuperAdmin = await accountReader.GetByPropertyAsync(
             account => account.Role == AccountRole.SuperAdmin,
             cancellationToken);
-
-        if (!configured.Enabled)
-        {
-            if (existingSuperAdmin is null)
-            {
-                throw new InvalidOperationException("Initial SuperAdmin seeding is disabled, but no SuperAdmin account exists.");
-            }
-
-            return;
-        }
 
         var normalizedUserName = normalizer.NormalizeUserName(configured.UserName);
         var normalizedEmail = normalizer.NormalizeEmail(configured.Email);
@@ -60,6 +62,7 @@ internal sealed class SuperAdminSeeder(
                 byId.NormalizedEmail == normalizedEmail &&
                 byId.PhoneNumber == phoneNumber)
             {
+                CreatedOrAlreadyExists(_logger);
                 return;
             }
 
@@ -104,8 +107,21 @@ internal sealed class SuperAdminSeeder(
 
         await unitOfWork.WriteRepository<UserAccount>().AddAsync(accountResult.Value, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        CreatedOrAlreadyExists(_logger);
     }
 
     private static bool IsDifferentAccount(UserAccount? account, Guid configuredId)
         => account is not null && account.Id != configuredId;
+
+    [LoggerMessage(
+        EventId = 4110,
+        Level = LogLevel.Information,
+        Message = "Initial SuperAdmin seeding is disabled by configuration.")]
+    private static partial void SeedingDisabled(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4111,
+        Level = LogLevel.Information,
+        Message = "SuperAdmin created or already exists.")]
+    private static partial void CreatedOrAlreadyExists(ILogger logger);
 }
