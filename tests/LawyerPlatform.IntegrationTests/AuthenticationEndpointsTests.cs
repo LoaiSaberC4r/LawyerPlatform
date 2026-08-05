@@ -179,6 +179,8 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
 
     private async Task VerifySuperAdminSeederIsIdempotentAsync(CancellationToken cancellationToken)
     {
+        await factory.SeedDatabaseAsync(cancellationToken);
+
         SuperAdminSnapshot before;
         await using (var scope = factory.Services.CreateAsyncScope())
         {

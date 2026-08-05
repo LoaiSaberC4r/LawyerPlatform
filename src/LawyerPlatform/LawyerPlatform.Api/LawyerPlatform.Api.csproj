@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+	<PropertyGroup>
+		<UserSecretsId>LawyerPlatform.Api</UserSecretsId>
+	</PropertyGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="../../BuildingBlock/BuildingBlock.Api/BuildingBlock.Api.csproj" />

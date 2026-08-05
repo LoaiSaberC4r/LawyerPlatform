@@ -120,6 +120,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<LawyerPlatformDbContext>();
 
+builder.Services.AddLawyerPlatformCors(builder.Configuration);
 builder.Services.AddLawyerPlatformApplication();
 builder.Services.AddLawyerPlatformInfrastructure(builder.Configuration);
 
@@ -128,28 +129,27 @@ var app = builder.Build();
 app.UseBuildingBlockSerilog();
 app.UseHttpsRedirection();
 app.UseBuildingBlockLocalization();
+app.UseRouting();
+app.UseCors(CorsPolicyNames.Default);
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<PasswordChangeRequiredMiddleware>();
 app.UseAuthorization();
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger(options =>
 {
-    app.UseSwagger(options =>
-    {
-        options.RouteTemplate =
-            "swagger/{documentName}/swagger.json";
-    });
+    options.RouteTemplate =
+        "swagger/{documentName}/swagger.json";
+});
 
-    app.UseSwaggerUI(options =>
-    {
-        options.RoutePrefix = "swagger";
+app.UseSwaggerUI(options =>
+{
+    options.RoutePrefix = "swagger";
 
-        options.SwaggerEndpoint(
-            "./v1/swagger.json",
-            "LawyerPlatform API v1");
-    });
-}
+    options.SwaggerEndpoint(
+        "./v1/swagger.json",
+        "LawyerPlatform API v1");
+});
 
 app.MapControllers();
 app.MapHealthChecks("/health")

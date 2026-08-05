@@ -8,6 +8,7 @@ public sealed class LawyerPlatformDbContextFactory
     : IDesignTimeDbContextFactory<LawyerPlatformDbContext>
 {
     private const string EnvironmentFileName = ".env";
+    private const string UserSecretsId = "LawyerPlatform.Api";
 
     public LawyerPlatformDbContext CreateDbContext(string[] args)
     {
@@ -33,6 +34,14 @@ public sealed class LawyerPlatformDbContextFactory
                 optional: true,
                 reloadOnChange: false);
 
+        if (string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase))
+        {
+            configurationBuilder.AddJsonFile(
+                ResolveUserSecretsFilePath(),
+                optional: true,
+                reloadOnChange: false);
+        }
+
         if (environmentFilePath is not null)
         {
             var environmentValues =
@@ -46,14 +55,20 @@ public sealed class LawyerPlatformDbContextFactory
         // override appsettings files and the local .env file.
         configurationBuilder.AddEnvironmentVariables();
 
+        var commandLineValues = ReadCommandLineConfiguration(args);
+        if (commandLineValues.Count > 0)
+        {
+            configurationBuilder.AddInMemoryCollection(commandLineValues);
+        }
+
         var configuration = configurationBuilder.Build();
 
         var connectionString =
             configuration.GetConnectionString("Database")
             ?? throw new InvalidOperationException(
                 "Connection string 'Database' was not found. " +
-                "Configure 'ConnectionStrings__Database' in .env " +
-                "or as an environment variable.");
+                "Configure 'ConnectionStrings:Database' using API User Secrets, " +
+                "an environment variable, or a command-line argument.");
 
         var migrationsAssemblyName =
             typeof(LawyerPlatformDbContext)
@@ -125,6 +140,57 @@ public sealed class LawyerPlatformDbContextFactory
         }
 
         return values;
+    }
+
+    private static Dictionary<string, string?> ReadCommandLineConfiguration(string[] args)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            var argument = args[index];
+            if (!argument.StartsWith("--", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var keyAndValue = argument[2..];
+            var separatorIndex = keyAndValue.IndexOf('=');
+            if (separatorIndex > 0)
+            {
+                values[keyAndValue[..separatorIndex]] = keyAndValue[(separatorIndex + 1)..];
+                continue;
+            }
+
+            if (keyAndValue.Length > 0 &&
+                index + 1 < args.Length &&
+                !args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                values[keyAndValue] = args[++index];
+            }
+        }
+
+        return values;
+    }
+
+    private static string ResolveUserSecretsFilePath()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft",
+                "UserSecrets",
+                UserSecretsId,
+                "secrets.json");
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".microsoft",
+            "usersecrets",
+            UserSecretsId,
+            "secrets.json");
     }
 
     private static string RemoveSurroundingQuotes(

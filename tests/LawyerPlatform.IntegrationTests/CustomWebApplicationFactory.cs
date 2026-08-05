@@ -1,4 +1,5 @@
 using BuildingBlock.Infrastructure.Bootstrap;
+using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -13,6 +14,14 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
+    public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        await scope.ServiceProvider
+            .GetRequiredService<IEnsureSeeding>()
+            .SeedDatabaseAsync(cancellationToken);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -32,6 +41,10 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["InitialSuperAdmin:Password"] = "InitialPassword1",
                 ["PasswordLifecycle:ExpiryDays"] = "90",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
+                ["Cors:AllowAnyOrigin"] = "false",
+                ["Cors:AllowCredentials"] = "false",
+                ["Cors:AllowedOrigins:0"] = "http://localhost:4200",
+                ["Cors:AllowedOrigins:1"] = "https://localhost:4200",
                 ["MediaStorage:RootPath"] = Path.Combine(Path.GetTempPath(), "LawyerPlatformTests", Guid.NewGuid().ToString("N")),
                 ["MediaStorage:MaxFileSizeBytes"] = "1048576",
                 ["MediaStorage:AllowedExtensions:0"] = ".jpg",
