@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using LawyerPlatform.Domain.ReferenceData;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,6 +15,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
     : IClassFixture<CustomWebApplicationFactory>
 {
     private static readonly int[] CivilLawSpecialization = [1];
+    private static readonly AreaSeed OfficeArea = EgyptLocationSeedCatalog.Areas[0];
+    private static readonly CitySeed OfficeCity = EgyptLocationSeedCatalog.Cities.Single(
+        seed => seed.Id == OfficeArea.CityId);
 
     [Fact]
     public async Task LawyerApprovalLifecycle_EnforcesCompletionPrivacyAndPublicVisibility()
@@ -66,9 +70,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
 
         var office = await client.PutAsJsonAsync("/api/v1/lawyer/office", new
         {
-            governorateId = 1,
-            cityId = 10,
-            areaId = 100,
+            governorateId = OfficeCity.GovernorateId,
+            cityId = OfficeCity.Id,
+            areaId = OfficeArea.Id,
             detailedAddress = "Court Street, Building 5",
             publicPhoneNumber = "01012345678",
             rowVersion = (string?)null
@@ -269,14 +273,11 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
-        if (await dbContext.Governorates.FindAsync([1], cancellationToken) is not null)
+        if (await dbContext.LegalSpecializations.FindAsync([1], cancellationToken) is not null)
         {
             return;
         }
 
-        dbContext.Governorates.Add(Governorate.Create(1, "القاهرة", "Cairo", 1).Value);
-        dbContext.Cities.Add(City.Create(10, 1, "مدينة نصر", "Nasr City", 1).Value);
-        dbContext.Areas.Add(Area.Create(100, 10, "المنطقة الأولى", "First District", 1).Value);
         dbContext.LegalSpecializations.Add(LegalSpecialization.Create(1, "قانون مدني", "Civil Law", 1).Value);
         await dbContext.SaveChangesAsync(cancellationToken);
     }

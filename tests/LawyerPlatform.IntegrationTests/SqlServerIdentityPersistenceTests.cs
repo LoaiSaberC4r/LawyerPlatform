@@ -1,6 +1,7 @@
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.MsSql;
@@ -109,6 +110,46 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
         secondCopy.Deactivate(DateTime.UtcNow);
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
             secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task MigratedSqlServerReceivesTheCompleteIdempotentEgyptHierarchy()
+    {
+        await using var context = fixture.CreateContext();
+        await using (var coordinator = new EgyptLocationSeedCoordinator(context))
+        {
+            await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedAreasAsync(TestContext.Current.CancellationToken);
+        }
+
+        context.ChangeTracker.Clear();
+        await using (var coordinator = new EgyptLocationSeedCoordinator(context))
+        {
+            await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedAreasAsync(TestContext.Current.CancellationToken);
+        }
+
+        context.ChangeTracker.Clear();
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedGovernorateCount,
+            await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedCityCount,
+            await context.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedAreaCount,
+            await context.Areas.CountAsync(TestContext.Current.CancellationToken));
+        Assert.False(
+            await context.Cities.AnyAsync(
+                city => !context.Governorates.Any(governorate => governorate.Id == city.GovernorateId),
+                TestContext.Current.CancellationToken));
+        Assert.False(
+            await context.Areas.AnyAsync(
+                area => !context.Cities.Any(city => city.Id == area.CityId),
+                TestContext.Current.CancellationToken));
     }
 
     private static UserAccount CreateClientAccount(

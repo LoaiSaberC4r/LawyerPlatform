@@ -7,9 +7,8 @@ internal sealed record LegalSpecializationSeed(int Id, string NameAr, string Nam
 
 internal static class SeedCatalog
 {
-    // No approved values were supplied. Populate only from an owner-approved, stable catalog.
-    public static IReadOnlyList<GovernorateSeed> Governorates { get; } = [];
-    public static IReadOnlyList<CitySeed> Cities { get; } = [];
-    public static IReadOnlyList<AreaSeed> Areas { get; } = [];
+    public static IReadOnlyList<GovernorateSeed> Governorates => EgyptLocationSeedCatalog.Governorates;
+    public static IReadOnlyList<CitySeed> Cities => EgyptLocationSeedCatalog.Cities;
+    public static IReadOnlyList<AreaSeed> Areas => EgyptLocationSeedCatalog.Areas;
     public static IReadOnlyList<LegalSpecializationSeed> LegalSpecializations { get; } = [];
 }
