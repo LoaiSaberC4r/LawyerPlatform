@@ -72,6 +72,7 @@ public static class DependencyInjection
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
 
+        services.AddScoped<EgyptLocationSeedCoordinator>();
         services.AddScoped<ISeeder, SuperAdminSeeder>();
         services.AddScoped<ISeeder, GovernorateSeeder>();
         services.AddScoped<ISeeder, CitySeeder>();

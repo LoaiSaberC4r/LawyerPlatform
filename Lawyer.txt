@@ -1067,10 +1067,11 @@ using System.Reflection;
 using System;
 using System.Reflection;
 
+[assembly: Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+94289725d87a1a49a83e546d0209ab1118855f41")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -1138,10 +1139,11 @@ using System.Reflection;
 using System;
 using System.Reflection;
 
+[assembly: Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3827e9e60bfc2580425e9dab79cf7b10db485e4")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -5534,7 +5536,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Application")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+94289725d87a1a49a83e546d0209ab1118855f41")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Application")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Application")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -5575,7 +5577,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Application")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3827e9e60bfc2580425e9dab79cf7b10db485e4")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Application")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Application")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -6634,7 +6636,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+94289725d87a1a49a83e546d0209ab1118855f41")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -6675,7 +6677,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3827e9e60bfc2580425e9dab79cf7b10db485e4")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -6938,12 +6940,14 @@ public static class DependencyInjection
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
 
+        services.AddScoped<EgyptLocationSeedCoordinator>();
         services.AddScoped<ISeeder, SuperAdminSeeder>();
         services.AddScoped<ISeeder, GovernorateSeeder>();
         services.AddScoped<ISeeder, CitySeeder>();
         services.AddScoped<ISeeder, AreaSeeder>();
         services.AddScoped<ISeeder, LegalSpecializationSeeder>();
         services.AddScoped<IEnsureSeeding, EnsureSeeding>();
+        services.AddSingleton<IDatabaseMigrationService, EfCoreDatabaseMigrationService>();
         services.AddHostedService<DatabaseInitializationHostedService>();
 
         services.AddDbContext<LawyerPlatformDbContext>((serviceProvider, options) =>
@@ -7264,6 +7268,7 @@ using System.Reflection;
 //------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
+//     Runtime Version:4.0.30319.42000
 //
 //     Changes to this file may cause incorrect behavior and will be lost if
 //     the code is regenerated.
@@ -7276,7 +7281,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+94289725d87a1a49a83e546d0209ab1118855f41")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -7317,7 +7322,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3827e9e60bfc2580425e9dab79cf7b10db485e4")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -7399,7 +7404,6 @@ public sealed class PasswordLifecycleOptions
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\DatabaseInitializationHostedService.cs ==================== 
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Options;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -7410,6 +7414,7 @@ namespace LawyerPlatform.Infrastructure.Persistence;
 internal sealed partial class DatabaseInitializationHostedService(
     IServiceScopeFactory scopeFactory,
     IOptions<DatabaseInitializationOptions> options,
+    IHostEnvironment environment,
     ILogger<DatabaseInitializationHostedService> logger)
     : IHostedService
 {
@@ -7417,13 +7422,59 @@ internal sealed partial class DatabaseInitializationHostedService(
     {
         InitializationStarted(logger);
         await using var scope = scopeFactory.CreateAsyncScope();
-        if (options.Value.ApplyMigrationsOnStartup)
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var migrationService = scope.ServiceProvider.GetRequiredService<IDatabaseMigrationService>();
+        var connection = DatabaseConnectionDetails.From(dbContext);
+        var applyMigrationsOnStartup = options.Value.ApplyMigrationsOnStartup;
+        var aspNetCoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "<not set>";
+        var dotNetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "<not set>";
+
+        EffectiveEnvironment(logger, environment.EnvironmentName);
+        AspNetCoreEnvironment(logger, aspNetCoreEnvironment);
+        DotNetEnvironment(logger, dotNetEnvironment);
+        ApplyMigrationsOnStartupResolved(logger, applyMigrationsOnStartup);
+        DatabaseServer(logger, connection.DataSource);
+        DatabaseName(logger, connection.Database);
+        IntegratedSecurity(logger, connection.IntegratedSecurity);
+
+        if (!applyMigrationsOnStartup)
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
-            await dbContext.Database.MigrateAsync(cancellationToken);
+            InitializationSkipped(logger);
+            return;
         }
 
-        await scope.ServiceProvider.GetRequiredService<IEnsureSeeding>().SeedDatabaseAsync(cancellationToken);
+        try
+        {
+            var compiledMigrations = migrationService.GetCompiledMigrations(dbContext);
+            CompiledMigrationsDiscovered(logger, compiledMigrations.Count);
+
+            var pendingMigrations = await migrationService.GetPendingMigrationsAsync(dbContext, cancellationToken);
+            PendingMigrationsDiscovered(logger, pendingMigrations.Count);
+
+            MigrationStarted(logger);
+            await migrationService.MigrateAsync(dbContext, cancellationToken);
+            MigrationCompleted(logger);
+        }
+        catch (Exception)
+        {
+            MigrationFailed(logger);
+            SeedingWillNotRun(logger);
+            throw;
+        }
+
+        DatabaseSeedingStarted(logger);
+        try
+        {
+            await scope.ServiceProvider.GetRequiredService<IEnsureSeeding>().SeedDatabaseAsync(cancellationToken);
+        }
+        catch (Exception)
+        {
+            DatabaseSeedingFailed(logger);
+            throw;
+        }
+
+        DatabaseSeedingCompleted(logger);
         InitializationCompleted(logger);
     }
 
@@ -7435,6 +7486,129 @@ internal sealed partial class DatabaseInitializationHostedService(
 
     [LoggerMessage(EventId = 4121, Level = LogLevel.Information, Message = "Database initialization completed.")]
     private static partial void InitializationCompleted(ILogger logger);
+
+    [LoggerMessage(EventId = 4122, Level = LogLevel.Information, Message = "Effective environment: {EnvironmentName}.")]
+    private static partial void EffectiveEnvironment(ILogger logger, string environmentName);
+
+    [LoggerMessage(EventId = 4123, Level = LogLevel.Information, Message = "ASPNETCORE_ENVIRONMENT environment variable: {EnvironmentName}.")]
+    private static partial void AspNetCoreEnvironment(ILogger logger, string environmentName);
+
+    [LoggerMessage(EventId = 4124, Level = LogLevel.Information, Message = "DOTNET_ENVIRONMENT environment variable: {EnvironmentName}.")]
+    private static partial void DotNetEnvironment(ILogger logger, string environmentName);
+
+    [LoggerMessage(EventId = 4125, Level = LogLevel.Information, Message = "ApplyMigrationsOnStartup resolved to {ApplyMigrationsOnStartup}.")]
+    private static partial void ApplyMigrationsOnStartupResolved(ILogger logger, bool applyMigrationsOnStartup);
+
+    [LoggerMessage(EventId = 4126, Level = LogLevel.Information, Message = "Database server: {DataSource}.")]
+    private static partial void DatabaseServer(ILogger logger, string dataSource);
+
+    [LoggerMessage(EventId = 4127, Level = LogLevel.Information, Message = "Database name: {Database}.")]
+    private static partial void DatabaseName(ILogger logger, string database);
+
+    [LoggerMessage(EventId = 4128, Level = LogLevel.Information, Message = "Integrated security enabled: {IntegratedSecurity}.")]
+    private static partial void IntegratedSecurity(ILogger logger, bool integratedSecurity);
+
+    [LoggerMessage(EventId = 4129, Level = LogLevel.Information, Message = "Database migration and seeding skipped because ApplyMigrationsOnStartup is disabled.")]
+    private static partial void InitializationSkipped(ILogger logger);
+
+    [LoggerMessage(EventId = 4130, Level = LogLevel.Information, Message = "Compiled migrations discovered: {MigrationCount}.")]
+    private static partial void CompiledMigrationsDiscovered(ILogger logger, int migrationCount);
+
+    [LoggerMessage(EventId = 4131, Level = LogLevel.Information, Message = "Pending migrations discovered: {MigrationCount}.")]
+    private static partial void PendingMigrationsDiscovered(ILogger logger, int migrationCount);
+
+    [LoggerMessage(EventId = 4132, Level = LogLevel.Information, Message = "Database migration started.")]
+    private static partial void MigrationStarted(ILogger logger);
+
+    [LoggerMessage(EventId = 4133, Level = LogLevel.Information, Message = "Database migration completed.")]
+    private static partial void MigrationCompleted(ILogger logger);
+
+    [LoggerMessage(EventId = 4134, Level = LogLevel.Error, Message = "Database migration failed.")]
+    private static partial void MigrationFailed(ILogger logger);
+
+    [LoggerMessage(EventId = 4135, Level = LogLevel.Error, Message = "Database seeding will not run.")]
+    private static partial void SeedingWillNotRun(ILogger logger);
+
+    [LoggerMessage(EventId = 4136, Level = LogLevel.Information, Message = "Database seeding started.")]
+    private static partial void DatabaseSeedingStarted(ILogger logger);
+
+    [LoggerMessage(EventId = 4137, Level = LogLevel.Information, Message = "Database seeding completed.")]
+    private static partial void DatabaseSeedingCompleted(ILogger logger);
+
+    [LoggerMessage(EventId = 4138, Level = LogLevel.Error, Message = "Database seeding failed.")]
+    private static partial void DatabaseSeedingFailed(ILogger logger);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\DatabaseMigrationService.cs ==================== 
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+
+namespace LawyerPlatform.Infrastructure.Persistence;
+
+internal interface IDatabaseMigrationService
+{
+    IReadOnlyList<string> GetCompiledMigrations(LawyerPlatformDbContext dbContext);
+
+    Task<IReadOnlyList<string>> GetPendingMigrationsAsync(
+        LawyerPlatformDbContext dbContext,
+        CancellationToken cancellationToken);
+
+    Task MigrateAsync(
+        LawyerPlatformDbContext dbContext,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class EfCoreDatabaseMigrationService : IDatabaseMigrationService
+{
+    public IReadOnlyList<string> GetCompiledMigrations(LawyerPlatformDbContext dbContext)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        return dbContext.Database.GetMigrations().ToArray();
+    }
+
+    public async Task<IReadOnlyList<string>> GetPendingMigrationsAsync(
+        LawyerPlatformDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        var migrations = await dbContext.Database.GetPendingMigrationsAsync(cancellationToken);
+        return migrations.ToArray();
+    }
+
+    public Task MigrateAsync(
+        LawyerPlatformDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        return dbContext.Database.MigrateAsync(cancellationToken);
+    }
+}
+
+internal readonly record struct DatabaseConnectionDetails(
+    string DataSource,
+    string Database,
+    bool IntegratedSecurity)
+{
+    public static DatabaseConnectionDetails From(LawyerPlatformDbContext dbContext)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection is not SqlConnection sqlConnection)
+        {
+            return new DatabaseConnectionDetails(
+                connection.DataSource,
+                connection.Database,
+                IntegratedSecurity: false);
+        }
+
+        var builder = new SqlConnectionStringBuilder(sqlConnection.ConnectionString);
+
+        return new DatabaseConnectionDetails(
+            builder.DataSource,
+            builder.InitialCatalog,
+            builder.IntegratedSecurity);
+    }
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\LawyerPlatformDbContext.cs ==================== 
@@ -7535,6 +7709,7 @@ public sealed class LawyerPlatformDbContextFactory
     : IDesignTimeDbContextFactory<LawyerPlatformDbContext>
 {
     private const string EnvironmentFileName = ".env";
+    private const string UserSecretsId = "LawyerPlatform.Api";
 
     public LawyerPlatformDbContext CreateDbContext(string[] args)
     {
@@ -7560,6 +7735,14 @@ public sealed class LawyerPlatformDbContextFactory
                 optional: true,
                 reloadOnChange: false);
 
+        if (string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase))
+        {
+            configurationBuilder.AddJsonFile(
+                ResolveUserSecretsFilePath(),
+                optional: true,
+                reloadOnChange: false);
+        }
+
         if (environmentFilePath is not null)
         {
             var environmentValues =
@@ -7573,14 +7756,20 @@ public sealed class LawyerPlatformDbContextFactory
         // override appsettings files and the local .env file.
         configurationBuilder.AddEnvironmentVariables();
 
+        var commandLineValues = ReadCommandLineConfiguration(args);
+        if (commandLineValues.Count > 0)
+        {
+            configurationBuilder.AddInMemoryCollection(commandLineValues);
+        }
+
         var configuration = configurationBuilder.Build();
 
         var connectionString =
             configuration.GetConnectionString("Database")
             ?? throw new InvalidOperationException(
                 "Connection string 'Database' was not found. " +
-                "Configure 'ConnectionStrings__Database' in .env " +
-                "or as an environment variable.");
+                "Configure 'ConnectionStrings:Database' using API User Secrets, " +
+                "an environment variable, or a command-line argument.");
 
         var migrationsAssemblyName =
             typeof(LawyerPlatformDbContext)
@@ -7652,6 +7841,57 @@ public sealed class LawyerPlatformDbContextFactory
         }
 
         return values;
+    }
+
+    private static Dictionary<string, string?> ReadCommandLineConfiguration(string[] args)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            var argument = args[index];
+            if (!argument.StartsWith("--", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var keyAndValue = argument[2..];
+            var separatorIndex = keyAndValue.IndexOf('=');
+            if (separatorIndex > 0)
+            {
+                values[keyAndValue[..separatorIndex]] = keyAndValue[(separatorIndex + 1)..];
+                continue;
+            }
+
+            if (keyAndValue.Length > 0 &&
+                index + 1 < args.Length &&
+                !args[index + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                values[keyAndValue] = args[++index];
+            }
+        }
+
+        return values;
+    }
+
+    private static string ResolveUserSecretsFilePath()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft",
+                "UserSecrets",
+                UserSecretsId,
+                "secrets.json");
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".microsoft",
+            "usersecrets",
+            UserSecretsId,
+            "secrets.json");
     }
 
     private static string RemoveSurroundingQuotes(
@@ -10806,138 +11046,867 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("LawyerPlatform.UnitTests")]
+[assembly: InternalsVisibleTo("LawyerPlatform.IntegrationTests")]
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\AreaSeeder.cs ==================== 
-using BuildingBlock.Application.Repositories;
 using LawyerPlatform.Application.Abstractions.Seeding;
-using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Domain.ReferenceData;
-using Microsoft.Extensions.Logging;
 
 namespace LawyerPlatform.Infrastructure.Seeding;
 
-internal sealed class AreaSeeder(
-    IReadRepository<Area, LawyerPlatformReadPersistence> reader,
-    IReadRepository<City, LawyerPlatformReadPersistence> cities,
-    IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
-    ILogger<AreaSeeder> logger)
-    : ISeeder
+internal sealed class AreaSeeder(EgyptLocationSeedCoordinator coordinator) : ISeeder
 {
     public int ExecutionOrder => SeedingOrder.Areas;
 
-    public async Task SeedAsync(CancellationToken cancellationToken)
+    public Task SeedAsync(CancellationToken cancellationToken)
+        => coordinator.SeedAreasAsync(cancellationToken);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\CitySeeder.cs ==================== 
+using LawyerPlatform.Application.Abstractions.Seeding;
+
+namespace LawyerPlatform.Infrastructure.Seeding;
+
+internal sealed class CitySeeder(EgyptLocationSeedCoordinator coordinator) : ISeeder
+{
+    public int ExecutionOrder => SeedingOrder.Cities;
+
+    public Task SeedAsync(CancellationToken cancellationToken)
+        => coordinator.SeedCitiesAsync(cancellationToken);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\EgyptLocationSeedCatalog.cs ==================== 
+namespace LawyerPlatform.Infrastructure.Seeding;
+
+internal sealed record EgyptLocationSeedData(
+    IReadOnlyList<GovernorateSeed> Governorates,
+    IReadOnlyList<CitySeed> Cities,
+    IReadOnlyList<AreaSeed> Areas);
+
+internal static class EgyptLocationSeedCatalog
+{
+    public const int ExpectedGovernorateCount = 27;
+    public const int ExpectedCityCount = 351;
+    public const int ExpectedAreaCount = 5716;
+
+    private static readonly Lazy<EgyptLocationSeedData> ValidatedData = new(
+        LoadAndValidate,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    public static IReadOnlyList<GovernorateSeed> Governorates => Data.Governorates;
+    public static IReadOnlyList<CitySeed> Cities => Data.Cities;
+    public static IReadOnlyList<AreaSeed> Areas => Data.Areas;
+    public static EgyptLocationSeedData Data => ValidatedData.Value;
+
+    private static EgyptLocationSeedData LoadAndValidate()
     {
-        if (SeedCatalog.Areas.Count == 0)
+        var data = EgyptLocationSeedDataLoader.Load();
+        EgyptLocationSeedValidator.Validate(data);
+        return data;
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\EgyptLocationSeedConflictException.cs ==================== 
+namespace LawyerPlatform.Infrastructure.Seeding;
+
+internal sealed class EgyptLocationSeedConflictException(string message)
+    : InvalidOperationException(message);
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\EgyptLocationSeedCoordinator.cs ==================== 
+using System.Text;
+using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace LawyerPlatform.Infrastructure.Seeding;
+
+internal sealed class EgyptLocationSeedCoordinator : IAsyncDisposable
+{
+    private readonly LawyerPlatformDbContext dbContext;
+    private readonly EgyptLocationSeedData catalog;
+    private IDbContextTransaction? transaction;
+    private HashSet<int>? governorateIds;
+    private HashSet<int>? cityIds;
+    private SeedStage stage;
+
+    public EgyptLocationSeedCoordinator(LawyerPlatformDbContext dbContext)
+        : this(dbContext, EgyptLocationSeedCatalog.Data)
+    {
+    }
+
+    internal EgyptLocationSeedCoordinator(
+        LawyerPlatformDbContext dbContext,
+        EgyptLocationSeedData catalog)
+    {
+        this.dbContext = dbContext;
+        this.catalog = catalog;
+    }
+
+    public async Task SeedGovernoratesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (stage == SeedStage.Completed)
         {
-            ReferenceSeederLog.NoApprovedData(logger, nameof(SeedCatalog.Areas));
-            return;
+            ResetForNextExecution();
         }
 
-        var added = false;
-        foreach (var seed in SeedCatalog.Areas)
-        {
-            if (!await cities.AnyAsync(item => item.Id == seed.CityId, cancellationToken))
-            {
-                throw new InvalidOperationException("Area seed data references a missing city.");
-            }
+        EnsureStage(SeedStage.NotStarted, "Governorate seeding must run first.");
+        EgyptLocationSeedValidator.Validate(catalog);
 
-            var byId = await reader.GetByIdAsync(seed.Id, cancellationToken);
-            if (byId is not null)
+        try
+        {
+            transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            var existing = await dbContext.Governorates
+                .AsNoTracking()
+                .Select(item => new GovernorateSnapshot(item.Id, item.NameAr, item.NameEn))
+                .ToListAsync(cancellationToken);
+
+            var existingById = existing.ToDictionary(item => item.Id);
+            var existingArabicNames = BuildNameOwners(existing, item => item.NameAr);
+            var existingEnglishNames = BuildNameOwners(existing, item => item.NameEn);
+            var missing = new List<Governorate>(catalog.Governorates.Count);
+
+            foreach (var seed in catalog.Governorates)
             {
-                if (byId.CityId == seed.CityId && byId.NameAr == seed.NameAr && byId.NameEn == seed.NameEn && byId.DisplayOrder == seed.DisplayOrder)
+                EnsureNameIsAvailable(existingArabicNames, seed.NameAr, seed.Id, "governorate Arabic");
+                EnsureNameIsAvailable(existingEnglishNames, seed.NameEn, seed.Id, "governorate English");
+
+                if (existingById.TryGetValue(seed.Id, out var current))
                 {
+                    if (!StringComparer.Ordinal.Equals(current.NameAr, seed.NameAr) ||
+                        !StringComparer.Ordinal.Equals(current.NameEn, seed.NameEn))
+                    {
+                        throw new EgyptLocationSeedConflictException(
+                            "A Governorate seed ID conflicts with an existing row's approved names.");
+                    }
+
                     continue;
                 }
 
-                throw new InvalidOperationException("Area seed data conflicts with an existing row.");
+                var result = Governorate.Create(seed.Id, seed.NameAr, seed.NameEn, seed.DisplayOrder);
+                if (result.IsFailure)
+                {
+                    throw new EgyptLocationSeedDataException(
+                        "A Governorate seed record failed domain validation.");
+                }
+
+                missing.Add(result.Value);
             }
 
-            if (await reader.AnyAsync(item => item.CityId == seed.CityId && item.NameAr == seed.NameAr && item.NameEn == seed.NameEn, cancellationToken))
+            if (missing.Count > 0)
             {
-                throw new InvalidOperationException("Area seed data conflicts with an existing row.");
+                await dbContext.Governorates.AddRangeAsync(missing, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            var result = Area.Create(seed.Id, seed.CityId, seed.NameAr, seed.NameEn, seed.DisplayOrder);
-            if (result.IsFailure)
+            governorateIds = existing.Select(item => item.Id)
+                .Concat(catalog.Governorates.Select(seed => seed.Id))
+                .ToHashSet();
+            stage = SeedStage.GovernoratesSeeded;
+        }
+        catch (Exception)
+        {
+            await AbortAsync();
+            throw;
+        }
+    }
+
+    public async Task SeedCitiesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureStage(SeedStage.GovernoratesSeeded, "City seeding must run after Governorate seeding.");
+
+        try
+        {
+            var knownGovernorateIds = governorateIds
+                ?? throw new InvalidOperationException("Governorate seed state is unavailable.");
+            if (catalog.Cities.Any(seed => !knownGovernorateIds.Contains(seed.GovernorateId)))
             {
-                throw new InvalidOperationException("Area seed data is invalid.");
+                throw new EgyptLocationSeedConflictException(
+                    "A City seed record references a Governorate that is missing from the database.");
             }
 
-            await unitOfWork.WriteRepository<Area>().AddAsync(result.Value, cancellationToken);
-            added = true;
+            var existing = await dbContext.Cities
+                .AsNoTracking()
+                .Select(item => new CitySnapshot(
+                    item.Id,
+                    item.GovernorateId,
+                    item.NameAr,
+                    item.NameEn))
+                .ToListAsync(cancellationToken);
+
+            var existingById = existing.ToDictionary(item => item.Id);
+            var existingArabicNames = BuildParentNameOwners(
+                existing,
+                item => item.GovernorateId,
+                item => item.NameAr);
+            var existingEnglishNames = BuildParentNameOwners(
+                existing,
+                item => item.GovernorateId,
+                item => item.NameEn);
+            var missing = new List<City>(catalog.Cities.Count);
+
+            foreach (var seed in catalog.Cities)
+            {
+                EnsureParentNameIsAvailable(
+                    existingArabicNames,
+                    seed.GovernorateId,
+                    seed.NameAr,
+                    seed.Id,
+                    "City Arabic");
+                EnsureParentNameIsAvailable(
+                    existingEnglishNames,
+                    seed.GovernorateId,
+                    seed.NameEn,
+                    seed.Id,
+                    "City English");
+
+                if (existingById.TryGetValue(seed.Id, out var current))
+                {
+                    if (current.GovernorateId != seed.GovernorateId ||
+                        !StringComparer.Ordinal.Equals(current.NameAr, seed.NameAr) ||
+                        !StringComparer.Ordinal.Equals(current.NameEn, seed.NameEn))
+                    {
+                        throw new EgyptLocationSeedConflictException(
+                            "A City seed ID conflicts with an existing row's parent or approved names.");
+                    }
+
+                    continue;
+                }
+
+                var result = City.Create(
+                    seed.Id,
+                    seed.GovernorateId,
+                    seed.NameAr,
+                    seed.NameEn,
+                    seed.DisplayOrder);
+                if (result.IsFailure)
+                {
+                    throw new EgyptLocationSeedDataException("A City seed record failed domain validation.");
+                }
+
+                missing.Add(result.Value);
+            }
+
+            if (missing.Count > 0)
+            {
+                await dbContext.Cities.AddRangeAsync(missing, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            cityIds = existing.Select(item => item.Id)
+                .Concat(catalog.Cities.Select(seed => seed.Id))
+                .ToHashSet();
+            stage = SeedStage.CitiesSeeded;
+        }
+        catch (Exception)
+        {
+            await AbortAsync();
+            throw;
+        }
+    }
+
+    public async Task SeedAreasAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureStage(SeedStage.CitiesSeeded, "Area seeding must run after City seeding.");
+
+        try
+        {
+            var knownCityIds = cityIds
+                ?? throw new InvalidOperationException("City seed state is unavailable.");
+            if (catalog.Areas.Any(seed => !knownCityIds.Contains(seed.CityId)))
+            {
+                throw new EgyptLocationSeedConflictException(
+                    "An Area seed record references a City that is missing from the database.");
+            }
+
+            var existing = await dbContext.Areas
+                .AsNoTracking()
+                .Select(item => new AreaSnapshot(item.Id, item.CityId, item.NameAr, item.NameEn))
+                .ToListAsync(cancellationToken);
+
+            var existingById = existing.ToDictionary(item => item.Id);
+            var existingArabicNames = BuildParentNameOwners(
+                existing,
+                item => item.CityId,
+                item => item.NameAr);
+            var existingEnglishNames = BuildParentNameOwners(
+                existing,
+                item => item.CityId,
+                item => item.NameEn);
+            var missing = new List<Area>(catalog.Areas.Count);
+
+            foreach (var seed in catalog.Areas)
+            {
+                EnsureParentNameIsAvailable(
+                    existingArabicNames,
+                    seed.CityId,
+                    seed.NameAr,
+                    seed.Id,
+                    "Area Arabic");
+                EnsureParentNameIsAvailable(
+                    existingEnglishNames,
+                    seed.CityId,
+                    seed.NameEn,
+                    seed.Id,
+                    "Area English");
+
+                if (existingById.TryGetValue(seed.Id, out var current))
+                {
+                    if (current.CityId != seed.CityId ||
+                        !StringComparer.Ordinal.Equals(current.NameAr, seed.NameAr) ||
+                        !StringComparer.Ordinal.Equals(current.NameEn, seed.NameEn))
+                    {
+                        throw new EgyptLocationSeedConflictException(
+                            "An Area seed ID conflicts with an existing row's parent or approved names.");
+                    }
+
+                    continue;
+                }
+
+                var result = Area.Create(
+                    seed.Id,
+                    seed.CityId,
+                    seed.NameAr,
+                    seed.NameEn,
+                    seed.DisplayOrder);
+                if (result.IsFailure)
+                {
+                    throw new EgyptLocationSeedDataException("An Area seed record failed domain validation.");
+                }
+
+                missing.Add(result.Value);
+            }
+
+            if (missing.Count > 0)
+            {
+                await dbContext.Areas.AddRangeAsync(missing, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            var currentTransaction = transaction
+                ?? throw new InvalidOperationException("The Egypt location seed transaction is unavailable.");
+            await currentTransaction.CommitAsync(cancellationToken);
+            transaction = null;
+            await currentTransaction.DisposeAsync();
+            stage = SeedStage.Completed;
+        }
+        catch (Exception)
+        {
+            await AbortAsync();
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await AbortAsync();
+        GC.SuppressFinalize(this);
+    }
+
+    private static Dictionary<string, int> BuildNameOwners<T>(
+        IEnumerable<T> records,
+        Func<T, string> nameSelector)
+    {
+        var owners = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in records)
+        {
+            var id = record switch
+            {
+                GovernorateSnapshot snapshot => snapshot.Id,
+                _ => throw new InvalidOperationException("Unsupported Governorate seed snapshot.")
+            };
+            AddNameOwner(owners, NormalizeName(nameSelector(record)), id);
         }
 
-        if (added)
+        return owners;
+    }
+
+    private static Dictionary<EgyptLocationSeedValidator.ParentNameKey, int> BuildParentNameOwners<T>(
+        IEnumerable<T> records,
+        Func<T, int> parentIdSelector,
+        Func<T, string> nameSelector)
+        where T : ISeedSnapshot
+    {
+        var owners = new Dictionary<EgyptLocationSeedValidator.ParentNameKey, int>(
+            EgyptLocationSeedValidator.ParentNameKeyComparer.Instance);
+        foreach (var record in records)
         {
-            await unitOfWork.SaveChangesAsync(cancellationToken);
+            var key = new EgyptLocationSeedValidator.ParentNameKey(
+                parentIdSelector(record),
+                NormalizeName(nameSelector(record)));
+            AddNameOwner(owners, key, record.Id);
+        }
+
+        return owners;
+    }
+
+    private static void AddNameOwner<TKey>(Dictionary<TKey, int> owners, TKey key, int id)
+        where TKey : notnull
+    {
+        if (!owners.TryAdd(key, id) && owners[key] != id)
+        {
+            owners[key] = 0;
+        }
+    }
+
+    private static void EnsureNameIsAvailable(
+        Dictionary<string, int> owners,
+        string name,
+        int seedId,
+        string field)
+    {
+        if (owners.TryGetValue(NormalizeName(name), out var ownerId) && ownerId != seedId)
+        {
+            throw new EgyptLocationSeedConflictException(
+                $"A normalized {field} name conflicts with an existing row that has a different ID.");
+        }
+    }
+
+    private static void EnsureParentNameIsAvailable(
+        Dictionary<EgyptLocationSeedValidator.ParentNameKey, int> owners,
+        int parentId,
+        string name,
+        int seedId,
+        string field)
+    {
+        var key = new EgyptLocationSeedValidator.ParentNameKey(parentId, NormalizeName(name));
+        if (owners.TryGetValue(key, out var ownerId) && ownerId != seedId)
+        {
+            throw new EgyptLocationSeedConflictException(
+                $"A normalized {field} name conflicts under the same parent with a different ID.");
+        }
+    }
+
+    private static string NormalizeName(string name)
+        => name.Trim().Normalize(NormalizationForm.FormC);
+
+    private void EnsureStage(SeedStage requiredStage, string message)
+    {
+        if (stage != requiredStage)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private void ResetForNextExecution()
+    {
+        governorateIds = null;
+        cityIds = null;
+        stage = SeedStage.NotStarted;
+    }
+
+    private async Task AbortAsync()
+    {
+        if (transaction is null)
+        {
+            return;
+        }
+
+        var currentTransaction = transaction;
+        transaction = null;
+        stage = SeedStage.Failed;
+        try
+        {
+            await currentTransaction.RollbackAsync(CancellationToken.None);
+        }
+        finally
+        {
+            await currentTransaction.DisposeAsync();
+        }
+    }
+
+    private interface ISeedSnapshot
+    {
+        int Id { get; }
+    }
+
+    private sealed record GovernorateSnapshot(int Id, string NameAr, string NameEn) : ISeedSnapshot;
+
+    private sealed record CitySnapshot(
+        int Id,
+        int GovernorateId,
+        string NameAr,
+        string NameEn) : ISeedSnapshot;
+
+    private sealed record AreaSnapshot(int Id, int CityId, string NameAr, string NameEn) : ISeedSnapshot;
+
+    private enum SeedStage
+    {
+        NotStarted,
+        GovernoratesSeeded,
+        CitiesSeeded,
+        Completed,
+        Failed
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\EgyptLocationSeedDataException.cs ==================== 
+namespace LawyerPlatform.Infrastructure.Seeding;
+
+internal sealed class EgyptLocationSeedDataException : InvalidOperationException
+{
+    public EgyptLocationSeedDataException(string message)
+        : base(message)
+    {
+    }
+
+    public EgyptLocationSeedDataException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\EgyptLocationSeedDataLoader.cs ==================== 
+using System.Reflection;
+using System.Collections.ObjectModel;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace LawyerPlatform.Infrastructure.Seeding;
+
+internal static class EgyptLocationSeedDataLoader
+{
+    private const string GovernoratesResource =
+        "LawyerPlatform.Infrastructure.Seeding.Data.egypt-governorates.v1.json";
+    private const string CitiesResource =
+        "LawyerPlatform.Infrastructure.Seeding.Data.egypt-cities.v1.json";
+    private const string AreasResource =
+        "LawyerPlatform.Infrastructure.Seeding.Data.egypt-areas.v1.json";
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        AllowTrailingCommas = false,
+        PropertyNameCaseInsensitive = false,
+        RespectRequiredConstructorParameters = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+    };
+
+    private static readonly Lazy<EgyptLocationSeedData> CachedData = new(
+        LoadCore,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    public static EgyptLocationSeedData Load() => CachedData.Value;
+
+    private static EgyptLocationSeedData LoadCore()
+    {
+        var assembly = typeof(EgyptLocationSeedDataLoader).Assembly;
+        return new EgyptLocationSeedData(
+            LoadResource<GovernorateSeed>(assembly, GovernoratesResource, "governorates"),
+            LoadResource<CitySeed>(assembly, CitiesResource, "cities"),
+            LoadResource<AreaSeed>(assembly, AreasResource, "areas"));
+    }
+
+    private static ReadOnlyCollection<T> LoadResource<T>(
+        Assembly assembly,
+        string resourceName,
+        string catalogName)
+    {
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream is null)
+        {
+            throw new EgyptLocationSeedDataException(
+                $"The embedded Egypt {catalogName} seed resource is missing.");
+        }
+
+        try
+        {
+            var records = JsonSerializer.Deserialize<T[]>(stream, SerializerOptions);
+            if (records is null)
+            {
+                throw new EgyptLocationSeedDataException(
+                    $"The embedded Egypt {catalogName} seed resource contains a null collection.");
+            }
+
+            return Array.AsReadOnly(records);
+        }
+        catch (JsonException exception)
+        {
+            throw new EgyptLocationSeedDataException(
+                $"The embedded Egypt {catalogName} seed resource contains malformed or unsupported JSON.",
+                exception);
+        }
+        catch (NotSupportedException exception)
+        {
+            throw new EgyptLocationSeedDataException(
+                $"The embedded Egypt {catalogName} seed resource contains malformed or unsupported JSON.",
+                exception);
         }
     }
 }
  
-// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\CitySeeder.cs ==================== 
-using BuildingBlock.Application.Repositories;
-using LawyerPlatform.Application.Abstractions.Seeding;
-using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Domain.ReferenceData;
-using Microsoft.Extensions.Logging;
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\EgyptLocationSeedValidator.cs ==================== 
+using System.Text;
 
 namespace LawyerPlatform.Infrastructure.Seeding;
 
-internal sealed class CitySeeder(
-    IReadRepository<City, LawyerPlatformReadPersistence> reader,
-    IReadRepository<Governorate, LawyerPlatformReadPersistence> governorates,
-    IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
-    ILogger<CitySeeder> logger)
-    : ISeeder
+internal static class EgyptLocationSeedValidator
 {
-    public int ExecutionOrder => SeedingOrder.Cities;
+    private const int MaximumNameLength = 150;
 
-    public async Task SeedAsync(CancellationToken cancellationToken)
+    public static void Validate(EgyptLocationSeedData data)
     {
-        if (SeedCatalog.Cities.Count == 0)
+        ArgumentNullException.ThrowIfNull(data);
+
+        ValidateGovernorates(data.Governorates);
+        ValidateCities(data.Cities, data.Governorates);
+        ValidateAreas(data.Areas, data.Cities);
+        ValidateHierarchyCoverage(data);
+    }
+
+    private static void ValidateGovernorates(IReadOnlyList<GovernorateSeed> governorates)
+    {
+        if (governorates.Count != EgyptLocationSeedCatalog.ExpectedGovernorateCount)
         {
-            ReferenceSeederLog.NoApprovedData(logger, nameof(SeedCatalog.Cities));
-            return;
+            throw new EgyptLocationSeedDataException(
+                $"The Egypt governorate catalog must contain exactly {EgyptLocationSeedCatalog.ExpectedGovernorateCount} records.");
         }
 
-        var added = false;
-        foreach (var seed in SeedCatalog.Cities)
+        var ids = new HashSet<int>();
+        var arabicNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var englishNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var displayOrders = new HashSet<int>();
+
+        foreach (var seed in governorates)
         {
-            if (!await governorates.AnyAsync(item => item.Id == seed.GovernorateId, cancellationToken))
+            ValidateCommon(seed.Id, seed.NameAr, seed.NameEn, seed.DisplayOrder, "governorate");
+            AddUnique(ids, seed.Id, "The Egypt governorate catalog contains a duplicate ID.");
+            AddUnique(arabicNames, NormalizeName(seed.NameAr), "The Egypt governorate catalog contains a duplicate Arabic name.");
+            AddUnique(englishNames, NormalizeName(seed.NameEn), "The Egypt governorate catalog contains a duplicate English name.");
+            AddUnique(displayOrders, seed.DisplayOrder, "The Egypt governorate catalog contains a duplicate display order.");
+
+            if (seed.Id != seed.DisplayOrder)
             {
-                throw new InvalidOperationException("City seed data references a missing governorate.");
+                throw new EgyptLocationSeedDataException(
+                    "Egypt governorate IDs and display orders must be the stable sequence from 1 through 27.");
             }
-
-            var byId = await reader.GetByIdAsync(seed.Id, cancellationToken);
-            if (byId is not null)
-            {
-                if (byId.GovernorateId == seed.GovernorateId && byId.NameAr == seed.NameAr && byId.NameEn == seed.NameEn && byId.DisplayOrder == seed.DisplayOrder)
-                {
-                    continue;
-                }
-
-                throw new InvalidOperationException("City seed data conflicts with an existing row.");
-            }
-
-            if (await reader.AnyAsync(item => item.GovernorateId == seed.GovernorateId && item.NameAr == seed.NameAr && item.NameEn == seed.NameEn, cancellationToken))
-            {
-                throw new InvalidOperationException("City seed data conflicts with an existing row.");
-            }
-
-            var result = City.Create(seed.Id, seed.GovernorateId, seed.NameAr, seed.NameEn, seed.DisplayOrder);
-            if (result.IsFailure)
-            {
-                throw new InvalidOperationException("City seed data is invalid.");
-            }
-
-            await unitOfWork.WriteRepository<City>().AddAsync(result.Value, cancellationToken);
-            added = true;
         }
 
-        if (added)
+        ValidateContiguousOrders(displayOrders, governorates.Count, "governorate");
+    }
+
+    private static void ValidateCities(
+        IReadOnlyList<CitySeed> cities,
+        IReadOnlyList<GovernorateSeed> governorates)
+    {
+        if (cities.Count == 0)
         {
-            await unitOfWork.SaveChangesAsync(cancellationToken);
+            throw new EgyptLocationSeedDataException("The Egypt city catalog must not be empty.");
         }
+
+        var governorateIds = governorates.Select(seed => seed.Id).ToHashSet();
+        var ids = new HashSet<int>();
+        var arabicNames = new HashSet<ParentNameKey>(ParentNameKeyComparer.Instance);
+        var englishNames = new HashSet<ParentNameKey>(ParentNameKeyComparer.Instance);
+        var displayOrders = new HashSet<ParentOrderKey>();
+
+        foreach (var seed in cities)
+        {
+            ValidateCommon(seed.Id, seed.NameAr, seed.NameEn, seed.DisplayOrder, "city");
+            if (seed.GovernorateId <= 0 || !governorateIds.Contains(seed.GovernorateId))
+            {
+                throw new EgyptLocationSeedDataException(
+                    "The Egypt city catalog references a missing governorate.");
+            }
+
+            AddUnique(ids, seed.Id, "The Egypt city catalog contains a duplicate ID.");
+            AddUnique(
+                arabicNames,
+                new ParentNameKey(seed.GovernorateId, NormalizeName(seed.NameAr)),
+                "The Egypt city catalog contains a duplicate Arabic name under one governorate.");
+            AddUnique(
+                englishNames,
+                new ParentNameKey(seed.GovernorateId, NormalizeName(seed.NameEn)),
+                "The Egypt city catalog contains a duplicate English name under one governorate.");
+            AddUnique(
+                displayOrders,
+                new ParentOrderKey(seed.GovernorateId, seed.DisplayOrder),
+                "The Egypt city catalog contains a duplicate display order under one governorate.");
+
+            if (seed.Id != seed.GovernorateId * 1000 + seed.DisplayOrder)
+            {
+                throw new EgyptLocationSeedDataException(
+                    "An Egypt city ID does not match the stable parent-and-local-sequence strategy.");
+            }
+        }
+
+        foreach (var group in cities.GroupBy(seed => seed.GovernorateId))
+        {
+            ValidateContiguousOrders(
+                group.Select(seed => seed.DisplayOrder),
+                group.Count(),
+                "city");
+        }
+    }
+
+    private static void ValidateAreas(
+        IReadOnlyList<AreaSeed> areas,
+        IReadOnlyList<CitySeed> cities)
+    {
+        if (areas.Count == 0)
+        {
+            throw new EgyptLocationSeedDataException("The Egypt area catalog must not be empty.");
+        }
+
+        var cityIds = cities.Select(seed => seed.Id).ToHashSet();
+        var ids = new HashSet<int>();
+        var arabicNames = new HashSet<ParentNameKey>(ParentNameKeyComparer.Instance);
+        var englishNames = new HashSet<ParentNameKey>(ParentNameKeyComparer.Instance);
+        var displayOrders = new HashSet<ParentOrderKey>();
+
+        foreach (var seed in areas)
+        {
+            ValidateCommon(seed.Id, seed.NameAr, seed.NameEn, seed.DisplayOrder, "area");
+            if (seed.CityId <= 0 || !cityIds.Contains(seed.CityId))
+            {
+                throw new EgyptLocationSeedDataException(
+                    "The Egypt area catalog references a missing city.");
+            }
+
+            AddUnique(ids, seed.Id, "The Egypt area catalog contains a duplicate ID.");
+            AddUnique(
+                arabicNames,
+                new ParentNameKey(seed.CityId, NormalizeName(seed.NameAr)),
+                "The Egypt area catalog contains a duplicate Arabic name under one city.");
+            AddUnique(
+                englishNames,
+                new ParentNameKey(seed.CityId, NormalizeName(seed.NameEn)),
+                "The Egypt area catalog contains a duplicate English name under one city.");
+            AddUnique(
+                displayOrders,
+                new ParentOrderKey(seed.CityId, seed.DisplayOrder),
+                "The Egypt area catalog contains a duplicate display order under one city.");
+
+            var expectedId = (long)seed.CityId * 10000 + seed.DisplayOrder;
+            if (expectedId > int.MaxValue || seed.Id != expectedId)
+            {
+                throw new EgyptLocationSeedDataException(
+                    "An Egypt area ID is outside Int32 or does not match the stable parent-and-local-sequence strategy.");
+            }
+        }
+
+        foreach (var group in areas.GroupBy(seed => seed.CityId))
+        {
+            ValidateContiguousOrders(
+                group.Select(seed => seed.DisplayOrder),
+                group.Count(),
+                "area");
+        }
+    }
+
+    private static void ValidateHierarchyCoverage(EgyptLocationSeedData data)
+    {
+        var governoratesWithCities = data.Cities.Select(seed => seed.GovernorateId).ToHashSet();
+        if (data.Governorates.Any(seed => !governoratesWithCities.Contains(seed.Id)))
+        {
+            throw new EgyptLocationSeedDataException(
+                "Every Egypt governorate seed record must contain at least one city.");
+        }
+
+        var citiesWithAreas = data.Areas.Select(seed => seed.CityId).ToHashSet();
+        if (data.Cities.Any(seed => !citiesWithAreas.Contains(seed.Id)))
+        {
+            throw new EgyptLocationSeedDataException(
+                "Every Egypt city seed record must contain at least one area.");
+        }
+    }
+
+    private static void ValidateCommon(
+        int id,
+        string? nameAr,
+        string? nameEn,
+        int displayOrder,
+        string level)
+    {
+        if (id <= 0)
+        {
+            throw new EgyptLocationSeedDataException($"An Egypt {level} seed ID is not positive.");
+        }
+
+        if (displayOrder <= 0)
+        {
+            throw new EgyptLocationSeedDataException(
+                $"An Egypt {level} seed display order is not positive.");
+        }
+
+        ValidateName(nameAr, level, "Arabic");
+        ValidateName(nameEn, level, "English");
+    }
+
+    private static void ValidateName(string? name, string level, string language)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new EgyptLocationSeedDataException(
+                $"An Egypt {level} seed has an empty {language} name.");
+        }
+
+        if (!string.Equals(name, name.Trim(), StringComparison.Ordinal))
+        {
+            throw new EgyptLocationSeedDataException(
+                $"An Egypt {level} seed has surrounding whitespace in its {language} name.");
+        }
+
+        if (name.Length > MaximumNameLength)
+        {
+            throw new EgyptLocationSeedDataException(
+                $"An Egypt {level} seed {language} name exceeds the database length limit.");
+        }
+    }
+
+    private static string NormalizeName(string name)
+        => name.Trim().Normalize(NormalizationForm.FormC);
+
+    private static void ValidateContiguousOrders(
+        IEnumerable<int> displayOrders,
+        int expectedCount,
+        string level)
+    {
+        var expected = 1;
+        foreach (var displayOrder in displayOrders.Order())
+        {
+            if (displayOrder != expected)
+            {
+                throw new EgyptLocationSeedDataException(
+                    $"Egypt {level} display orders must start at 1 and remain contiguous within each parent.");
+            }
+
+            expected++;
+        }
+
+        if (expected - 1 != expectedCount)
+        {
+            throw new EgyptLocationSeedDataException(
+                $"Egypt {level} display orders do not match the catalog record count.");
+        }
+    }
+
+    private static void AddUnique<T>(HashSet<T> values, T value, string message)
+    {
+        if (!values.Add(value))
+        {
+            throw new EgyptLocationSeedDataException(message);
+        }
+    }
+
+    private readonly record struct ParentOrderKey(int ParentId, int DisplayOrder);
+
+    internal readonly record struct ParentNameKey(int ParentId, string Name);
+
+    internal sealed class ParentNameKeyComparer : IEqualityComparer<ParentNameKey>
+    {
+        public static ParentNameKeyComparer Instance { get; } = new();
+
+        public bool Equals(ParentNameKey x, ParentNameKey y)
+            => x.ParentId == y.ParentId &&
+               StringComparer.OrdinalIgnoreCase.Equals(x.Name, y.Name);
+
+        public int GetHashCode(ParentNameKey obj)
+            => HashCode.Combine(
+                obj.ParentId,
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
     }
 }
  
@@ -10954,11 +11923,25 @@ internal sealed partial class EnsureSeeding(
 {
     public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
     {
-        foreach (var seeder in seeders.OrderBy(seeder => seeder.ExecutionOrder))
+        var orderedSeeders = seeders
+            .OrderBy(seeder => seeder.ExecutionOrder)
+            .ThenBy(seeder => seeder.GetType().FullName, StringComparer.Ordinal);
+
+        foreach (var seeder in orderedSeeders)
         {
-            SeedingStarted(logger, seeder.GetType().Name);
-            await seeder.SeedAsync(cancellationToken);
-            SeedingCompleted(logger, seeder.GetType().Name);
+            var seederName = seeder.GetType().Name;
+            SeedingStarted(logger, seederName);
+            try
+            {
+                await seeder.SeedAsync(cancellationToken);
+            }
+            catch (Exception)
+            {
+                SeedingFailed(logger, seederName);
+                throw;
+            }
+
+            SeedingCompleted(logger, seederName);
         }
     }
 
@@ -10967,67 +11950,22 @@ internal sealed partial class EnsureSeeding(
 
     [LoggerMessage(EventId = 4101, Level = LogLevel.Information, Message = "Seeder {SeederName} completed.")]
     private static partial void SeedingCompleted(ILogger logger, string seederName);
+
+    [LoggerMessage(EventId = 4102, Level = LogLevel.Error, Message = "Seeder {SeederName} failed.")]
+    private static partial void SeedingFailed(ILogger logger, string seederName);
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\GovernorateSeeder.cs ==================== 
-using BuildingBlock.Application.Repositories;
 using LawyerPlatform.Application.Abstractions.Seeding;
-using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Domain.ReferenceData;
-using Microsoft.Extensions.Logging;
 
 namespace LawyerPlatform.Infrastructure.Seeding;
 
-internal sealed class GovernorateSeeder(
-    IReadRepository<Governorate, LawyerPlatformReadPersistence> reader,
-    IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
-    ILogger<GovernorateSeeder> logger)
-    : ISeeder
+internal sealed class GovernorateSeeder(EgyptLocationSeedCoordinator coordinator) : ISeeder
 {
     public int ExecutionOrder => SeedingOrder.Governorates;
 
-    public async Task SeedAsync(CancellationToken cancellationToken)
-    {
-        if (SeedCatalog.Governorates.Count == 0)
-        {
-            ReferenceSeederLog.NoApprovedData(logger, nameof(SeedCatalog.Governorates));
-            return;
-        }
-
-        var added = false;
-        foreach (var seed in SeedCatalog.Governorates)
-        {
-            var byId = await reader.GetByIdAsync(seed.Id, cancellationToken);
-            if (byId is not null)
-            {
-                if (byId.NameAr == seed.NameAr && byId.NameEn == seed.NameEn && byId.DisplayOrder == seed.DisplayOrder)
-                {
-                    continue;
-                }
-
-                throw new InvalidOperationException("Governorate seed data conflicts with an existing row.");
-            }
-
-            if (await reader.AnyAsync(item => item.NameAr == seed.NameAr && item.NameEn == seed.NameEn, cancellationToken))
-            {
-                throw new InvalidOperationException("Governorate seed data conflicts with an existing row.");
-            }
-
-            var result = Governorate.Create(seed.Id, seed.NameAr, seed.NameEn, seed.DisplayOrder);
-            if (result.IsFailure)
-            {
-                throw new InvalidOperationException("Governorate seed data is invalid.");
-            }
-
-            await unitOfWork.WriteRepository<Governorate>().AddAsync(result.Value, cancellationToken);
-            added = true;
-        }
-
-        if (added)
-        {
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-    }
+    public Task SeedAsync(CancellationToken cancellationToken)
+        => coordinator.SeedGovernoratesAsync(cancellationToken);
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Seeding\LegalSpecializationSeeder.cs ==================== 
@@ -11112,10 +12050,9 @@ internal sealed record LegalSpecializationSeed(int Id, string NameAr, string Nam
 
 internal static class SeedCatalog
 {
-    // No approved values were supplied. Populate only from an owner-approved, stable catalog.
-    public static IReadOnlyList<GovernorateSeed> Governorates { get; } = [];
-    public static IReadOnlyList<CitySeed> Cities { get; } = [];
-    public static IReadOnlyList<AreaSeed> Areas { get; } = [];
+    public static IReadOnlyList<GovernorateSeed> Governorates => EgyptLocationSeedCatalog.Governorates;
+    public static IReadOnlyList<CitySeed> Cities => EgyptLocationSeedCatalog.Cities;
+    public static IReadOnlyList<AreaSeed> Areas => EgyptLocationSeedCatalog.Areas;
     public static IReadOnlyList<LegalSpecializationSeed> LegalSpecializations { get; } = [];
 }
  
@@ -11141,37 +12078,39 @@ using LawyerPlatform.Application.Features.Auth.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.Infrastructure.Seeding;
 
-internal sealed class SuperAdminSeeder(
+internal sealed partial class SuperAdminSeeder(
     IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IOptions<InitialSuperAdminOptions> options,
     IAccountIdentifierNormalizer normalizer,
     IPasswordService passwordService,
-    IDateTimeProvider clock)
+    IDateTimeProvider clock,
+    ILogger<SuperAdminSeeder>? logger = null)
     : ISeeder
 {
+    private readonly ILogger<SuperAdminSeeder> _logger =
+        logger ?? NullLogger<SuperAdminSeeder>.Instance;
+
     public int ExecutionOrder => SeedingOrder.SuperAdmin;
 
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
         var configured = options.Value;
+        if (!configured.Enabled)
+        {
+            SeedingDisabled(_logger);
+            return;
+        }
+
         var existingSuperAdmin = await accountReader.GetByPropertyAsync(
             account => account.Role == AccountRole.SuperAdmin,
             cancellationToken);
-
-        if (!configured.Enabled)
-        {
-            if (existingSuperAdmin is null)
-            {
-                throw new InvalidOperationException("Initial SuperAdmin seeding is disabled, but no SuperAdmin account exists.");
-            }
-
-            return;
-        }
 
         var normalizedUserName = normalizer.NormalizeUserName(configured.UserName);
         var normalizedEmail = normalizer.NormalizeEmail(configured.Email);
@@ -11194,6 +12133,7 @@ internal sealed class SuperAdminSeeder(
                 byId.NormalizedEmail == normalizedEmail &&
                 byId.PhoneNumber == phoneNumber)
             {
+                CreatedOrAlreadyExists(_logger);
                 return;
             }
 
@@ -11238,10 +12178,23 @@ internal sealed class SuperAdminSeeder(
 
         await unitOfWork.WriteRepository<UserAccount>().AddAsync(accountResult.Value, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        CreatedOrAlreadyExists(_logger);
     }
 
     private static bool IsDifferentAccount(UserAccount? account, Guid configuredId)
         => account is not null && account.Id != configuredId;
+
+    [LoggerMessage(
+        EventId = 4110,
+        Level = LogLevel.Information,
+        Message = "Initial SuperAdmin seeding is disabled by configuration.")]
+    private static partial void SeedingDisabled(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4111,
+        Level = LogLevel.Information,
+        Message = "SuperAdmin created or already exists.")]
+    private static partial void CreatedOrAlreadyExists(ILogger logger);
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\AuthenticationEndpointsTests.cs ==================== 
@@ -11426,6 +12379,8 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
 
     private async Task VerifySuperAdminSeederIsIdempotentAsync(CancellationToken cancellationToken)
     {
+        await factory.SeedDatabaseAsync(cancellationToken);
+
         SuperAdminSnapshot before;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -11793,6 +12748,7 @@ public sealed class CorsEndpointsTests(CustomWebApplicationFactory factory)
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\CustomWebApplicationFactory.cs ==================== 
 using BuildingBlock.Infrastructure.Bootstrap;
+using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11807,6 +12763,14 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
+    public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        await scope.ServiceProvider
+            .GetRequiredService<IEnsureSeeding>()
+            .SeedDatabaseAsync(cancellationToken);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -11887,6 +12851,7 @@ using System.Text;
 using System.Text.Json;
 using LawyerPlatform.Domain.ReferenceData;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11896,6 +12861,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
     : IClassFixture<CustomWebApplicationFactory>
 {
     private static readonly int[] CivilLawSpecialization = [1];
+    private static readonly AreaSeed OfficeArea = EgyptLocationSeedCatalog.Areas[0];
+    private static readonly CitySeed OfficeCity = EgyptLocationSeedCatalog.Cities.Single(
+        seed => seed.Id == OfficeArea.CityId);
 
     [Fact]
     public async Task LawyerApprovalLifecycle_EnforcesCompletionPrivacyAndPublicVisibility()
@@ -11905,6 +12873,7 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             BaseAddress = new Uri("https://localhost")
         });
         var cancellationToken = TestContext.Current.CancellationToken;
+        await factory.SeedDatabaseAsync(cancellationToken);
         await SeedReferenceDataAsync(cancellationToken);
 
         var registration = await client.PostAsJsonAsync("/api/v1/auth/lawyers/register", new
@@ -11947,9 +12916,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
 
         var office = await client.PutAsJsonAsync("/api/v1/lawyer/office", new
         {
-            governorateId = 1,
-            cityId = 10,
-            areaId = 100,
+            governorateId = OfficeCity.GovernorateId,
+            cityId = OfficeCity.Id,
+            areaId = OfficeArea.Id,
             detailedAddress = "Court Street, Building 5",
             publicPhoneNumber = "01012345678",
             rowVersion = (string?)null
@@ -12150,14 +13119,11 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
-        if (await dbContext.Governorates.FindAsync([1], cancellationToken) is not null)
+        if (await dbContext.LegalSpecializations.FindAsync([1], cancellationToken) is not null)
         {
             return;
         }
 
-        dbContext.Governorates.Add(Governorate.Create(1, "القاهرة", "Cairo", 1).Value);
-        dbContext.Cities.Add(City.Create(10, 1, "مدينة نصر", "Nasr City", 1).Value);
-        dbContext.Areas.Add(Area.Create(100, 10, "المنطقة الأولى", "First District", 1).Value);
         dbContext.LegalSpecializations.Add(LegalSpecialization.Create(1, "قانون مدني", "Civil Law", 1).Value);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -12406,6 +13372,7 @@ public sealed class SqlServerIdentityModelTests
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.MsSql;
@@ -12516,6 +13483,46 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
             secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task MigratedSqlServerReceivesTheCompleteIdempotentEgyptHierarchy()
+    {
+        await using var context = fixture.CreateContext();
+        await using (var coordinator = new EgyptLocationSeedCoordinator(context))
+        {
+            await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedAreasAsync(TestContext.Current.CancellationToken);
+        }
+
+        context.ChangeTracker.Clear();
+        await using (var coordinator = new EgyptLocationSeedCoordinator(context))
+        {
+            await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedAreasAsync(TestContext.Current.CancellationToken);
+        }
+
+        context.ChangeTracker.Clear();
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedGovernorateCount,
+            await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedCityCount,
+            await context.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedAreaCount,
+            await context.Areas.CountAsync(TestContext.Current.CancellationToken));
+        Assert.False(
+            await context.Cities.AnyAsync(
+                city => !context.Governorates.Any(governorate => governorate.Id == city.GovernorateId),
+                TestContext.Current.CancellationToken));
+        Assert.False(
+            await context.Areas.AnyAsync(
+                area => !context.Cities.Any(city => city.Id == area.CityId),
+                TestContext.Current.CancellationToken));
+    }
+
     private static UserAccount CreateClientAccount(
         string userName,
         string normalizedUserName,
@@ -12600,6 +13607,218 @@ public sealed class LawyerPlatformSqlServerFixture : IAsyncLifetime
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\Api\PublicReferenceDataEndpointsTests.cs ==================== 
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace LawyerPlatform.IntegrationTests.Api;
+
+public sealed class PublicReferenceDataEndpointsTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
+{
+    public async ValueTask InitializeAsync()
+        => await factory.SeedDatabaseAsync(TestContext.Current.CancellationToken);
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    [Fact]
+    public async Task GovernoratesReturnsAllApprovedActiveRecordsInStableOrder()
+    {
+        using var client = CreateClient();
+
+        var records = await client.GetFromJsonAsync<List<LocationResponse>>(
+            "/api/v1/public/governorates",
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(records);
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedGovernorateCount, records.Count);
+        Assert.Equal(
+            EgyptLocationSeedCatalog.Governorates
+                .OrderBy(seed => seed.DisplayOrder)
+                .ThenBy(seed => seed.Id)
+                .Select(seed => seed.Id),
+            records.Select(record => record.Id));
+    }
+
+    [Fact]
+    public async Task CitiesReturnsOnlyActiveChildrenOfTheRequestedGovernorateInStableOrder()
+    {
+        var group = EgyptLocationSeedCatalog.Cities
+            .GroupBy(seed => seed.GovernorateId)
+            .First(items => items.Count() > 1);
+        var inactive = group.Last();
+        await SetCityActiveAsync(inactive.Id, isActive: false);
+
+        try
+        {
+            using var client = CreateClient();
+            var records = await client.GetFromJsonAsync<List<LocationResponse>>(
+                $"/api/v1/public/governorates/{group.Key}/cities",
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(records);
+            Assert.Equal(
+                group.Where(seed => seed.Id != inactive.Id)
+                    .OrderBy(seed => seed.DisplayOrder)
+                    .ThenBy(seed => seed.Id)
+                    .Select(seed => seed.Id),
+                records.Select(record => record.Id));
+            Assert.DoesNotContain(records, record => record.Id == inactive.Id);
+        }
+        finally
+        {
+            await SetCityActiveAsync(inactive.Id, isActive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AreasReturnsOnlyActiveChildrenOfTheRequestedCityInStableOrder()
+    {
+        var group = EgyptLocationSeedCatalog.Areas
+            .GroupBy(seed => seed.CityId)
+            .First(items => items.Count() > 1);
+        var inactive = group.Last();
+        await SetAreaActiveAsync(inactive.Id, isActive: false);
+
+        try
+        {
+            using var client = CreateClient();
+            var records = await client.GetFromJsonAsync<List<LocationResponse>>(
+                $"/api/v1/public/cities/{group.Key}/areas",
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(records);
+            Assert.Equal(
+                group.Where(seed => seed.Id != inactive.Id)
+                    .OrderBy(seed => seed.DisplayOrder)
+                    .ThenBy(seed => seed.Id)
+                    .Select(seed => seed.Id),
+                records.Select(record => record.Id));
+            Assert.DoesNotContain(records, record => record.Id == inactive.Id);
+        }
+        finally
+        {
+            await SetAreaActiveAsync(inactive.Id, isActive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InactiveGovernorateHierarchyIsRejectedWithStableCodes()
+    {
+        var governorate = EgyptLocationSeedCatalog.Governorates[0];
+        var city = EgyptLocationSeedCatalog.Cities.First(
+            seed => seed.GovernorateId == governorate.Id);
+        await SetGovernorateActiveAsync(governorate.Id, isActive: false);
+
+        try
+        {
+            using var client = CreateClient();
+            var citiesResponse = await client.GetAsync(
+                $"/api/v1/public/governorates/{governorate.Id}/cities",
+                TestContext.Current.CancellationToken);
+            var areasResponse = await client.GetAsync(
+                $"/api/v1/public/cities/{city.Id}/areas",
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.NotFound, citiesResponse.StatusCode);
+            Assert.Equal("Location.GovernorateNotFound", await ReadPrimaryCodeAsync(citiesResponse));
+            Assert.Equal((HttpStatusCode)422, areasResponse.StatusCode);
+            Assert.Equal("Location.InvalidHierarchy", await ReadPrimaryCodeAsync(areasResponse));
+        }
+        finally
+        {
+            await SetGovernorateActiveAsync(governorate.Id, isActive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InactiveCityHierarchyIsRejectedWithStableCode()
+    {
+        var city = EgyptLocationSeedCatalog.Cities[0];
+        await SetCityActiveAsync(city.Id, isActive: false);
+
+        try
+        {
+            using var client = CreateClient();
+            var response = await client.GetAsync(
+                $"/api/v1/public/cities/{city.Id}/areas",
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal((HttpStatusCode)422, response.StatusCode);
+            Assert.Equal("Location.InvalidHierarchy", await ReadPrimaryCodeAsync(response));
+        }
+        finally
+        {
+            await SetCityActiveAsync(city.Id, isActive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidParentIdsReturnStableProblemDetailsCodes()
+    {
+        using var client = CreateClient();
+        var citiesResponse = await client.GetAsync(
+            "/api/v1/public/governorates/2147483647/cities",
+            TestContext.Current.CancellationToken);
+        var areasResponse = await client.GetAsync(
+            "/api/v1/public/cities/2147483647/areas",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, citiesResponse.StatusCode);
+        Assert.Equal("Location.GovernorateNotFound", await ReadPrimaryCodeAsync(citiesResponse));
+        Assert.Equal(HttpStatusCode.NotFound, areasResponse.StatusCode);
+        Assert.Equal("Location.CityNotFound", await ReadPrimaryCodeAsync(areasResponse));
+    }
+
+    private HttpClient CreateClient()
+        => factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+    private async Task SetGovernorateActiveAsync(int id, bool isActive)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Governorates SET IsActive = {isActive} WHERE Id = {id}",
+            TestContext.Current.CancellationToken);
+    }
+
+    private async Task SetCityActiveAsync(int id, bool isActive)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Cities SET IsActive = {isActive} WHERE Id = {id}",
+            TestContext.Current.CancellationToken);
+    }
+
+    private async Task SetAreaActiveAsync(int id, bool isActive)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Areas SET IsActive = {isActive} WHERE Id = {id}",
+            TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<string> ReadPrimaryCodeAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        return body.GetProperty("errors")[0].GetProperty("code").GetString()!;
+    }
+
+    private sealed record LocationResponse(int Id, string NameAr, string NameEn);
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\obj\Debug\net10.0\.NETCoreApp,Version=v10.0.AssemblyAttributes.cs ==================== 
 // <autogenerated />
 using System;
@@ -12623,7 +13842,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.IntegrationTests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+94289725d87a1a49a83e546d0209ab1118855f41")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.IntegrationTests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.IntegrationTests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -12701,7 +13920,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.IntegrationTests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3827e9e60bfc2580425e9dab79cf7b10db485e4")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.IntegrationTests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.IntegrationTests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -12756,6 +13975,315 @@ namespace LawyerPlatform.IntegrationTests.AutoGenerated
 		}
 	}
 } 
+// ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\Seeding\EgyptLocationSeedingTests.cs ==================== 
+using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+namespace LawyerPlatform.IntegrationTests.Seeding;
+
+public sealed class EgyptLocationSeedingTests
+{
+    [Fact]
+    public async Task EmptyDatabaseReceivesEveryApprovedRecord()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+
+        await SeedAllAsync(context, TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedGovernorateCount, await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedCityCount, await context.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedAreaCount, await context.Areas.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Governorates.CountAsync(item => !item.IsActive, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Cities.CountAsync(item => !item.IsActive, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Areas.CountAsync(item => !item.IsActive, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SecondExecutionCreatesNoDuplicateRows()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+
+        await SeedAllAsync(context, TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        await SeedAllAsync(context, TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedGovernorateCount, await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedCityCount, await context.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(EgyptLocationSeedCatalog.ExpectedAreaCount, await context.Areas.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ExistingExactRowIsSkipped()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var seed = EgyptLocationSeedCatalog.Governorates[0];
+        context.Governorates.Add(CreateGovernorate(seed));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        await SeedAllAsync(context, TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        Assert.Equal(1, await context.Governorates.CountAsync(item => item.Id == seed.Id, TestContext.Current.CancellationToken));
+        var stored = await context.Governorates.SingleAsync(item => item.Id == seed.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(seed.NameAr, stored.NameAr);
+        Assert.Equal(seed.NameEn, stored.NameEn);
+    }
+
+    [Fact]
+    public async Task ExistingConflictingGovernorateFails()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var seed = EgyptLocationSeedCatalog.Governorates[0];
+        context.Governorates.Add(
+            Governorate.Create(seed.Id, "محافظة متعارضة", "Conflicting Governorate", 1).Value);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+        await Assert.ThrowsAsync<EgyptLocationSeedConflictException>(
+            () => coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken));
+
+        context.ChangeTracker.Clear();
+        Assert.Equal(1, await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ExistingConflictingCityFailsAndRollsBackGovernorateAdditions()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var governorateSeed = EgyptLocationSeedCatalog.Governorates[0];
+        var citySeed = EgyptLocationSeedCatalog.Cities.First(
+            seed => seed.GovernorateId == governorateSeed.Id);
+        context.Governorates.Add(CreateGovernorate(governorateSeed));
+        context.Cities.Add(
+            City.Create(
+                citySeed.Id,
+                citySeed.GovernorateId,
+                "مدينة متعارضة",
+                "Conflicting City",
+                citySeed.DisplayOrder).Value);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+        await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<EgyptLocationSeedConflictException>(
+            () => coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken));
+
+        await using var verification = database.CreateContext();
+        Assert.Equal(1, await verification.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await verification.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await verification.Areas.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ExistingConflictingAreaFailsAndRollsBackEarlierLevelAdditions()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var areaSeed = EgyptLocationSeedCatalog.Areas[0];
+        var citySeed = EgyptLocationSeedCatalog.Cities.Single(seed => seed.Id == areaSeed.CityId);
+        var governorateSeed = EgyptLocationSeedCatalog.Governorates.Single(
+            seed => seed.Id == citySeed.GovernorateId);
+        context.Governorates.Add(CreateGovernorate(governorateSeed));
+        context.Cities.Add(CreateCity(citySeed));
+        context.Areas.Add(
+            Area.Create(
+                areaSeed.Id,
+                areaSeed.CityId,
+                "منطقة متعارضة",
+                "Conflicting Area",
+                areaSeed.DisplayOrder).Value);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+        await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+        await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<EgyptLocationSeedConflictException>(
+            () => coordinator.SeedAreasAsync(TestContext.Current.CancellationToken));
+
+        await using var verification = database.CreateContext();
+        Assert.Equal(1, await verification.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await verification.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await verification.Areas.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SameNormalizedNameUnderParentWithDifferentIdFails()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var seed = EgyptLocationSeedCatalog.Governorates[0];
+        context.Governorates.Add(
+            Governorate.Create(999, seed.NameAr, seed.NameEn.ToUpperInvariant(), 1).Value);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+        await Assert.ThrowsAsync<EgyptLocationSeedConflictException>(
+            () => coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task MissingParentGovernorateFailsBeforeAnyWrite()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var cities = EgyptLocationSeedCatalog.Cities.ToArray();
+        cities[0] = cities[0] with { GovernorateId = int.MaxValue };
+        var catalog = new EgyptLocationSeedData(
+            EgyptLocationSeedCatalog.Governorates,
+            cities,
+            EgyptLocationSeedCatalog.Areas);
+        await using var coordinator = new EgyptLocationSeedCoordinator(context, catalog);
+
+        await Assert.ThrowsAsync<EgyptLocationSeedDataException>(
+            () => coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Areas.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task MissingParentCityFailsBeforeAnyWrite()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var areas = EgyptLocationSeedCatalog.Areas.ToArray();
+        areas[0] = areas[0] with { CityId = int.MaxValue };
+        var catalog = new EgyptLocationSeedData(
+            EgyptLocationSeedCatalog.Governorates,
+            EgyptLocationSeedCatalog.Cities,
+            areas);
+        await using var coordinator = new EgyptLocationSeedCoordinator(context, catalog);
+
+        await Assert.ThrowsAsync<EgyptLocationSeedDataException>(
+            () => coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await context.Areas.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ManualInactiveAndDisplayOrderChangesArePreserved()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var seed = EgyptLocationSeedCatalog.Governorates[0];
+        await SeedAllAsync(context, TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Governorates SET IsActive = 0, DisplayOrder = 999 WHERE Id = {seed.Id}",
+            TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        await SeedAllAsync(context, TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        var stored = await context.Governorates.SingleAsync(item => item.Id == seed.Id, TestContext.Current.CancellationToken);
+        Assert.False(stored.IsActive);
+        Assert.Equal(999, stored.DisplayOrder);
+    }
+
+    [Fact]
+    public async Task CancellationTokenIsObservedBeforeDatabaseWork()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => coordinator.SeedGovernoratesAsync(cancellation.Token));
+
+        Assert.Equal(0, await context.Governorates.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AreaInsertFailureRollsBackNewGovernoratesAndCities()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        await context.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER FailEgyptAreaInsert BEFORE INSERT ON Areas " +
+            "BEGIN SELECT RAISE(FAIL, 'forced area insert failure'); END;",
+            TestContext.Current.CancellationToken);
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+
+        await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+        await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => coordinator.SeedAreasAsync(TestContext.Current.CancellationToken));
+
+        await using var verification = database.CreateContext();
+        Assert.Equal(0, await verification.Governorates.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await verification.Cities.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, await verification.Areas.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    private static async Task SeedAllAsync(
+        LawyerPlatformDbContext context,
+        CancellationToken cancellationToken)
+    {
+        await using var coordinator = new EgyptLocationSeedCoordinator(context);
+        await coordinator.SeedGovernoratesAsync(cancellationToken);
+        await coordinator.SeedCitiesAsync(cancellationToken);
+        await coordinator.SeedAreasAsync(cancellationToken);
+    }
+
+    private static Governorate CreateGovernorate(GovernorateSeed seed)
+        => Governorate.Create(seed.Id, seed.NameAr, seed.NameEn, seed.DisplayOrder).Value;
+
+    private static City CreateCity(CitySeed seed)
+        => City.Create(
+            seed.Id,
+            seed.GovernorateId,
+            seed.NameAr,
+            seed.NameEn,
+            seed.DisplayOrder).Value;
+
+    private sealed class SqliteTestDatabase : IAsyncDisposable
+    {
+        private readonly SqliteConnection connection = new("Data Source=:memory:");
+        private DbContextOptions<LawyerPlatformDbContext> options = null!;
+
+        public static async Task<SqliteTestDatabase> CreateAsync()
+        {
+            var database = new SqliteTestDatabase();
+            await database.connection.OpenAsync(TestContext.Current.CancellationToken);
+            database.options = new DbContextOptionsBuilder<LawyerPlatformDbContext>()
+                .UseSqlite(database.connection)
+                .Options;
+            await using var context = database.CreateContext();
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            return database;
+        }
+
+        public LawyerPlatformDbContext CreateContext() => new(options);
+
+        public async ValueTask DisposeAsync()
+        {
+            await connection.DisposeAsync();
+            GC.SuppressFinalize(this);
+        }
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\ArchitectureTests.cs ==================== 
 using LawyerPlatform.Domain.Accounts;
 
@@ -13475,6 +15003,7 @@ using System.Reflection;
 //------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
+//     Runtime Version:4.0.30319.42000
 //
 //     Changes to this file may cause incorrect behavior and will be lost if
 //     the code is regenerated.
@@ -13487,7 +15016,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.UnitTests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+94289725d87a1a49a83e546d0209ab1118855f41")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.UnitTests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.UnitTests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -13565,7 +15094,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LawyerPlatform.UnitTests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7868ba557d72ef462b0a5dafef4b2038cda0d840")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d3827e9e60bfc2580425e9dab79cf7b10db485e4")]
 [assembly: System.Reflection.AssemblyProductAttribute("LawyerPlatform.UnitTests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LawyerPlatform.UnitTests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
@@ -13619,4 +15148,1072 @@ namespace LawyerPlatform.UnitTests.AutoGenerated
 				return global::Xunit.Runner.InProc.SystemConsole.ConsoleRunner.Run(args).GetAwaiter().GetResult();
 		}
 	}
+} 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Options\InitialSuperAdminConfigurationTests.cs ==================== 
+using LawyerPlatform.Infrastructure;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.UnitTests.Configuration;
+
+public sealed class InitialSuperAdminConfigurationTests
+{
+    [Fact]
+    public void EnabledBindsTrueFromInitialSuperAdminSection()
+    {
+        var options = BindOptions("true");
+
+        Assert.True(options.Enabled);
+    }
+
+    [Fact]
+    public void EnabledBindsFalseWhenExplicitlyConfiguredFalse()
+    {
+        var options = BindOptions("false");
+
+        Assert.False(options.Enabled);
+    }
+
+    [Fact]
+    public void InfrastructureRegistersOneBindingWithoutResettingEnabled()
+    {
+        var configuration = CreateConfiguration("true");
+        var services = new ServiceCollection();
+
+        services.AddLawyerPlatformInfrastructure(configuration);
+
+        Assert.Single(
+            services,
+            descriptor =>
+                descriptor.ServiceType == typeof(IConfigureOptions<InitialSuperAdminOptions>));
+
+        using var provider = services.BuildServiceProvider();
+        var configured = provider
+            .GetRequiredService<IOptions<InitialSuperAdminOptions>>()
+            .Value;
+
+        Assert.True(configured.Enabled);
+    }
+
+    private static InitialSuperAdminOptions BindOptions(string enabled)
+    {
+        var configuration = CreateConfiguration(enabled);
+        var services = new ServiceCollection();
+        services.AddOptions<InitialSuperAdminOptions>()
+            .Bind(configuration.GetSection(InitialSuperAdminOptions.SectionName));
+
+        using var provider = services.BuildServiceProvider();
+        return provider
+            .GetRequiredService<IOptions<InitialSuperAdminOptions>>()
+            .Value;
+    }
+
+    private static IConfiguration CreateConfiguration(string enabled)
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Database"] =
+                    "Server=localhost;Database=LawyerPlatformTests;Integrated Security=True;TrustServerCertificate=True",
+                ["InitialSuperAdmin:Enabled"] = enabled,
+                ["InitialSuperAdmin:Id"] = "11111111-1111-1111-1111-111111111111",
+                ["InitialSuperAdmin:UserName"] = "superadmin",
+                ["InitialSuperAdmin:Email"] = "admin@lawyerplatform.test",
+                ["InitialSuperAdmin:PhoneNumber"] = "01000000000",
+                ["InitialSuperAdmin:Password"] = "InitialPassword1!"
+            })
+            .Build();
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Persistence\DatabaseInitializationTests.cs ==================== 
+using LawyerPlatform.Application.Abstractions.Seeding;
+using LawyerPlatform.Infrastructure.Options;
+using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.UnitTests.Persistence;
+
+public sealed class DatabaseInitializationTests
+{
+    private const string SafeConnectionString =
+        "Server=localhost;Database=LawyerPlatformTests;Integrated Security=True;TrustServerCertificate=True";
+
+    [Fact]
+    public async Task SeedingExecutesAfterSuccessfulMigration()
+    {
+        var operations = new List<string>();
+        var migration = new RecordingMigrationService(operations);
+        var seeding = new RecordingEnsureSeeding(operations);
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["compiled", "pending", "migrate", "seed"],
+            operations);
+    }
+
+    [Fact]
+    public async Task SeedingDoesNotExecuteWhenMigrationFailsAndExceptionIsPropagated()
+    {
+        var operations = new List<string>();
+        var expected = new InvalidOperationException("migration failed");
+        var migration = new RecordingMigrationService(operations, expected);
+        var seeding = new RecordingEnsureSeeding(operations);
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(["compiled", "pending", "migrate"], operations);
+        Assert.False(seeding.WasCalled);
+    }
+
+    [Fact]
+    public async Task SeedingExceptionIsPropagated()
+    {
+        var operations = new List<string>();
+        var expected = new InvalidOperationException("seeding failed");
+        var migration = new RecordingMigrationService(operations);
+        var seeding = new RecordingEnsureSeeding(operations, expected);
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(["compiled", "pending", "migrate", "seed"], operations);
+    }
+
+    [Fact]
+    public async Task InitializationPropagatesCancellationToken()
+    {
+        var operations = new List<string>();
+        var migration = new RecordingMigrationService(operations);
+        var seeding = new RecordingEnsureSeeding(operations);
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+        using var cancellation = new CancellationTokenSource();
+
+        await service.StartAsync(cancellation.Token);
+
+        Assert.Equal(cancellation.Token, migration.PendingCancellationToken);
+        Assert.Equal(cancellation.Token, migration.MigrationCancellationToken);
+        Assert.Equal(cancellation.Token, seeding.CancellationToken);
+    }
+
+    [Fact]
+    public async Task InitializationIsSkippedWhenAutomaticMigrationsAreDisabled()
+    {
+        var operations = new List<string>();
+        var migration = new RecordingMigrationService(operations);
+        var seeding = new RecordingEnsureSeeding(operations);
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var logger = new ListLogger<DatabaseInitializationHostedService>();
+        var service = CreateHostedService(
+            dbContext,
+            migration,
+            seeding,
+            applyMigrations: false,
+            logger);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(operations);
+        Assert.False(seeding.WasCalled);
+        Assert.Contains(
+            logger.Messages,
+            message => message == "Database migration and seeding skipped because ApplyMigrationsOnStartup is disabled.");
+    }
+
+    [Fact]
+    public async Task StartupLogsDoNotContainSensitiveConnectionStringValues()
+    {
+        const string connectionString =
+            "Server=sql.example.local;Database=SafeDatabase;User ID=sensitive-user;Password=top-secret;TrustServerCertificate=True";
+        var operations = new List<string>();
+        var migration = new RecordingMigrationService(operations);
+        var seeding = new RecordingEnsureSeeding(operations);
+        await using var dbContext = CreateDbContext(connectionString);
+        var logger = new ListLogger<DatabaseInitializationHostedService>();
+        var service = CreateHostedService(
+            dbContext,
+            migration,
+            seeding,
+            applyMigrations: false,
+            logger);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains(logger.Messages, message => message == "Database server: sql.example.local.");
+        Assert.Contains(logger.Messages, message => message == "Database name: SafeDatabase.");
+        Assert.Contains(logger.Messages, message => message == "Integrated security enabled: False.");
+        Assert.DoesNotContain(logger.Messages, message => message.Contains("sensitive-user", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message => message.Contains("top-secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LaterSeedersDoNotExecuteAfterSeederFailure()
+    {
+        var operations = new List<string>();
+        var expected = new InvalidOperationException("first seeder failed");
+        ISeeder[] seeders =
+        [
+            new FailingSeeder(operations, expected),
+            new LaterSeeder(operations)
+        ];
+        var ensureSeeding = new EnsureSeeding(seeders, new ListLogger<EnsureSeeding>());
+
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => ensureSeeding.SeedDatabaseAsync(TestContext.Current.CancellationToken));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(["failing"], operations);
+    }
+
+    [Fact]
+    public async Task SeedersExecuteAccordingToExecutionOrder()
+    {
+        var operations = new List<string>();
+        ISeeder[] seeders =
+        [
+            new LaterSeeder(operations),
+            new EarlySeeder(operations)
+        ];
+        var ensureSeeding = new EnsureSeeding(seeders, new ListLogger<EnsureSeeding>());
+
+        await ensureSeeding.SeedDatabaseAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["early", "later"], operations);
+    }
+
+    [Fact]
+    public async Task EqualExecutionOrdersUseSeederTypeNameAsSecondaryOrder()
+    {
+        var operations = new List<string>();
+        ISeeder[] seeders =
+        [
+            new ZetaSeeder(operations),
+            new AlphaSeeder(operations)
+        ];
+        var ensureSeeding = new EnsureSeeding(seeders, new ListLogger<EnsureSeeding>());
+
+        await ensureSeeding.SeedDatabaseAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["alpha", "zeta"], operations);
+    }
+
+    [Fact]
+    public async Task EnsureSeedingPropagatesCancellationTokenToEverySeeder()
+    {
+        var tokens = new List<CancellationToken>();
+        ISeeder[] seeders =
+        [
+            new TokenSeeder(tokens, executionOrder: 20),
+            new TokenSeeder(tokens, executionOrder: 10)
+        ];
+        var ensureSeeding = new EnsureSeeding(seeders, new ListLogger<EnsureSeeding>());
+        using var cancellation = new CancellationTokenSource();
+
+        await ensureSeeding.SeedDatabaseAsync(cancellation.Token);
+
+        Assert.Equal(2, tokens.Count);
+        Assert.All(tokens, token => Assert.Equal(cancellation.Token, token));
+    }
+
+    [Fact]
+    public async Task DisabledSuperAdminSeederSkipsWithoutAccessingDatabase()
+    {
+        var seeder = new SuperAdminSeeder(
+            accountReader: null!,
+            unitOfWork: null!,
+            Options.Create(new InitialSuperAdminOptions
+            {
+                Enabled = false
+            }),
+            normalizer: null!,
+            passwordService: null!,
+            clock: null!);
+
+        await seeder.SeedAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static LawyerPlatformDbContext CreateDbContext(string connectionString)
+    {
+        var options = new DbContextOptionsBuilder<LawyerPlatformDbContext>()
+            .UseSqlServer(connectionString)
+            .Options;
+        return new LawyerPlatformDbContext(options);
+    }
+
+    private static DatabaseInitializationHostedService CreateHostedService(
+        LawyerPlatformDbContext dbContext,
+        IDatabaseMigrationService migration,
+        IEnsureSeeding seeding,
+        bool applyMigrations,
+        ILogger<DatabaseInitializationHostedService>? logger = null)
+    {
+        var provider = new DictionaryServiceProvider(
+            new Dictionary<Type, object>
+            {
+                [typeof(LawyerPlatformDbContext)] = dbContext,
+                [typeof(IDatabaseMigrationService)] = migration,
+                [typeof(IEnsureSeeding)] = seeding
+            });
+
+        return new DatabaseInitializationHostedService(
+            new TestScopeFactory(provider),
+            Options.Create(new DatabaseInitializationOptions
+            {
+                ApplyMigrationsOnStartup = applyMigrations
+            }),
+            new TestHostEnvironment(),
+            logger ?? new ListLogger<DatabaseInitializationHostedService>());
+    }
+
+    private sealed class RecordingMigrationService(
+        List<string> operations,
+        Exception? migrationException = null)
+        : IDatabaseMigrationService
+    {
+        public CancellationToken PendingCancellationToken { get; private set; }
+        public CancellationToken MigrationCancellationToken { get; private set; }
+
+        public IReadOnlyList<string> GetCompiledMigrations(LawyerPlatformDbContext dbContext)
+        {
+            operations.Add("compiled");
+            return ["20260101000000_InitialCreate"];
+        }
+
+        public Task<IReadOnlyList<string>> GetPendingMigrationsAsync(
+            LawyerPlatformDbContext dbContext,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("pending");
+            PendingCancellationToken = cancellationToken;
+            return Task.FromResult<IReadOnlyList<string>>(["20260101000000_InitialCreate"]);
+        }
+
+        public Task MigrateAsync(
+            LawyerPlatformDbContext dbContext,
+            CancellationToken cancellationToken)
+        {
+            operations.Add("migrate");
+            MigrationCancellationToken = cancellationToken;
+            return migrationException is null
+                ? Task.CompletedTask
+                : Task.FromException(migrationException);
+        }
+    }
+
+    private sealed class RecordingEnsureSeeding(
+        List<string> operations,
+        Exception? exception = null)
+        : IEnsureSeeding
+    {
+        public bool WasCalled { get; private set; }
+        public CancellationToken CancellationToken { get; private set; }
+
+        public Task SeedDatabaseAsync(CancellationToken cancellationToken)
+        {
+            WasCalled = true;
+            CancellationToken = cancellationToken;
+            operations.Add("seed");
+            return exception is null
+                ? Task.CompletedTask
+                : Task.FromException(exception);
+        }
+    }
+
+    private sealed class FailingSeeder(List<string> operations, Exception exception) : ISeeder
+    {
+        public int ExecutionOrder => 10;
+
+        public Task SeedAsync(CancellationToken cancellationToken)
+        {
+            operations.Add("failing");
+            return Task.FromException(exception);
+        }
+    }
+
+    private sealed class EarlySeeder(List<string> operations) : ISeeder
+    {
+        public int ExecutionOrder => 10;
+
+        public Task SeedAsync(CancellationToken cancellationToken)
+        {
+            operations.Add("early");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class LaterSeeder(List<string> operations) : ISeeder
+    {
+        public int ExecutionOrder => 20;
+
+        public Task SeedAsync(CancellationToken cancellationToken)
+        {
+            operations.Add("later");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class AlphaSeeder(List<string> operations) : ISeeder
+    {
+        public int ExecutionOrder => 10;
+
+        public Task SeedAsync(CancellationToken cancellationToken)
+        {
+            operations.Add("alpha");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ZetaSeeder(List<string> operations) : ISeeder
+    {
+        public int ExecutionOrder => 10;
+
+        public Task SeedAsync(CancellationToken cancellationToken)
+        {
+            operations.Add("zeta");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TokenSeeder(List<CancellationToken> tokens, int executionOrder) : ISeeder
+    {
+        public int ExecutionOrder => executionOrder;
+
+        public Task SeedAsync(CancellationToken cancellationToken)
+        {
+            tokens.Add(cancellationToken);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class DictionaryServiceProvider(IReadOnlyDictionary<Type, object> services) : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+            => services.GetValueOrDefault(serviceType);
+    }
+
+    private sealed class TestScopeFactory(IServiceProvider serviceProvider) : IServiceScopeFactory
+    {
+        public IServiceScope CreateScope()
+            => new TestScope(serviceProvider);
+    }
+
+    private sealed class TestScope(IServiceProvider serviceProvider) : IServiceScope, IAsyncDisposable
+    {
+        public IServiceProvider ServiceProvider => serviceProvider;
+
+        public void Dispose()
+        {
+        }
+
+        public ValueTask DisposeAsync()
+            => ValueTask.CompletedTask;
+    }
+
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "LawyerPlatform.UnitTests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel)
+            => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static NullScope Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Seeding\EgyptLocationSeedCatalogTests.cs ==================== 
+using LawyerPlatform.Infrastructure.Seeding;
+
+namespace LawyerPlatform.UnitTests.Seeding;
+
+public sealed class EgyptLocationSeedCatalogTests
+{
+    [Fact]
+    public void CatalogContainsTheApprovedRecordCounts()
+    {
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedGovernorateCount,
+            EgyptLocationSeedCatalog.Governorates.Count);
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedCityCount,
+            EgyptLocationSeedCatalog.Cities.Count);
+        Assert.Equal(
+            EgyptLocationSeedCatalog.ExpectedAreaCount,
+            EgyptLocationSeedCatalog.Areas.Count);
+    }
+
+    [Fact]
+    public void EveryLevelHasUniquePositiveStableIds()
+    {
+        AssertUniquePositiveIds(EgyptLocationSeedCatalog.Governorates.Select(seed => seed.Id));
+        AssertUniquePositiveIds(EgyptLocationSeedCatalog.Cities.Select(seed => seed.Id));
+        AssertUniquePositiveIds(EgyptLocationSeedCatalog.Areas.Select(seed => seed.Id));
+
+        Assert.All(
+            EgyptLocationSeedCatalog.Governorates,
+            seed => Assert.Equal(seed.DisplayOrder, seed.Id));
+        Assert.All(
+            EgyptLocationSeedCatalog.Cities,
+            seed => Assert.Equal(seed.GovernorateId * 1000 + seed.DisplayOrder, seed.Id));
+        Assert.All(
+            EgyptLocationSeedCatalog.Areas,
+            seed =>
+            {
+                var expectedId = (long)seed.CityId * 10000 + seed.DisplayOrder;
+                Assert.InRange(expectedId, 1, int.MaxValue);
+                Assert.Equal(expectedId, seed.Id);
+            });
+    }
+
+    [Fact]
+    public void EveryRecordHasTrimmedArabicAndEnglishNames()
+    {
+        AssertNames(EgyptLocationSeedCatalog.Governorates.Select(seed => (seed.NameAr, seed.NameEn)));
+        AssertNames(EgyptLocationSeedCatalog.Cities.Select(seed => (seed.NameAr, seed.NameEn)));
+        AssertNames(EgyptLocationSeedCatalog.Areas.Select(seed => (seed.NameAr, seed.NameEn)));
+    }
+
+    [Fact]
+    public void HierarchyReferencesExistingParentsAndEveryParentHasChildren()
+    {
+        var governorateIds = EgyptLocationSeedCatalog.Governorates
+            .Select(seed => seed.Id)
+            .ToHashSet();
+        var cityIds = EgyptLocationSeedCatalog.Cities
+            .Select(seed => seed.Id)
+            .ToHashSet();
+
+        Assert.All(
+            EgyptLocationSeedCatalog.Cities,
+            seed => Assert.Contains(seed.GovernorateId, governorateIds));
+        Assert.All(
+            EgyptLocationSeedCatalog.Areas,
+            seed => Assert.Contains(seed.CityId, cityIds));
+        Assert.Equal(
+            governorateIds.Order(),
+            EgyptLocationSeedCatalog.Cities.Select(seed => seed.GovernorateId).Distinct().Order());
+        Assert.Equal(
+            cityIds.Order(),
+            EgyptLocationSeedCatalog.Areas.Select(seed => seed.CityId).Distinct().Order());
+    }
+
+    [Fact]
+    public void DisplayOrdersAreUniqueAndContiguousWithinEveryParent()
+    {
+        AssertContiguous(EgyptLocationSeedCatalog.Governorates.Select(seed => seed.DisplayOrder));
+        Assert.All(
+            EgyptLocationSeedCatalog.Cities.GroupBy(seed => seed.GovernorateId),
+            group => AssertContiguous(group.Select(seed => seed.DisplayOrder)));
+        Assert.All(
+            EgyptLocationSeedCatalog.Areas.GroupBy(seed => seed.CityId),
+            group => AssertContiguous(group.Select(seed => seed.DisplayOrder)));
+    }
+
+    [Fact]
+    public void NamesAreUniqueAtTheirApprovedScope()
+    {
+        Assert.Equal(
+            EgyptLocationSeedCatalog.Governorates.Count,
+            EgyptLocationSeedCatalog.Governorates
+                .Select(seed => seed.NameAr)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count());
+        Assert.Equal(
+            EgyptLocationSeedCatalog.Governorates.Count,
+            EgyptLocationSeedCatalog.Governorates
+                .Select(seed => seed.NameEn)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count());
+
+        AssertScopedNamesAreUnique(
+            EgyptLocationSeedCatalog.Cities,
+            seed => seed.GovernorateId,
+            seed => seed.NameAr,
+            seed => seed.NameEn);
+        AssertScopedNamesAreUnique(
+            EgyptLocationSeedCatalog.Areas,
+            seed => seed.CityId,
+            seed => seed.NameAr,
+            seed => seed.NameEn);
+    }
+
+    [Fact]
+    public void LoaderReturnsTheSameImmutableCatalogInstances()
+    {
+        var first = EgyptLocationSeedDataLoader.Load();
+        var second = EgyptLocationSeedDataLoader.Load();
+
+        Assert.Same(first, second);
+        Assert.Same(first.Governorates, EgyptLocationSeedCatalog.Governorates);
+        Assert.Same(first.Cities, EgyptLocationSeedCatalog.Cities);
+        Assert.Same(first.Areas, EgyptLocationSeedCatalog.Areas);
+        Assert.False(first.Governorates is List<GovernorateSeed>);
+        Assert.False(first.Cities is List<CitySeed>);
+        Assert.False(first.Areas is List<AreaSeed>);
+    }
+
+    [Fact]
+    public void ValidatorRejectsMissingGovernorateBeforeSeeding()
+    {
+        var invalidCities = EgyptLocationSeedCatalog.Cities.ToArray();
+        invalidCities[0] = invalidCities[0] with { GovernorateId = int.MaxValue };
+        var invalid = new EgyptLocationSeedData(
+            EgyptLocationSeedCatalog.Governorates,
+            invalidCities,
+            EgyptLocationSeedCatalog.Areas);
+
+        var exception = Assert.Throws<EgyptLocationSeedDataException>(
+            () => EgyptLocationSeedValidator.Validate(invalid));
+
+        Assert.Equal("The Egypt city catalog references a missing governorate.", exception.Message);
+    }
+
+    [Fact]
+    public void ValidatorRejectsMissingCityBeforeSeeding()
+    {
+        var invalidAreas = EgyptLocationSeedCatalog.Areas.ToArray();
+        invalidAreas[0] = invalidAreas[0] with { CityId = int.MaxValue };
+        var invalid = new EgyptLocationSeedData(
+            EgyptLocationSeedCatalog.Governorates,
+            EgyptLocationSeedCatalog.Cities,
+            invalidAreas);
+
+        var exception = Assert.Throws<EgyptLocationSeedDataException>(
+            () => EgyptLocationSeedValidator.Validate(invalid));
+
+        Assert.Equal("The Egypt area catalog references a missing city.", exception.Message);
+    }
+
+    private static void AssertUniquePositiveIds(IEnumerable<int> ids)
+    {
+        var values = ids.ToArray();
+        Assert.All(values, id => Assert.True(id > 0));
+        Assert.Equal(values.Length, values.Distinct().Count());
+    }
+
+    private static void AssertNames(IEnumerable<(string NameAr, string NameEn)> names)
+    {
+        Assert.All(
+            names,
+            names =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(names.NameAr));
+                Assert.False(string.IsNullOrWhiteSpace(names.NameEn));
+                Assert.Equal(names.NameAr.Trim(), names.NameAr);
+                Assert.Equal(names.NameEn.Trim(), names.NameEn);
+            });
+    }
+
+    private static void AssertContiguous(IEnumerable<int> displayOrders)
+    {
+        var actual = displayOrders.Order().ToArray();
+        Assert.Equal(Enumerable.Range(1, actual.Length), actual);
+        Assert.Equal(actual.Length, actual.Distinct().Count());
+    }
+
+    private static void AssertScopedNamesAreUnique<T>(
+        IEnumerable<T> records,
+        Func<T, int> parentSelector,
+        Func<T, string> arabicNameSelector,
+        Func<T, string> englishNameSelector)
+    {
+        foreach (var group in records.GroupBy(parentSelector))
+        {
+            Assert.Equal(
+                group.Count(),
+                group.Select(arabicNameSelector).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            Assert.Equal(
+                group.Count(),
+                group.Select(englishNameSelector).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Seeding\SuperAdminSeederTests.cs ==================== 
+using System.Linq.Expressions;
+using BuildingBlock.Application.Abstraction.Encryption;
+using BuildingBlock.Application.Abstraction.Persistence;
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Application.Time;
+using BuildingBlock.Domain.Specification;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Infrastructure.Options;
+using LawyerPlatform.Infrastructure.Seeding;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.UnitTests.Seeding;
+
+public sealed class SuperAdminSeederTests
+{
+    private static readonly Guid SuperAdminId =
+        Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    private static readonly DateTime FixedUtcNow =
+        new(2026, 8, 4, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public async Task DisabledSeederDoesNotQueryOrInsert()
+    {
+        var reader = new InMemoryAccountReader([]);
+        var unitOfWork = new RecordingUnitOfWork();
+        var passwordService = new RecordingPasswordService();
+        var logger = new ListLogger<SuperAdminSeeder>();
+        var seeder = CreateSeeder(
+            enabled: false,
+            reader,
+            unitOfWork,
+            passwordService,
+            logger);
+
+        await seeder.SeedAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, reader.QueryCount);
+        Assert.Empty(unitOfWork.Repository.AddedAccounts);
+        Assert.Equal(0, unitOfWork.SaveChangesCount);
+        Assert.Equal(0, passwordService.HashCallCount);
+        Assert.Contains(
+            "Initial SuperAdmin seeding is disabled by configuration.",
+            logger.Messages);
+    }
+
+    [Fact]
+    public async Task EnabledSeederInsertsAccountWhenNoneExists()
+    {
+        var reader = new InMemoryAccountReader([]);
+        var unitOfWork = new RecordingUnitOfWork();
+        var passwordService = new RecordingPasswordService();
+        var logger = new ListLogger<SuperAdminSeeder>();
+        var seeder = CreateSeeder(
+            enabled: true,
+            reader,
+            unitOfWork,
+            passwordService,
+            logger);
+
+        await seeder.SeedAsync(TestContext.Current.CancellationToken);
+
+        var inserted = Assert.Single(unitOfWork.Repository.AddedAccounts);
+        Assert.Equal(SuperAdminId, inserted.Id);
+        Assert.Equal(AccountRole.SuperAdmin, inserted.Role);
+        Assert.Equal(1, unitOfWork.SaveChangesCount);
+        Assert.Equal(1, passwordService.HashCallCount);
+        Assert.Contains("SuperAdmin created or already exists.", logger.Messages);
+    }
+
+    [Fact]
+    public async Task EnabledSeederDoesNotDuplicateMatchingExistingAccount()
+    {
+        var existing = CreateExistingSuperAdmin();
+        var reader = new InMemoryAccountReader([existing]);
+        var unitOfWork = new RecordingUnitOfWork();
+        var passwordService = new RecordingPasswordService();
+        var logger = new ListLogger<SuperAdminSeeder>();
+        var seeder = CreateSeeder(
+            enabled: true,
+            reader,
+            unitOfWork,
+            passwordService,
+            logger);
+
+        await seeder.SeedAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(unitOfWork.Repository.AddedAccounts);
+        Assert.Equal(0, unitOfWork.SaveChangesCount);
+        Assert.Equal(0, passwordService.HashCallCount);
+        Assert.Contains("SuperAdmin created or already exists.", logger.Messages);
+    }
+
+    private static SuperAdminSeeder CreateSeeder(
+        bool enabled,
+        InMemoryAccountReader reader,
+        RecordingUnitOfWork unitOfWork,
+        RecordingPasswordService passwordService,
+        ILogger<SuperAdminSeeder> logger)
+        => new(
+            reader,
+            unitOfWork,
+            Options.Create(new InitialSuperAdminOptions
+            {
+                Enabled = enabled,
+                Id = SuperAdminId,
+                UserName = "superadmin",
+                Email = "admin@lawyerplatform.test",
+                PhoneNumber = "01000000000",
+                Password = "InitialPassword1!"
+            }),
+            new UpperInvariantAccountIdentifierNormalizer(),
+            passwordService,
+            new FixedClock(),
+            logger);
+
+    private static UserAccount CreateExistingSuperAdmin()
+        => UserAccount.CreateSuperAdmin(
+            SuperAdminId,
+            "superadmin",
+            "SUPERADMIN",
+            "admin@lawyerplatform.test",
+            "ADMIN@LAWYERPLATFORM.TEST",
+            "01000000000",
+            "existing-password-hash",
+            FixedUtcNow).Value;
+
+    private sealed class InMemoryAccountReader(IReadOnlyList<UserAccount> accounts)
+        : IReadRepository<UserAccount, LawyerPlatformReadPersistence>
+    {
+        public int QueryCount { get; private set; }
+
+        public Task<UserAccount?> GetByIdAsync<TKey>(
+            TKey id,
+            CancellationToken cancellationToken = default)
+            where TKey : notnull
+        {
+            QueryCount++;
+            return Task.FromResult(
+                accounts.SingleOrDefault(account => account.Id.Equals(id)));
+        }
+
+        public Task<UserAccount?> GetByPropertyAsync(
+            Expression<Func<UserAccount, bool>> predicate,
+            CancellationToken cancellationToken = default)
+        {
+            QueryCount++;
+            return Task.FromResult(accounts.SingleOrDefault(predicate.Compile()));
+        }
+
+        public Task<bool> AnyAsync(
+            Expression<Func<UserAccount, bool>> predicate,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<long> LongCountAsync(
+            Expression<Func<UserAccount, bool>>? predicate = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAccount>> ListAsync(
+            Specification<UserAccount> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<UserAccount?> FirstOrDefaultAsync(
+            Specification<UserAccount> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<TOut>> ListAsync<TOut>(
+            Specification<UserAccount, TOut> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<TOut?> FirstOrDefaultAsync<TOut>(
+            Specification<UserAccount, TOut> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<(IReadOnlyList<UserAccount> Items, long TotalCount)> ListWithLongCountAsync(
+            Specification<UserAccount> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<(IReadOnlyList<TOut> Items, long TotalCount)> ListWithLongCountAsync<TOut>(
+            Specification<UserAccount, TOut> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingUnitOfWork
+        : IUnitOfWork<LawyerPlatformWritePersistence>
+    {
+        public RecordingUserAccountWriteRepository Repository { get; } = new();
+        public int SaveChangesCount { get; private set; }
+
+        public IWriteRepository<TEntity, LawyerPlatformWritePersistence> WriteRepository<TEntity>()
+            where TEntity : class, BuildingBlock.Domain.Primitive.IAggregateRoot
+        {
+            if (typeof(TEntity) != typeof(UserAccount))
+            {
+                throw new NotSupportedException();
+            }
+
+            return (IWriteRepository<TEntity, LawyerPlatformWritePersistence>)(object)Repository;
+        }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveChangesCount++;
+            return Task.FromResult(1);
+        }
+
+        public Task<IApplicationTransaction> BeginTransactionAsync(
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingUserAccountWriteRepository
+        : IWriteRepository<UserAccount, LawyerPlatformWritePersistence>
+    {
+        public List<UserAccount> AddedAccounts { get; } = [];
+
+        public Task<UserAccount?> GetByIdAsync<TKey>(
+            TKey id,
+            CancellationToken cancellationToken = default)
+            where TKey : notnull
+            => throw new NotSupportedException();
+
+        public Task<UserAccount?> GetByPropertyAsync(
+            Expression<Func<UserAccount, bool>> predicate,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<UserAccount?> FirstOrDefaultAsync(
+            Specification<UserAccount> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task AddAsync(
+            UserAccount entity,
+            CancellationToken cancellationToken = default)
+        {
+            AddedAccounts.Add(entity);
+            return Task.CompletedTask;
+        }
+
+        public Task AddRangeAsync(
+            IEnumerable<UserAccount> entities,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public void Update(UserAccount entity)
+            => throw new NotSupportedException();
+
+        public void UpdateRange(IEnumerable<UserAccount> entities)
+            => throw new NotSupportedException();
+
+        public void Delete(UserAccount entity)
+            => throw new NotSupportedException();
+
+        public void DeleteRange(IEnumerable<UserAccount> entities)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class UpperInvariantAccountIdentifierNormalizer
+        : IAccountIdentifierNormalizer
+    {
+        public string NormalizeUserName(string userName)
+            => userName.Trim().ToUpperInvariant();
+
+        public string NormalizeEmail(string email)
+            => email.Trim().ToUpperInvariant();
+    }
+
+    private sealed class RecordingPasswordService : IPasswordService
+    {
+        public int HashCallCount { get; private set; }
+
+        public string Hash(string password)
+            => "password-hash";
+
+        public bool Verify(string password, string passwordHash)
+            => throw new NotSupportedException();
+
+        public PasswordVerification VerifyDetailed(string password, string passwordHash)
+            => throw new NotSupportedException();
+
+        public Task<string> HashAsync(
+            string password,
+            CancellationToken ct = default)
+        {
+            HashCallCount++;
+            return Task.FromResult("password-hash");
+        }
+
+        public Task<bool> VerifyAsync(
+            string password,
+            string passwordHash,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public bool IsStrongPassword(string password)
+            => true;
+    }
+
+    private sealed class FixedClock : IDateTimeProvider
+    {
+        public DateTime UtcNow => FixedUtcNow;
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel)
+            => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static NullScope Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
+    }
 }
