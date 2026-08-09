@@ -26,4 +26,8 @@ public static class AccountErrors
     public static readonly Error PasswordMustBeDifferent = Error.Validation("Account.PasswordMustBeDifferent", "New password must be different from the current password.");
     public static readonly Error PasswordChangeRequired = Error.Security("Account.PasswordChangeRequired", "Password change is required before accessing this resource.");
     public static readonly Error PasswordHashRequired = Error.Domain("Account.PasswordHashRequired", "Password hash is required.");
+    public static readonly Error FullNameTooLong = Error.Validation("Account.FullNameTooLong", "Full name cannot exceed 200 characters.");
+    public static readonly Error InvalidStatusTransition = Error.Domain("Account.InvalidStatusTransition", "The requested account status transition is not allowed.");
+    public static readonly Error InvalidRowVersion = Error.Validation("Account.InvalidRowVersion", "RowVersion must be a valid Base64 value.");
+    public static readonly Error ConcurrencyConflict = Error.Conflict("Account.ConcurrencyConflict", "The account was changed by another request.");
 }

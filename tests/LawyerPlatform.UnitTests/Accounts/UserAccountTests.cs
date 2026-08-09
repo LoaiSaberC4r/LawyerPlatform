@@ -77,16 +77,66 @@ public sealed class UserAccountTests
     }
 
     [Fact]
-    public void AccountStatusTransitions_UpdateStatus()
+    public void ActiveToSuspendedAndSuspendedToActive_SucceedAndUpdateModifiedTime()
+    {
+        var account = CreateSuperAdmin().Value;
+        var suspendedOnUtc = NowUtc.AddMinutes(1);
+        var reactivatedOnUtc = NowUtc.AddMinutes(2);
+
+        var suspend = account.Suspend(suspendedOnUtc);
+        Assert.True(suspend.IsSuccess);
+        Assert.Equal(AccountStatus.Suspended, account.Status);
+        Assert.Equal(suspendedOnUtc, account.ModifiedOnUtc);
+
+        var reactivate = account.Reactivate(reactivatedOnUtc);
+        Assert.True(reactivate.IsSuccess);
+        Assert.Equal(AccountStatus.Active, account.Status);
+        Assert.Equal(reactivatedOnUtc, account.ModifiedOnUtc);
+    }
+
+    [Fact]
+    public void RepeatedSuspend_FailsWithoutChangingModifiedTime()
+    {
+        var account = CreateSuperAdmin().Value;
+        var firstTransition = NowUtc.AddMinutes(1);
+        Assert.True(account.Suspend(firstTransition).IsSuccess);
+
+        var result = account.Suspend(NowUtc.AddMinutes(2));
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "Account.InvalidStatusTransition");
+        Assert.Equal(AccountStatus.Suspended, account.Status);
+        Assert.Equal(firstTransition, account.ModifiedOnUtc);
+    }
+
+    [Fact]
+    public void ReactivateActiveAccount_Fails()
     {
         var account = CreateSuperAdmin().Value;
 
-        account.Suspend(NowUtc.AddMinutes(1));
-        Assert.Equal(AccountStatus.Suspended, account.Status);
-        account.Reactivate(NowUtc.AddMinutes(2));
+        var result = account.Reactivate(NowUtc.AddMinutes(1));
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "Account.InvalidStatusTransition");
         Assert.Equal(AccountStatus.Active, account.Status);
-        account.Deactivate(NowUtc.AddMinutes(3));
+    }
+
+    [Fact]
+    public void InactiveAccount_CannotBeReactivatedOrSuspended()
+    {
+        var account = CreateSuperAdmin().Value;
+        var deactivatedOnUtc = NowUtc.AddMinutes(1);
+        Assert.True(account.Deactivate(deactivatedOnUtc).IsSuccess);
+
+        var reactivate = account.Reactivate(NowUtc.AddMinutes(2));
+        var suspend = account.Suspend(NowUtc.AddMinutes(3));
+
+        Assert.True(reactivate.IsFailure);
+        Assert.True(suspend.IsFailure);
+        Assert.All(reactivate.Errors.Concat(suspend.Errors),
+            error => Assert.Equal("Account.InvalidStatusTransition", error.Code));
         Assert.Equal(AccountStatus.Inactive, account.Status);
+        Assert.Equal(deactivatedOnUtc, account.ModifiedOnUtc);
     }
 
     private static BuildingBlock.Domain.Results.Result<UserAccount> CreateSuperAdmin()

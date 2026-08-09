@@ -1,7 +1,6 @@
 using BuildingBlock.Infrastructure.Extensions;
 using BuildingBlock.Infrastructure.Persistence;
 using LawyerPlatform.Domain.Accounts;
-using LawyerPlatform.Domain.Catalog;
 using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
@@ -14,7 +13,6 @@ namespace LawyerPlatform.Infrastructure.Persistence;
 public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbContext> options)
     : DbContext(options)
 {
-    public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
     public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
     public DbSet<LawyerProfile> LawyerProfiles => Set<LawyerProfile>();

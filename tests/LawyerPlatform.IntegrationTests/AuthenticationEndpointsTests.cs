@@ -129,8 +129,8 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         var restrictedToken = await ReadTokenAsync(superAdminLogin, cancellationToken);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", restrictedToken);
-        var restrictedResponse = await client.DeleteAsync(
-            $"/api/v1/catalog-items/{Guid.NewGuid()}/permanent",
+        var restrictedResponse = await client.GetAsync(
+            "/api/v1/admin/dashboard",
             cancellationToken);
         Assert.True(
             restrictedResponse.StatusCode == HttpStatusCode.Forbidden,
@@ -144,10 +144,10 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         var unrestrictedToken = await ReadTokenAsync(changePassword, cancellationToken);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", unrestrictedToken);
-        var unrestrictedResponse = await client.DeleteAsync(
-            $"/api/v1/catalog-items/{Guid.NewGuid()}/permanent",
+        var unrestrictedResponse = await client.GetAsync(
+            "/api/v1/admin/dashboard",
             cancellationToken);
-        Assert.Equal(HttpStatusCode.NotFound, unrestrictedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, unrestrictedResponse.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = null;
         var changedPasswordLogin = await LoginAsync(

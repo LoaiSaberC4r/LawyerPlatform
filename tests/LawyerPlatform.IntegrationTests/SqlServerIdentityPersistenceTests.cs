@@ -45,6 +45,7 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
         Assert.Contains("LawyerApprovalStatusHistory", tables);
         Assert.Contains("ConsultationRequests", tables);
         Assert.Contains("ConsultationRequestStatusHistory", tables);
+        Assert.DoesNotContain("CatalogItems", tables);
     }
 
     [Fact]
@@ -152,6 +153,100 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
             await context.Areas.AnyAsync(
                 area => !context.Cities.Any(city => city.Id == area.CityId),
                 TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task ClientProfileAndAccountLifecycle_AdvanceIndependentRowVersionsAndRejectStaleTokens()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var account = CreateClientAccount(
+            $"rowversion-{suffix[..8]}",
+            $"ROWVERSION-{suffix[..8]}",
+            $"rowversion-{suffix}@example.test",
+            $"ROWVERSION-{suffix.ToUpperInvariant()}@EXAMPLE.TEST",
+            $"04{suffix[..18]}");
+        var profile = ClientProfile.Create(account, "RowVersion Client").Value;
+        byte[] initialProfileRowVersion;
+        byte[] initialAccountRowVersion;
+        await using (var seedContext = fixture.CreateContext())
+        {
+            seedContext.AddRange(account, profile);
+            await seedContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            initialProfileRowVersion = profile.RowVersion.ToArray();
+            initialAccountRowVersion = account.RowVersion.ToArray();
+        }
+
+        byte[] updatedProfileRowVersion;
+        await using (var updateProfileContext = fixture.CreateContext())
+        {
+            var trackedProfile = await updateProfileContext.ClientProfiles.SingleAsync(
+                item => item.Id == profile.Id,
+                TestContext.Current.CancellationToken);
+            Assert.True(trackedProfile.UpdateFullName("Updated RowVersion Client").IsSuccess);
+            await updateProfileContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            updatedProfileRowVersion = trackedProfile.RowVersion.ToArray();
+        }
+
+        Assert.False(initialProfileRowVersion.SequenceEqual(updatedProfileRowVersion));
+
+        byte[] suspendedAccountRowVersion;
+        await using (var suspendContext = fixture.CreateContext())
+        {
+            var trackedAccount = await suspendContext.UserAccounts.SingleAsync(
+                item => item.Id == account.Id,
+                TestContext.Current.CancellationToken);
+            Assert.True(trackedAccount.Suspend(DateTime.UtcNow).IsSuccess);
+            await suspendContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            suspendedAccountRowVersion = trackedAccount.RowVersion.ToArray();
+        }
+
+        Assert.False(initialAccountRowVersion.SequenceEqual(suspendedAccountRowVersion));
+
+        byte[] reactivatedAccountRowVersion;
+        await using (var reactivateContext = fixture.CreateContext())
+        {
+            var trackedAccount = await reactivateContext.UserAccounts.SingleAsync(
+                item => item.Id == account.Id,
+                TestContext.Current.CancellationToken);
+            Assert.True(trackedAccount.Reactivate(DateTime.UtcNow).IsSuccess);
+            await reactivateContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            reactivatedAccountRowVersion = trackedAccount.RowVersion.ToArray();
+        }
+
+        Assert.False(suspendedAccountRowVersion.SequenceEqual(reactivatedAccountRowVersion));
+
+        await using (var firstProfileContext = fixture.CreateContext())
+        await using (var staleProfileContext = fixture.CreateContext())
+        {
+            var firstCopy = await firstProfileContext.ClientProfiles.SingleAsync(
+                item => item.Id == profile.Id,
+                TestContext.Current.CancellationToken);
+            var staleCopy = await staleProfileContext.ClientProfiles.SingleAsync(
+                item => item.Id == profile.Id,
+                TestContext.Current.CancellationToken);
+            Assert.True(firstCopy.UpdateFullName("First Profile Write").IsSuccess);
+            await firstProfileContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Assert.True(staleCopy.UpdateFullName("Stale Profile Write").IsSuccess);
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+                staleProfileContext.SaveChangesAsync(TestContext.Current.CancellationToken));
+        }
+
+        await using (var firstAccountContext = fixture.CreateContext())
+        await using (var staleAccountContext = fixture.CreateContext())
+        {
+            var firstCopy = await firstAccountContext.UserAccounts.SingleAsync(
+                item => item.Id == account.Id,
+                TestContext.Current.CancellationToken);
+            var staleCopy = await staleAccountContext.UserAccounts.SingleAsync(
+                item => item.Id == account.Id,
+                TestContext.Current.CancellationToken);
+            Assert.True(firstCopy.Suspend(DateTime.UtcNow).IsSuccess);
+            await firstAccountContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Assert.True(staleCopy.Deactivate(DateTime.UtcNow).IsSuccess);
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+                staleAccountContext.SaveChangesAsync(TestContext.Current.CancellationToken));
+        }
     }
 
     private static UserAccount CreateClientAccount(

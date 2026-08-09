@@ -3,6 +3,8 @@ using BuildingBlock.Api;
 using BuildingBlock.Application.Abstraction.Media;
 using LawyerPlatform.Api.Contracts.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.DeleteDocument;
+using LawyerPlatform.Application.Features.Lawyers.Dashboard;
+using LawyerPlatform.Application.Features.Dashboards;
 using LawyerPlatform.Application.Features.Lawyers.GetApprovalStatus;
 using LawyerPlatform.Application.Features.Lawyers.GetOwnDocumentContent;
 using LawyerPlatform.Application.Features.Lawyers.GetOwnDocuments;
@@ -26,6 +28,11 @@ namespace LawyerPlatform.Api.Controllers;
 [Route("api/v{version:apiVersion}/lawyer")]
 public sealed class LawyerController(ISender sender) : ControllerBase
 {
+    [HttpGet("dashboard")]
+    [ProducesResponseType(typeof(RequestDashboardResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
+        => (await sender.Send(new GetLawyerDashboardQuery(), cancellationToken)).ToIActionResult(cancellationToken);
+
     [HttpGet("profile")]
     public async Task<IActionResult> GetProfile(CancellationToken cancellationToken)
         => (await sender.Send(new GetOwnProfileQuery(), cancellationToken)).ToIActionResult(cancellationToken);
