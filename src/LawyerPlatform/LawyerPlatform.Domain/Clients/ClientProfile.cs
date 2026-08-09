@@ -45,4 +45,21 @@ public sealed class ClientProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
 
         return Result<ClientProfile>.Ok(new ClientProfile(Guid.NewGuid(), userAccount, fullName));
     }
+
+    public Result UpdateFullName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            return Result.Fail(AccountErrors.FullNameRequired);
+        }
+
+        var normalizedFullName = fullName.Trim();
+        if (normalizedFullName.Length > 200)
+        {
+            return Result.Fail(AccountErrors.FullNameTooLong);
+        }
+
+        FullName = normalizedFullName;
+        return Result.Ok();
+    }
 }

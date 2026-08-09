@@ -94,22 +94,40 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
         return Result.Ok();
     }
 
-    public void Suspend(DateTime nowUtc)
+    public Result Suspend(DateTime nowUtc)
     {
+        if (Status != AccountStatus.Active)
+        {
+            return Result.Fail(AccountErrors.InvalidStatusTransition);
+        }
+
         Status = AccountStatus.Suspended;
         ModifiedOnUtc = nowUtc;
+        return Result.Ok();
     }
 
-    public void Reactivate(DateTime nowUtc)
+    public Result Reactivate(DateTime nowUtc)
     {
+        if (Status != AccountStatus.Suspended)
+        {
+            return Result.Fail(AccountErrors.InvalidStatusTransition);
+        }
+
         Status = AccountStatus.Active;
         ModifiedOnUtc = nowUtc;
+        return Result.Ok();
     }
 
-    public void Deactivate(DateTime nowUtc)
+    public Result Deactivate(DateTime nowUtc)
     {
+        if (Status != AccountStatus.Active)
+        {
+            return Result.Fail(AccountErrors.InvalidStatusTransition);
+        }
+
         Status = AccountStatus.Inactive;
         ModifiedOnUtc = nowUtc;
+        return Result.Ok();
     }
 
     private static Result<UserAccount> Create(

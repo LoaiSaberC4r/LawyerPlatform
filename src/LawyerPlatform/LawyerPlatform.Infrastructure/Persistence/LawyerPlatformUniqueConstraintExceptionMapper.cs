@@ -1,6 +1,7 @@
 using BuildingBlock.Application.Exceptions;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
@@ -27,7 +28,11 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
                             ? LegalSpecializationErrors.ConcurrencyConflict
                             : concurrencyException.Entries.Any(entry => entry.Entity is ConsultationRequest)
                                 ? ConsultationRequestErrors.ConcurrencyConflict
-                                : LawyerErrors.ConcurrencyConflict;
+                                : concurrencyException.Entries.Any(entry => entry.Entity is ClientProfile)
+                                    ? ClientErrors.ConcurrencyConflict
+                                    : concurrencyException.Entries.Any(entry => entry.Entity is UserAccount)
+                                        ? AccountErrors.ConcurrencyConflict
+                                        : LawyerErrors.ConcurrencyConflict;
             return true;
         }
 

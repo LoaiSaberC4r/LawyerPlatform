@@ -16,6 +16,19 @@ public sealed class ArchitectureTests
         Assert.DoesNotContain("LawyerPlatform.Infrastructure", references);
         Assert.DoesNotContain("LawyerPlatform.Api", references);
         Assert.DoesNotContain("Microsoft.EntityFrameworkCore", references);
+        Assert.DoesNotContain("Microsoft.AspNetCore", references);
+        Assert.DoesNotContain("Microsoft.AspNetCore.Core", references);
         Assert.DoesNotContain("MediatR", references);
+    }
+
+    [Fact]
+    public void ProductionAssemblies_DoNotContainStarterCatalogTypes()
+    {
+        Assert.DoesNotContain(
+            typeof(UserAccount).Assembly.GetTypes(),
+            type => type.Namespace?.Contains(".Catalog", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(
+            typeof(LawyerPlatform.Application.AssemblyReference).Assembly.GetTypes(),
+            type => type.Namespace?.Contains(".Catalog", StringComparison.Ordinal) == true);
     }
 }

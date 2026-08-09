@@ -13,6 +13,7 @@ using BuildingBlock.Infrastructure.Bootstrap;
 using LawyerPlatform.Api.Authorization;
 using LawyerPlatform.Api.Configuration;
 using LawyerPlatform.Api.Middleware;
+using LawyerPlatform.Api.OpenApi;
 using LawyerPlatform.Application;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Domain.Accounts;
@@ -35,7 +36,8 @@ builder.Services
     .AddApplicationPart(typeof(BuildingBlock.Api.ProblemDetailsMappingMvc).Assembly);
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+    options.OperationFilter<ParameterDescriptionOperationFilter>());
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
