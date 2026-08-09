@@ -1,7 +1,9 @@
 using BuildingBlock.Application.Exceptions;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Domain.ReferenceData;
 using Microsoft.EntityFrameworkCore;
 
 namespace LawyerPlatform.Infrastructure.Persistence;
@@ -14,7 +16,18 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
 
         if (exception is DbUpdateConcurrencyException)
         {
-            error = LawyerErrors.ConcurrencyConflict;
+            var concurrencyException = (DbUpdateConcurrencyException)exception;
+            error = concurrencyException.Entries.Any(entry => entry.Entity is Governorate)
+                ? GovernorateErrors.ConcurrencyConflict
+                : concurrencyException.Entries.Any(entry => entry.Entity is City)
+                    ? CityErrors.ConcurrencyConflict
+                    : concurrencyException.Entries.Any(entry => entry.Entity is Area)
+                        ? AreaErrors.ConcurrencyConflict
+                        : concurrencyException.Entries.Any(entry => entry.Entity is LegalSpecialization)
+                            ? LegalSpecializationErrors.ConcurrencyConflict
+                            : concurrencyException.Entries.Any(entry => entry.Entity is ConsultationRequest)
+                                ? ConsultationRequestErrors.ConcurrencyConflict
+                                : LawyerErrors.ConcurrencyConflict;
             return true;
         }
 
@@ -34,6 +47,15 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", "The account already has a lawyer profile."),
             var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,
             var message when message.Contains("UX_LawyerOffices_LawyerProfileId_Primary", StringComparison.Ordinal) => Error.Conflict("Lawyer.OfficeEditNotAllowed", "A primary office already exists."),
+            var message when message.Contains("UX_LegalSpecializations_NameAr", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameAr,
+            var message when message.Contains("UX_LegalSpecializations_NameEn", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameEn,
+            var message when message.Contains("UX_Governorates_NameAr", StringComparison.Ordinal) => GovernorateErrors.DuplicateNameAr,
+            var message when message.Contains("UX_Governorates_NameEn", StringComparison.Ordinal) => GovernorateErrors.DuplicateNameEn,
+            var message when message.Contains("UX_Cities_GovernorateId_NameAr", StringComparison.Ordinal) => CityErrors.DuplicateNameAr,
+            var message when message.Contains("UX_Cities_GovernorateId_NameEn", StringComparison.Ordinal) => CityErrors.DuplicateNameEn,
+            var message when message.Contains("UX_Areas_CityId_NameAr", StringComparison.Ordinal) => AreaErrors.DuplicateNameAr,
+            var message when message.Contains("UX_Areas_CityId_NameEn", StringComparison.Ordinal) => AreaErrors.DuplicateNameEn,
+            var message when message.Contains("UX_ConsultationRequests_ReferenceNumber", StringComparison.Ordinal) => ConsultationRequestErrors.ReferenceNumberConflict,
             _ => null!
         };
 

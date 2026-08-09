@@ -87,7 +87,8 @@ internal sealed class PublicLawyersSearchSpecification : PublicLawyerSpecificati
         if (query.SpecializationId.HasValue)
         {
             AddCriteria(profile => profile.Specializations.Any(item =>
-                item.LegalSpecializationId == query.SpecializationId.Value));
+                item.LegalSpecializationId == query.SpecializationId.Value &&
+                item.LegalSpecialization.IsActive));
         }
 
         AddOrderBy(profile => profile.FullName);

@@ -23,8 +23,7 @@ internal abstract class PublicLawyerSpecification<TResponse> : Specification<Law
                 office.Governorate.IsActive && office.City.IsActive && office.Area.IsActive &&
                 office.City.GovernorateId == office.GovernorateId && office.Area.CityId == office.CityId &&
                 office.DetailedAddress != "") &&
-            profile.Specializations.Any() &&
-            !profile.Specializations.Any(item => !item.LegalSpecialization.IsActive));
+            profile.Specializations.Any(item => item.LegalSpecialization.IsActive));
 
         if (documentPolicy.RequiredDocumentTypes.Count == 0)
         {

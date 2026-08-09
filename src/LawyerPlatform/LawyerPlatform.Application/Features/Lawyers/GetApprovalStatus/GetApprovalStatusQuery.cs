@@ -89,7 +89,7 @@ internal sealed class ApprovalStatusSpecification : Specification<LawyerProfile,
                 office.Governorate.IsActive && office.City.IsActive && office.Area.IsActive &&
                 office.City.GovernorateId == office.GovernorateId && office.Area.CityId == office.CityId &&
                 office.DetailedAddress != ""),
-            profile.Specializations.Any() && profile.Specializations.All(item => item.LegalSpecialization.IsActive),
+            profile.Specializations.Any(item => item.LegalSpecialization.IsActive),
             profile.Documents.Where(document => !document.IsDeleted).Select(document => document.DocumentType).ToArray(),
             profile.UserAccount.Status,
             profile.RowVersion));

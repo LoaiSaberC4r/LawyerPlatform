@@ -6,6 +6,7 @@ namespace LawyerPlatform.Domain.ReferenceData;
 
 public sealed class Area : AggregateRoot<int>, IAuditableEntity
 {
+    public const int MaximumNameLength = 150;
     private Area()
     {
     }
@@ -32,11 +33,40 @@ public sealed class Area : AggregateRoot<int>, IAuditableEntity
 
     public static Result<Area> Create(int id, int cityId, string nameAr, string nameEn, int displayOrder)
     {
-        if (id <= 0 || cityId <= 0 || string.IsNullOrWhiteSpace(nameAr) || string.IsNullOrWhiteSpace(nameEn))
+        if (!IsValid(id, cityId, nameAr, nameEn, displayOrder))
         {
-            return Result<Area>.Fail(Error.Validation("Location.AreaInvalid", "Area seed data is invalid."));
+            return Result<Area>.Fail(AreaErrors.Invalid);
         }
 
         return Result<Area>.Ok(new Area(id, cityId, nameAr, nameEn, displayOrder));
     }
+
+    public Result Update(int cityId, string nameAr, string nameEn, int displayOrder)
+    {
+        if (!IsValid(Id, cityId, nameAr, nameEn, displayOrder)) return Result.Fail(AreaErrors.Invalid);
+        CityId = cityId;
+        NameAr = nameAr.Trim();
+        NameEn = nameEn.Trim();
+        DisplayOrder = displayOrder;
+        return Result.Ok();
+    }
+
+    public Result Activate()
+    {
+        if (IsActive) return Result.Fail(AreaErrors.AlreadyActive);
+        IsActive = true;
+        return Result.Ok();
+    }
+
+    public Result Deactivate()
+    {
+        if (!IsActive) return Result.Fail(AreaErrors.AlreadyInactive);
+        IsActive = false;
+        return Result.Ok();
+    }
+
+    private static bool IsValid(int id, int cityId, string nameAr, string nameEn, int displayOrder)
+        => id > 0 && cityId > 0 && displayOrder >= 0 && !string.IsNullOrWhiteSpace(nameAr) &&
+           !string.IsNullOrWhiteSpace(nameEn) && nameAr.Trim().Length <= MaximumNameLength &&
+           nameEn.Trim().Length <= MaximumNameLength;
 }

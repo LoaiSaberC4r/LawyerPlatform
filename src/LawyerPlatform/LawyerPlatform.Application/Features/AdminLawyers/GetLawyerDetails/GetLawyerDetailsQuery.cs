@@ -74,7 +74,7 @@ internal sealed class GetLawyerDetailsQueryHandler(
             item.YearsOfExperience,
             item.ProfessionalRegistrationNumber,
             item.OfficeComplete,
-            item.Specializations.Count > 0 && item.Specializations.All(specialization => specialization.IsActive),
+            item.Specializations.Any(specialization => specialization.IsActive),
             item.Documents.Select(document => document.DocumentType).ToArray(),
             item.AccountStatus == AccountStatus.Active,
             documentPolicy);

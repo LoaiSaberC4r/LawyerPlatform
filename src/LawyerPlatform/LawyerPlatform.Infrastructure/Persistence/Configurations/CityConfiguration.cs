@@ -24,5 +24,9 @@ internal sealed class CityConfiguration : IWriteEntityConfiguration<City>
         builder.HasIndex(item => item.GovernorateId).HasDatabaseName("IX_Cities_GovernorateId");
         builder.HasIndex(item => new { item.GovernorateId, item.IsActive, item.DisplayOrder })
             .HasDatabaseName("IX_Cities_GovernorateId_IsActive_DisplayOrder");
+        builder.HasIndex(item => new { item.GovernorateId, item.NameAr })
+            .IsUnique().HasDatabaseName("UX_Cities_GovernorateId_NameAr");
+        builder.HasIndex(item => new { item.GovernorateId, item.NameEn })
+            .IsUnique().HasDatabaseName("UX_Cities_GovernorateId_NameEn");
     }
 }

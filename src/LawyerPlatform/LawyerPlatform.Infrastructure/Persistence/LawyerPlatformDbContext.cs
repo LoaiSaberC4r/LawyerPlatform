@@ -3,6 +3,7 @@ using BuildingBlock.Infrastructure.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Catalog;
 using LawyerPlatform.Domain.Clients;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,8 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     public DbSet<LawyerSpecialization> LawyerSpecializations => Set<LawyerSpecialization>();
     public DbSet<LawyerDocument> LawyerDocuments => Set<LawyerDocument>();
     public DbSet<LawyerApprovalStatusHistory> LawyerApprovalStatusHistory => Set<LawyerApprovalStatusHistory>();
+    public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
+    public DbSet<ConsultationRequestStatusHistory> ConsultationRequestStatusHistory => Set<ConsultationRequestStatusHistory>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
