@@ -109,10 +109,37 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+    options.AddFixedWindowLimiter("consultation-guest", limiter =>
+    {
+        limiter.PermitLimit = 20;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+        limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
+    options.AddFixedWindowLimiter("consultation-track", limiter =>
+    {
+        limiter.PermitLimit = 20;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+        limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
     options.OnRejected = async (context, cancellationToken) =>
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var error = Error.RateLimit("Auth.RateLimitExceeded", "Too many authentication attempts.", TimeSpan.FromMinutes(1));
+        var isConsultationRequest = context.HttpContext.Request.Path.StartsWithSegments(
+            "/api/v1/public/consultation-requests",
+            StringComparison.OrdinalIgnoreCase);
+        var error = isConsultationRequest
+            ? Error.RateLimit(
+                "ConsultationRequest.RateLimitExceeded",
+                "Too many consultation requests.",
+                TimeSpan.FromMinutes(1))
+            : Error.RateLimit(
+                "Auth.RateLimitExceeded",
+                "Too many authentication attempts.",
+                TimeSpan.FromMinutes(1));
         await new[] { error }.ToProblem(context.HttpContext).ExecuteAsync(context.HttpContext);
     };
 });

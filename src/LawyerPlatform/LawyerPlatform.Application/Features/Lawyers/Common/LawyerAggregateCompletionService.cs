@@ -41,7 +41,7 @@ internal sealed class LawyerAggregateCompletionService(
             profile.YearsOfExperience,
             profile.ProfessionalRegistrationNumber,
             officeComplete,
-            specializationIds.Length > 0 && activeSpecializations == specializationIds.Length,
+            activeSpecializations > 0,
             profile.Documents.Where(document => !document.IsDeleted).Select(document => document.DocumentType).ToArray(),
             profile.UserAccount.Status == LawyerPlatform.Domain.Accounts.AccountStatus.Active,
             documentPolicy);

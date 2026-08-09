@@ -15,7 +15,8 @@ public sealed class SqlServerIdentityModelTests
         {
             "UserAccounts", "ClientProfiles", "LawyerProfiles", "Governorates",
             "Cities", "Areas", "LegalSpecializations", "LawyerOffices",
-            "LawyerSpecializations", "LawyerDocuments", "LawyerApprovalStatusHistory"
+            "LawyerSpecializations", "LawyerDocuments", "LawyerApprovalStatusHistory",
+            "ConsultationRequests", "ConsultationRequestStatusHistory"
         };
 
         foreach (var table in requiredTables)
@@ -39,10 +40,23 @@ public sealed class SqlServerIdentityModelTests
         Assert.Contains("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted", indexNames);
         Assert.Contains("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc", indexNames);
         Assert.Contains("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc", indexNames);
+        Assert.Contains("UX_LegalSpecializations_NameAr", indexNames);
+        Assert.Contains("UX_LegalSpecializations_NameEn", indexNames);
+        Assert.Contains("UX_Governorates_NameAr", indexNames);
+        Assert.Contains("UX_Governorates_NameEn", indexNames);
+        Assert.Contains("UX_Cities_GovernorateId_NameAr", indexNames);
+        Assert.Contains("UX_Cities_GovernorateId_NameEn", indexNames);
+        Assert.Contains("UX_Areas_CityId_NameAr", indexNames);
+        Assert.Contains("UX_Areas_CityId_NameEn", indexNames);
+        Assert.Contains("UX_ConsultationRequests_ReferenceNumber", indexNames);
+        Assert.Contains("IX_ConsultationRequests_LawyerProfileId_Status_CreatedOnUtc", indexNames);
+        Assert.Contains("IX_ConsultationRequests_ClientProfileId_CreatedOnUtc", indexNames);
+        Assert.Contains("IX_ConsultationRequestStatusHistory_ConsultationRequestId_ChangedOnUtc", indexNames);
 
         var identityForeignKeys = model.GetEntityTypes()
             .Where(entity => entity.GetTableName() is "ClientProfiles" or "LawyerProfiles" or "Cities" or "Areas" or
-                "LawyerOffices" or "LawyerSpecializations" or "LawyerDocuments" or "LawyerApprovalStatusHistory")
+                "LawyerOffices" or "LawyerSpecializations" or "LawyerDocuments" or "LawyerApprovalStatusHistory" or
+                "ConsultationRequests" or "ConsultationRequestStatusHistory")
             .SelectMany(entity => entity.GetForeignKeys())
             .ToArray();
         Assert.All(identityForeignKeys, foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));

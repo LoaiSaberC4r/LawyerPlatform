@@ -62,7 +62,7 @@ internal static class OwnProfileMapper
             snapshot.YearsOfExperience,
             snapshot.ProfessionalRegistrationNumber,
             snapshot.OfficeComplete,
-            snapshot.Specializations.Count > 0 && snapshot.Specializations.All(item => item.IsActive),
+            snapshot.Specializations.Any(item => item.IsActive),
             snapshot.ActiveDocumentTypes,
             snapshot.AccountStatus == AccountStatus.Active,
             documentPolicy);

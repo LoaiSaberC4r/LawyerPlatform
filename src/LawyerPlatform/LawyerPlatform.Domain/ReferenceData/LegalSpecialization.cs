@@ -29,11 +29,48 @@ public sealed class LegalSpecialization : AggregateRoot<int>, IAuditableEntity
 
     public static Result<LegalSpecialization> Create(int id, string nameAr, string nameEn, int displayOrder)
     {
-        if (id <= 0 || string.IsNullOrWhiteSpace(nameAr) || string.IsNullOrWhiteSpace(nameEn))
+        if (id <= 0 || string.IsNullOrWhiteSpace(nameAr) || nameAr.Trim().Length > 150 ||
+            string.IsNullOrWhiteSpace(nameEn) || nameEn.Trim().Length > 150 || displayOrder < 0)
         {
-            return Result<LegalSpecialization>.Fail(Error.Validation("LegalSpecialization.Invalid", "Legal specialization seed data is invalid."));
+            return Result<LegalSpecialization>.Fail(LegalSpecializationErrors.Invalid);
         }
 
         return Result<LegalSpecialization>.Ok(new LegalSpecialization(id, nameAr, nameEn, displayOrder));
+    }
+
+    public Result Update(string nameAr, string nameEn, int displayOrder)
+    {
+        if (string.IsNullOrWhiteSpace(nameAr) || nameAr.Trim().Length > 150 ||
+            string.IsNullOrWhiteSpace(nameEn) || nameEn.Trim().Length > 150 || displayOrder < 0)
+        {
+            return Result.Fail(LegalSpecializationErrors.Invalid);
+        }
+
+        NameAr = nameAr.Trim();
+        NameEn = nameEn.Trim();
+        DisplayOrder = displayOrder;
+        return Result.Ok();
+    }
+
+    public Result Activate()
+    {
+        if (IsActive)
+        {
+            return Result.Fail(LegalSpecializationErrors.AlreadyActive);
+        }
+
+        IsActive = true;
+        return Result.Ok();
+    }
+
+    public Result Deactivate()
+    {
+        if (!IsActive)
+        {
+            return Result.Fail(LegalSpecializationErrors.AlreadyInactive);
+        }
+
+        IsActive = false;
+        return Result.Ok();
     }
 }

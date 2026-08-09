@@ -37,6 +37,63 @@ public sealed class PublicReferenceDataEndpointsTests(CustomWebApplicationFactor
     }
 
     [Fact]
+    public async Task LegalSpecializationsReturnAllApprovedActiveRecordsInStableOrder()
+    {
+        var first = SeedCatalog.LegalSpecializations[0];
+        var second = SeedCatalog.LegalSpecializations[1];
+        const int tiedDisplayOrder = 15;
+        await SetLegalSpecializationDisplayOrderAsync(first.Id, tiedDisplayOrder);
+        await SetLegalSpecializationDisplayOrderAsync(second.Id, tiedDisplayOrder);
+
+        try
+        {
+            using var client = CreateClient();
+            var records = await client.GetFromJsonAsync<List<LocationResponse>>(
+                "/api/v1/public/legal-specializations",
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(records);
+            Assert.Equal(SeedCatalog.ExpectedLegalSpecializationCount, records.Count);
+            Assert.Equal(
+                SeedCatalog.LegalSpecializations
+                    .OrderBy(seed => seed.Id == first.Id || seed.Id == second.Id
+                        ? tiedDisplayOrder
+                        : seed.DisplayOrder)
+                    .ThenBy(seed => seed.Id)
+                    .Select(seed => seed.Id),
+                records.Select(record => record.Id));
+        }
+        finally
+        {
+            await SetLegalSpecializationDisplayOrderAsync(first.Id, first.DisplayOrder);
+            await SetLegalSpecializationDisplayOrderAsync(second.Id, second.DisplayOrder);
+        }
+    }
+
+    [Fact]
+    public async Task LegalSpecializationsExcludeInactiveRecords()
+    {
+        var inactive = SeedCatalog.LegalSpecializations[^1];
+        await SetLegalSpecializationActiveAsync(inactive.Id, isActive: false);
+
+        try
+        {
+            using var client = CreateClient();
+            var records = await client.GetFromJsonAsync<List<LocationResponse>>(
+                "/api/v1/public/legal-specializations",
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(records);
+            Assert.Equal(SeedCatalog.ExpectedLegalSpecializationCount - 1, records.Count);
+            Assert.DoesNotContain(records, record => record.Id == inactive.Id);
+        }
+        finally
+        {
+            await SetLegalSpecializationActiveAsync(inactive.Id, isActive: true);
+        }
+    }
+
+    [Fact]
     public async Task CitiesReturnsOnlyActiveChildrenOfTheRequestedGovernorateInStableOrder()
     {
         var group = EgyptLocationSeedCatalog.Cities
@@ -196,6 +253,24 @@ public sealed class PublicReferenceDataEndpointsTests(CustomWebApplicationFactor
         var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
         await context.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE Areas SET IsActive = {isActive} WHERE Id = {id}",
+            TestContext.Current.CancellationToken);
+    }
+
+    private async Task SetLegalSpecializationActiveAsync(int id, bool isActive)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE LegalSpecializations SET IsActive = {isActive} WHERE Id = {id}",
+            TestContext.Current.CancellationToken);
+    }
+
+    private async Task SetLegalSpecializationDisplayOrderAsync(int id, int displayOrder)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE LegalSpecializations SET DisplayOrder = {displayOrder} WHERE Id = {id}",
             TestContext.Current.CancellationToken);
     }
 

@@ -19,5 +19,11 @@ internal sealed class LegalSpecializationConfiguration : IWriteEntityConfigurati
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasIndex(item => new { item.IsActive, item.DisplayOrder })
             .HasDatabaseName("IX_LegalSpecializations_IsActive_DisplayOrder");
+        builder.HasIndex(item => item.NameAr)
+            .IsUnique()
+            .HasDatabaseName("UX_LegalSpecializations_NameAr");
+        builder.HasIndex(item => item.NameEn)
+            .IsUnique()
+            .HasDatabaseName("UX_LegalSpecializations_NameEn");
     }
 }

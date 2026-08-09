@@ -19,5 +19,7 @@ internal sealed class GovernorateConfiguration : IWriteEntityConfiguration<Gover
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasIndex(item => new { item.IsActive, item.DisplayOrder })
             .HasDatabaseName("IX_Governorates_IsActive_DisplayOrder");
+        builder.HasIndex(item => item.NameAr).IsUnique().HasDatabaseName("UX_Governorates_NameAr");
+        builder.HasIndex(item => item.NameEn).IsUnique().HasDatabaseName("UX_Governorates_NameEn");
     }
 }

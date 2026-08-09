@@ -24,5 +24,9 @@ internal sealed class AreaConfiguration : IWriteEntityConfiguration<Area>
         builder.HasIndex(item => item.CityId).HasDatabaseName("IX_Areas_CityId");
         builder.HasIndex(item => new { item.CityId, item.IsActive, item.DisplayOrder })
             .HasDatabaseName("IX_Areas_CityId_IsActive_DisplayOrder");
+        builder.HasIndex(item => new { item.CityId, item.NameAr })
+            .IsUnique().HasDatabaseName("UX_Areas_CityId_NameAr");
+        builder.HasIndex(item => new { item.CityId, item.NameEn })
+            .IsUnique().HasDatabaseName("UX_Areas_CityId_NameEn");
     }
 }

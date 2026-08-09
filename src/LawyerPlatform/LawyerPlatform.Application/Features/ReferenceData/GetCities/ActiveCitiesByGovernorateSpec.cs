@@ -7,7 +7,7 @@ internal sealed class ActiveCitiesByGovernorateSpec : Specification<City, Refere
 {
     public ActiveCitiesByGovernorateSpec(int governorateId)
     {
-        AddCriteria(city => city.GovernorateId == governorateId && city.IsActive);
+        AddCriteria(city => city.GovernorateId == governorateId && city.IsActive && city.Governorate.IsActive);
         AddOrderBy(city => city.DisplayOrder);
         AddOrderBy(city => city.Id);
         Select(city => new ReferenceDataResponse(city.Id, city.NameAr, city.NameEn));
