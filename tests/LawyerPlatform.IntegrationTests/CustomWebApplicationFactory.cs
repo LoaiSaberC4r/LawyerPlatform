@@ -40,6 +40,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["InitialSuperAdmin:PhoneNumber"] = "01000000000",
                 ["InitialSuperAdmin:Password"] = "InitialPassword1",
                 ["PasswordLifecycle:ExpiryDays"] = "90",
+                ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
                 ["Cors:AllowAnyOrigin"] = "false",
                 ["Cors:AllowCredentials"] = "false",

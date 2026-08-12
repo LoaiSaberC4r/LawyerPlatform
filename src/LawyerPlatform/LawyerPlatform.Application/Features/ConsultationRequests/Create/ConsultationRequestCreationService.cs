@@ -25,6 +25,7 @@ internal sealed class ConsultationRequestCreationService(
     IConsultationReferenceNumberGenerator referenceNumberGenerator,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     ILawyerDocumentPolicy documentPolicy,
+    IConsultationSchedulingTimeZone schedulingTimeZone,
     IDateTimeProvider clock)
 {
     public async Task<Result<CreateConsultationRequestResponse>> CreateGuestAsync(
@@ -117,6 +118,31 @@ internal sealed class ConsultationRequestCreationService(
                 ConsultationRequestErrors.PreferredAppointmentMustBeFuture);
         }
 
+        if (preferredAppointmentOnUtc is { } appointmentOnUtc)
+        {
+            if (!lawyer.HasConsultationSettings)
+            {
+                return Result<CreateConsultationRequestResponse>.Fail(
+                    ConsultationRequestErrors.LawyerAvailabilityNotConfigured);
+            }
+
+            var localAppointment = schedulingTimeZone.ConvertUtcToBusinessLocal(appointmentOnUtc);
+            var availability = lawyer.Availability.SingleOrDefault(
+                period => period.DayOfWeek == localAppointment.DayOfWeek);
+            if (availability is null)
+            {
+                return Result<CreateConsultationRequestResponse>.Fail(
+                    ConsultationRequestErrors.LawyerNotAvailableOnSelectedDay);
+            }
+
+            var localTime = TimeOnly.FromDateTime(localAppointment);
+            if (localTime < availability.StartTime || localTime > availability.EndTime)
+            {
+                return Result<CreateConsultationRequestResponse>.Fail(
+                    ConsultationRequestErrors.OutsideLawyerWorkingHours);
+            }
+        }
+
         var referenceNumber = await GenerateAvailableReferenceAsync(cancellationToken);
         if (referenceNumber is null)
         {
@@ -132,7 +158,8 @@ internal sealed class ConsultationRequestCreationService(
                 legalSpecializationId,
                 description,
                 preferredAppointmentOnUtc,
-                nowUtc)
+                nowUtc,
+                lawyer.ConsultationPrice)
             : ConsultationRequest.CreateForGuest(
                 referenceNumber,
                 guestFullName!,
@@ -142,7 +169,8 @@ internal sealed class ConsultationRequestCreationService(
                 legalSpecializationId,
                 description,
                 preferredAppointmentOnUtc,
-                nowUtc);
+                nowUtc,
+                lawyer.ConsultationPrice);
         if (creation.IsFailure)
         {
             return Result<CreateConsultationRequestResponse>.Fail(creation.Errors);
@@ -177,7 +205,15 @@ internal sealed class ConsultationRequestCreationService(
 
 internal sealed record EligibleConsultationLawyerSnapshot(
     Guid Id,
-    IReadOnlyList<int> ActiveSpecializationIds);
+    IReadOnlyList<int> ActiveSpecializationIds,
+    bool HasConsultationSettings,
+    decimal? ConsultationPrice,
+    IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability);
+
+internal sealed record EligibleLawyerAvailabilitySnapshot(
+    DayOfWeek DayOfWeek,
+    TimeOnly StartTime,
+    TimeOnly EndTime);
 
 internal sealed class EligibleLawyerForConsultationSpecification
     : PublicLawyerSpecification<EligibleConsultationLawyerSnapshot>
@@ -192,7 +228,19 @@ internal sealed class EligibleLawyerForConsultationSpecification
             profile.Specializations
                 .Where(item => item.LegalSpecialization.IsActive)
                 .Select(item => item.LegalSpecializationId)
-                .ToArray()));
+                .ToArray(),
+            profile.ConsultationSettings != null,
+            profile.ConsultationSettings == null
+                ? null
+                : profile.ConsultationSettings.ConsultationPrice,
+            profile.ConsultationSettings == null
+                ? Array.Empty<EligibleLawyerAvailabilitySnapshot>()
+                : profile.ConsultationSettings.Availability
+                    .Select(item => new EligibleLawyerAvailabilitySnapshot(
+                        item.DayOfWeek,
+                        item.StartTime,
+                        item.EndTime))
+                    .ToArray()));
     }
 }
 

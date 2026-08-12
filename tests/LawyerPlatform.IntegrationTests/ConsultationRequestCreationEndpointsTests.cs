@@ -110,6 +110,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
     {
         await using var factory = await CreateFactoryAsync();
         var lawyerId = await CreateLawyerAsync(factory, "client.target", complete: true, approved: true, accountActive: true);
+        await ConfigureAllWeekAvailabilityAsync(factory, lawyerId);
         using var client = CreateClient(factory);
         Assert.Equal(
             HttpStatusCode.Unauthorized,
@@ -276,6 +277,28 @@ public sealed class ConsultationRequestCreationEndpointsTests
         await context.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE LegalSpecializations SET IsActive = {isActive} WHERE Id = {id}",
             TestContext.Current.CancellationToken);
+    }
+
+    private static async Task ConfigureAllWeekAvailabilityAsync(
+        CustomWebApplicationFactory factory,
+        Guid lawyerId)
+    {
+        var periods = Enum.GetValues<DayOfWeek>()
+            .Select(day => new LawyerAvailabilityPeriod(
+                day,
+                TimeOnly.MinValue,
+                TimeOnly.FromTimeSpan(TimeSpan.FromTicks(TimeSpan.TicksPerDay - 1))))
+            .ToArray();
+        var settings = LawyerConsultationSettings.Create(
+            lawyerId,
+            500m,
+            periods,
+            DateTime.UtcNow).Value;
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        context.LawyerConsultationSettings.Add(settings);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
     private static async Task AssertErrorAsync(

@@ -21,6 +21,7 @@ internal sealed class ConsultationRequestConfiguration : IWriteEntityConfigurati
             .HasMaxLength(ConsultationRequest.MaximumDescriptionLength)
             .IsRequired();
         builder.Property(request => request.Status).HasConversion<int>().IsRequired();
+        builder.Property(request => request.ConsultationPrice).HasPrecision(18, 2);
         builder.Property(request => request.RowVersion).IsRowVersion().IsConcurrencyToken();
 
         builder.HasOne(request => request.ClientProfile)

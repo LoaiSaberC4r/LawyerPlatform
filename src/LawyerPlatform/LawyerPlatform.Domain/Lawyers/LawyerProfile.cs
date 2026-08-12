@@ -46,6 +46,7 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
     public DateTime? DeletedOnUtc { get; set; }
     public DateTime? RestoredOnUtc { get; set; }
     public byte[] RowVersion { get; private set; } = [];
+    public LawyerConsultationSettings? ConsultationSettings { get; private set; }
     public IReadOnlyCollection<LawyerOffice> Offices => _offices.AsReadOnly();
     public IReadOnlyCollection<LawyerDocument> Documents => _documents.AsReadOnly();
     public IReadOnlyCollection<LawyerSpecialization> Specializations => _specializations.AsReadOnly();

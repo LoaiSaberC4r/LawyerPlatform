@@ -37,5 +37,6 @@ internal sealed class LawyerProfileConfiguration : IWriteEntityConfiguration<Law
         builder.Navigation(profile => profile.Documents).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Navigation(profile => profile.Specializations).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Navigation(profile => profile.StatusHistory).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(profile => profile.ConsultationSettings);
     }
 }

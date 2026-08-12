@@ -65,12 +65,19 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(LawyerDocumentOptions.SectionName))
             .Validate(ValidateLawyerDocuments, "Lawyer document options are invalid.")
             .ValidateOnStart();
+        services.AddOptions<ConsultationSchedulingOptions>()
+            .Bind(configuration.GetSection(ConsultationSchedulingOptions.SectionName))
+            .Validate(
+                options => ConsultationSchedulingTimeZone.CanResolve(options.TimeZoneId),
+                "Consultation scheduling time zone is invalid.")
+            .ValidateOnStart();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
         services.AddSingleton<IJwtProvider, JwtProvider>();
         services.AddSingleton<ILawyerDocumentPolicy, LawyerDocumentPolicy>();
         services.AddSingleton<IConsultationReferenceNumberGenerator, ConsultationReferenceNumberGenerator>();
+        services.AddSingleton<IConsultationSchedulingTimeZone, ConsultationSchedulingTimeZone>();
         services.AddScoped<IConsultationAggregatePersistence, ConsultationAggregatePersistence>();
         services.AddSingleton<IStoredFileReader, StoredFileReader>();
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();

@@ -18,6 +18,7 @@ public sealed record GuestConsultationTrackingResponse(
     ConsultationReferenceSummaryResponse? LegalSpecialization,
     string Status,
     DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice,
     DateTime CreatedOnUtc,
     DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc);
@@ -62,6 +63,7 @@ internal sealed record GuestConsultationTrackingSnapshot(
     string? SpecializationNameEn,
     ConsultationRequestStatus Status,
     DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice,
     DateTime CreatedOnUtc,
     DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc)
@@ -78,6 +80,7 @@ internal sealed record GuestConsultationTrackingSnapshot(
                 : null,
             Status.ToString(),
             PreferredAppointmentOnUtc,
+            ConsultationPrice,
             CreatedOnUtc,
             ModifiedOnUtc,
             CompletedOnUtc);
@@ -103,6 +106,7 @@ internal sealed class GuestConsultationTrackingSpecification
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
             request.Status,
             request.PreferredAppointmentOnUtc,
+            request.ConsultationPrice,
             request.CreatedOnUtc,
             request.ModifiedOnUtc,
             request.CompletedOnUtc));

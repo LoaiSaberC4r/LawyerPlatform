@@ -18,7 +18,9 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
         if (exception is DbUpdateConcurrencyException)
         {
             var concurrencyException = (DbUpdateConcurrencyException)exception;
-            error = concurrencyException.Entries.Any(entry => entry.Entity is Governorate)
+            error = concurrencyException.Entries.Any(entry => entry.Entity is LawyerConsultationSettings)
+                ? LawyerErrors.ConsultationSettingsConcurrencyConflict
+                : concurrencyException.Entries.Any(entry => entry.Entity is Governorate)
                 ? GovernorateErrors.ConcurrencyConflict
                 : concurrencyException.Entries.Any(entry => entry.Entity is City)
                     ? CityErrors.ConcurrencyConflict
@@ -51,6 +53,8 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_ClientProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("ClientProfile.AccountAlreadyLinked", "The account already has a client profile."),
             var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", "The account already has a lawyer profile."),
             var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,
+            var message when message.Contains("UX_LawyerConsultationSettings_LawyerProfileId", StringComparison.Ordinal) => LawyerErrors.ConsultationSettingsConcurrencyConflict,
+            var message when message.Contains("UX_LawyerAvailabilities_SettingsId_DayOfWeek", StringComparison.Ordinal) => LawyerErrors.DuplicateAvailabilityDay,
             var message when message.Contains("UX_LawyerOffices_LawyerProfileId_Primary", StringComparison.Ordinal) => Error.Conflict("Lawyer.OfficeEditNotAllowed", "A primary office already exists."),
             var message when message.Contains("UX_LegalSpecializations_NameAr", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameAr,
             var message when message.Contains("UX_LegalSpecializations_NameEn", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameEn,

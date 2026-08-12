@@ -19,6 +19,7 @@ public sealed record ClientConsultationDetailsResponse(
     ConsultationReferenceSummaryResponse? LegalSpecialization,
     string Description,
     DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice,
     string Status,
     string? RejectionReason,
     DateTime CreatedOnUtc,
@@ -73,6 +74,7 @@ internal sealed class ClientConsultationRequestDetailsSpecification
                     request.LegalSpecialization.NameEn),
             request.Description,
             request.PreferredAppointmentOnUtc,
+            request.ConsultationPrice,
             request.Status.ToString(),
             request.Status == ConsultationRequestStatus.Rejected
                 ? request.StatusHistory

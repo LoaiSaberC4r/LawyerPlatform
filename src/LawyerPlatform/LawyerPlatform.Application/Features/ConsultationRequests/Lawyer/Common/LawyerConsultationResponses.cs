@@ -32,6 +32,7 @@ public sealed record LawyerConsultationDetailsResponse(
     ConsultationSpecializationResponse? LegalSpecialization,
     string Description,
     DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice,
     string Status,
     string? RejectionReason,
     DateTime CreatedOnUtc,

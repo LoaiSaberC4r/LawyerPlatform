@@ -20,6 +20,16 @@ public sealed record ReplaceLawyerSpecializationsRequest(
     IReadOnlyList<int> SpecializationIds,
     string RowVersion);
 
+public sealed record UpdateLawyerConsultationSettingsRequest(
+    decimal ConsultationPrice,
+    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability,
+    string? RowVersion);
+
+public sealed record UpdateLawyerAvailabilityRequest(
+    string DayOfWeek,
+    TimeOnly? StartTime,
+    TimeOnly? EndTime);
+
 public sealed class UpdateLawyerProfileImageRequest
 {
     public required IFormFile Image { get; init; }

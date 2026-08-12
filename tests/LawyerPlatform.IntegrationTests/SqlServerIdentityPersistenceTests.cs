@@ -45,6 +45,8 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
         Assert.Contains("LawyerApprovalStatusHistory", tables);
         Assert.Contains("ConsultationRequests", tables);
         Assert.Contains("ConsultationRequestStatusHistory", tables);
+        Assert.Contains("LawyerConsultationSettings", tables);
+        Assert.Contains("LawyerAvailabilities", tables);
         Assert.DoesNotContain("CatalogItems", tables);
     }
 

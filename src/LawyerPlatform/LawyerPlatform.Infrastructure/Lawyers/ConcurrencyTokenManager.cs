@@ -12,4 +12,11 @@ internal sealed class ConcurrencyTokenManager(LawyerPlatformDbContext dbContext)
         ArgumentNullException.ThrowIfNull(rowVersion);
         dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
     }
+
+    public void MarkModified<TEntity>(TEntity entity)
+        where TEntity : class
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        dbContext.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+    }
 }
