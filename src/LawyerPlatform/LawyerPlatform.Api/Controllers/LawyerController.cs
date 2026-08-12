@@ -6,6 +6,8 @@ using LawyerPlatform.Application.Features.Lawyers.DeleteDocument;
 using LawyerPlatform.Application.Features.Lawyers.Dashboard;
 using LawyerPlatform.Application.Features.Dashboards;
 using LawyerPlatform.Application.Features.Lawyers.GetApprovalStatus;
+using LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.GetSettings;
+using LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Update;
 using LawyerPlatform.Application.Features.Lawyers.GetOwnDocumentContent;
 using LawyerPlatform.Application.Features.Lawyers.GetOwnDocuments;
 using LawyerPlatform.Application.Features.Lawyers.GetOwnProfile;
@@ -36,6 +38,23 @@ public sealed class LawyerController(ISender sender) : ControllerBase
     [HttpGet("profile")]
     public async Task<IActionResult> GetProfile(CancellationToken cancellationToken)
         => (await sender.Send(new GetOwnProfileQuery(), cancellationToken)).ToIActionResult(cancellationToken);
+
+    [HttpGet("consultation-settings")]
+    public async Task<IActionResult> GetConsultationSettings(CancellationToken cancellationToken)
+        => (await sender.Send(new GetLawyerConsultationSettingsQuery(), cancellationToken))
+            .ToIActionResult(cancellationToken);
+
+    [HttpPut("consultation-settings")]
+    public async Task<IActionResult> UpdateConsultationSettings(
+        UpdateLawyerConsultationSettingsRequest request,
+        CancellationToken cancellationToken)
+        => (await sender.Send(new UpdateLawyerConsultationSettingsCommand(
+            request.ConsultationPrice,
+            request.Availability?.Select(item => new UpdateLawyerAvailabilityItem(
+                item.DayOfWeek,
+                item.StartTime,
+                item.EndTime)).ToArray(),
+            request.RowVersion), cancellationToken)).ToIActionResult(cancellationToken);
 
     [HttpPut("profile")]
     public async Task<IActionResult> UpdateProfile(UpdateLawyerProfileRequest request, CancellationToken cancellationToken)

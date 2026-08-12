@@ -56,6 +56,7 @@ internal sealed record LawyerConsultationDetailsSnapshot(
     string? SpecializationNameEn,
     string Description,
     DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice,
     ConsultationRequestStatus Status,
     string? RejectionReason,
     DateTime CreatedOnUtc,
@@ -80,6 +81,7 @@ internal sealed record LawyerConsultationDetailsSnapshot(
                 : null,
             Description,
             PreferredAppointmentOnUtc,
+            ConsultationPrice,
             Status.ToString(),
             RejectionReason,
             CreatedOnUtc,
@@ -116,6 +118,7 @@ internal sealed class LawyerConsultationRequestDetailsSpecification
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
             request.Description,
             request.PreferredAppointmentOnUtc,
+            request.ConsultationPrice,
             request.Status,
             request.StatusHistory
                 .Where(history => history.NewStatus == ConsultationRequestStatus.Rejected)

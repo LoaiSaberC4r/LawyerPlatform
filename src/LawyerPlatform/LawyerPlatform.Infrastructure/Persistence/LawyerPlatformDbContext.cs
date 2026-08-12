@@ -24,6 +24,8 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     public DbSet<LawyerSpecialization> LawyerSpecializations => Set<LawyerSpecialization>();
     public DbSet<LawyerDocument> LawyerDocuments => Set<LawyerDocument>();
     public DbSet<LawyerApprovalStatusHistory> LawyerApprovalStatusHistory => Set<LawyerApprovalStatusHistory>();
+    public DbSet<LawyerConsultationSettings> LawyerConsultationSettings => Set<LawyerConsultationSettings>();
+    public DbSet<LawyerAvailability> LawyerAvailabilities => Set<LawyerAvailability>();
     public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
     public DbSet<ConsultationRequestStatusHistory> ConsultationRequestStatusHistory => Set<ConsultationRequestStatusHistory>();
 

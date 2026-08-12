@@ -24,6 +24,7 @@ public sealed record AdminConsultationDetailsResponse(
     ConsultationSpecializationResponse? LegalSpecialization,
     string Description,
     DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice,
     string Status,
     string? RejectionReason,
     DateTime CreatedOnUtc,
@@ -57,7 +58,7 @@ internal sealed record AdminConsultationDetailsSnapshot(
     string RequesterPhoneNumber, string? RequesterEmail,
     Guid LawyerId, string LawyerFullName, string? LawyerProfessionalTitle,
     int? SpecializationId, string? SpecializationNameAr, string? SpecializationNameEn,
-    string Description, DateTime? PreferredAppointmentOnUtc, ConsultationRequestStatus Status,
+    string Description, DateTime? PreferredAppointmentOnUtc, decimal? ConsultationPrice, ConsultationRequestStatus Status,
     string? RejectionReason, DateTime CreatedOnUtc, DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc, IReadOnlyList<AdminConsultationHistorySnapshot> History, byte[] RowVersion)
 {
@@ -68,7 +69,7 @@ internal sealed record AdminConsultationDetailsSnapshot(
         SpecializationId.HasValue
             ? new ConsultationSpecializationResponse(SpecializationId.Value, SpecializationNameAr!, SpecializationNameEn!)
             : null,
-        Description, PreferredAppointmentOnUtc, Status.ToString(), RejectionReason,
+        Description, PreferredAppointmentOnUtc, ConsultationPrice, Status.ToString(), RejectionReason,
         CreatedOnUtc, ModifiedOnUtc, CompletedOnUtc,
         History.Select(item => new ConsultationStatusHistoryResponse(
             item.Id, item.OldStatus.ToString(), item.NewStatus.ToString(),
@@ -93,7 +94,7 @@ internal sealed class AdminConsultationRequestDetailsSpecification
             request.LegalSpecializationId,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
-            request.Description, request.PreferredAppointmentOnUtc, request.Status,
+            request.Description, request.PreferredAppointmentOnUtc, request.ConsultationPrice, request.Status,
             request.StatusHistory.Where(history => history.NewStatus == ConsultationRequestStatus.Rejected)
                 .OrderByDescending(history => history.ChangedOnUtc).Select(history => history.Reason).FirstOrDefault(),
             request.CreatedOnUtc, request.ModifiedOnUtc, request.CompletedOnUtc,

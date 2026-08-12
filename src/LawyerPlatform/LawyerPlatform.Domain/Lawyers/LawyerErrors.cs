@@ -26,4 +26,19 @@ public static class LawyerErrors
     public static readonly Error ProfileImageNotFound = Error.NotFound("Lawyer.ProfileImageNotFound", "Profile image was not found.");
     public static readonly Error InvalidRowVersion = Error.Validation("Lawyer.InvalidRowVersion", "RowVersion must be a valid Base64 value.");
     public static readonly Error ConcurrencyConflict = Error.Conflict("Lawyer.ConcurrencyConflict", "The lawyer record was changed by another request.");
+    public static readonly Error ConsultationPriceInvalid = Error.Validation(
+        "Lawyer.ConsultationPriceInvalid",
+        "Consultation price must be greater than zero and contain at most two decimal places.");
+    public static readonly Error AvailabilityInvalid = Error.Validation(
+        "Lawyer.AvailabilityInvalid",
+        "Availability must contain at most one valid working period per day and start before end.");
+    public static readonly Error DuplicateAvailabilityDay = Error.Validation(
+        "Lawyer.DuplicateAvailabilityDay",
+        "Availability cannot contain duplicate days.");
+    public static readonly Error ConsultationSettingsInvalidRowVersion = Error.Validation(
+        "Lawyer.ConsultationSettingsInvalidRowVersion",
+        "Consultation settings RowVersion must be a valid Base64 value.");
+    public static readonly Error ConsultationSettingsConcurrencyConflict = Error.Conflict(
+        "Lawyer.ConsultationSettingsConcurrencyConflict",
+        "The consultation settings were changed by another request.");
 }

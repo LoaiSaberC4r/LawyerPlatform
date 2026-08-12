@@ -26,7 +26,7 @@ internal sealed class GetPublicLawyerDetailsQueryHandler(
     }
 }
 
-internal sealed class PublicLawyerDetailsSpecification : PublicLawyerSpecification<PublicLawyerSnapshot>
+internal sealed class PublicLawyerDetailsSpecification : PublicLawyerSpecification<PublicLawyerDetailsSnapshot>
 {
     public PublicLawyerDetailsSpecification(Guid lawyerId, ILawyerDocumentPolicy documentPolicy)
     {
@@ -34,6 +34,6 @@ internal sealed class PublicLawyerDetailsSpecification : PublicLawyerSpecificati
         ApplyPublicEligibility(documentPolicy);
         UseNoTracking();
         UseSplitQuery();
-        Select(PublicLawyerProjection.Create());
+        Select(PublicLawyerProjection.CreateDetails());
     }
 }

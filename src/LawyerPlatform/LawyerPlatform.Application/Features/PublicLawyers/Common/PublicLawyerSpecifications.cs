@@ -3,6 +3,7 @@ using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Lawyers;
+using System.Text.Json.Serialization;
 
 namespace LawyerPlatform.Application.Features.PublicLawyers.Common;
 
@@ -58,7 +59,15 @@ public sealed record PublicLawyerResponse(
     string AreaNameAr,
     string AreaNameEn,
     string DetailedAddress,
-    string? PublicPhoneNumber);
+    string? PublicPhoneNumber,
+    decimal? ConsultationPrice,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PublicLawyerAvailabilityResponse>? Availability = null);
+
+public sealed record PublicLawyerAvailabilityResponse(
+    string DayOfWeek,
+    TimeOnly StartTime,
+    TimeOnly EndTime);
 
 internal sealed record PublicLawyerSnapshot(
     Guid Id,
@@ -68,9 +77,11 @@ internal sealed record PublicLawyerSnapshot(
     string? Biography,
     int YearsOfExperience,
     IReadOnlyList<PublicSpecializationSnapshot> Specializations,
-    PublicOfficeSnapshot Office)
+    PublicOfficeSnapshot Office,
+    decimal? ConsultationPrice)
 {
-    public PublicLawyerResponse ToResponse() => new(
+    public PublicLawyerResponse ToResponse(
+        IReadOnlyList<PublicLawyerAvailabilityResponse>? availability = null) => new(
         Id,
         FullName,
         HasProfileImage ? $"/api/v1/public/lawyers/{Id}/profile-image" : null,
@@ -88,7 +99,28 @@ internal sealed record PublicLawyerSnapshot(
         Office.AreaNameAr,
         Office.AreaNameEn,
         Office.DetailedAddress,
-        Office.PublicPhoneNumber);
+        Office.PublicPhoneNumber,
+        ConsultationPrice,
+        availability);
+}
+
+internal sealed record PublicAvailabilitySnapshot(
+    DayOfWeek DayOfWeek,
+    TimeOnly StartTime,
+    TimeOnly EndTime);
+
+internal sealed record PublicLawyerDetailsSnapshot(
+    PublicLawyerSnapshot Lawyer,
+    IReadOnlyList<PublicAvailabilitySnapshot> Availability)
+{
+    public PublicLawyerResponse ToResponse()
+        => Lawyer.ToResponse(Availability
+            .OrderBy(item => item.DayOfWeek)
+            .Select(item => new PublicLawyerAvailabilityResponse(
+                item.DayOfWeek.ToString(),
+                item.StartTime,
+                item.EndTime))
+            .ToArray());
 }
 
 internal sealed record PublicSpecializationSnapshot(int Id, string NameAr, string NameEn);
@@ -135,5 +167,50 @@ internal static class PublicLawyerProjection
                     office.Area.NameAr,
                     office.Area.NameEn,
                     office.DetailedAddress,
-                    office.PublicPhoneNumber)).Single());
+                    office.PublicPhoneNumber)).Single(),
+            profile.ConsultationSettings == null
+                ? null
+                : profile.ConsultationSettings.ConsultationPrice);
+
+    public static System.Linq.Expressions.Expression<Func<LawyerProfile, PublicLawyerDetailsSnapshot>> CreateDetails()
+        => profile => new PublicLawyerDetailsSnapshot(
+            new PublicLawyerSnapshot(
+                profile.Id,
+                profile.FullName,
+                profile.ProfileImageStorageKey != null,
+                profile.ProfessionalTitle!,
+                profile.Biography,
+                profile.YearsOfExperience!.Value,
+                profile.Specializations.Where(item => item.LegalSpecialization.IsActive)
+                    .OrderBy(item => item.LegalSpecialization.DisplayOrder)
+                    .ThenBy(item => item.LegalSpecializationId)
+                    .Select(item => new PublicSpecializationSnapshot(
+                        item.LegalSpecializationId,
+                        item.LegalSpecialization.NameAr,
+                        item.LegalSpecialization.NameEn)).ToArray(),
+                profile.Offices.Where(office => office.IsPrimary && office.IsActive)
+                    .Select(office => new PublicOfficeSnapshot(
+                        office.GovernorateId,
+                        office.Governorate.NameAr,
+                        office.Governorate.NameEn,
+                        office.CityId,
+                        office.City.NameAr,
+                        office.City.NameEn,
+                        office.AreaId,
+                        office.Area.NameAr,
+                        office.Area.NameEn,
+                        office.DetailedAddress,
+                        office.PublicPhoneNumber)).Single(),
+                profile.ConsultationSettings == null
+                    ? null
+                    : profile.ConsultationSettings.ConsultationPrice),
+            profile.ConsultationSettings == null
+                ? Array.Empty<PublicAvailabilitySnapshot>()
+                : profile.ConsultationSettings.Availability
+                    .OrderBy(item => item.DayOfWeek)
+                    .Select(item => new PublicAvailabilitySnapshot(
+                        item.DayOfWeek,
+                        item.StartTime,
+                        item.EndTime))
+                    .ToArray());
 }

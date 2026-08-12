@@ -27,7 +27,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
-        DateTime createdOnUtc)
+        DateTime createdOnUtc,
+        decimal? consultationPrice)
         : base(Guid.NewGuid())
     {
         ReferenceNumber = referenceNumber.Trim();
@@ -41,6 +42,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         PreferredAppointmentOnUtc = preferredAppointmentOnUtc is { } preferred
             ? RequireUtc(preferred)
             : null;
+        ConsultationPrice = consultationPrice;
         Status = ConsultationRequestStatus.New;
         CreatedOnUtc = RequireUtc(createdOnUtc);
     }
@@ -57,6 +59,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
     public LegalSpecialization? LegalSpecialization { get; private set; }
     public string Description { get; private set; } = string.Empty;
     public DateTime? PreferredAppointmentOnUtc { get; private set; }
+    public decimal? ConsultationPrice { get; private set; }
     public ConsultationRequestStatus Status { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
     public DateTime? ModifiedOnUtc { get; set; }
@@ -73,7 +76,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
-        DateTime createdOnUtc)
+        DateTime createdOnUtc,
+        decimal? consultationPrice = null)
         => Create(
             referenceNumber,
             null,
@@ -84,7 +88,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
-            createdOnUtc);
+            createdOnUtc,
+            consultationPrice);
 
     public static Result<ConsultationRequest> CreateForClient(
         string referenceNumber,
@@ -93,7 +98,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
-        DateTime createdOnUtc)
+        DateTime createdOnUtc,
+        decimal? consultationPrice = null)
         => Create(
             referenceNumber,
             clientProfileId,
@@ -104,7 +110,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
-            createdOnUtc);
+            createdOnUtc,
+            consultationPrice);
 
     public Result ChangeStatus(
         ConsultationRequestStatus newStatus,
@@ -152,7 +159,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
-        DateTime createdOnUtc)
+        DateTime createdOnUtc,
+        decimal? consultationPrice = null)
     {
         var hasClientSource = clientProfileId is { } clientId && clientId != Guid.Empty;
         var hasGuestSource = !string.IsNullOrWhiteSpace(guestFullName) &&
@@ -173,7 +181,10 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             description.Trim().Length > MaximumDescriptionLength ||
             guestFullName?.Trim().Length > 200 ||
             guestPhoneNumber?.Trim().Length > 30 ||
-            guestEmail?.Trim().Length > 320)
+            guestEmail?.Trim().Length > 320 ||
+            consultationPrice is <= 0 ||
+            consultationPrice > LawyerConsultationSettings.MaximumConsultationPrice ||
+            consultationPrice.HasValue && decimal.Round(consultationPrice.Value, 2) != consultationPrice.Value)
         {
             return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.Invalid);
         }
@@ -188,7 +199,8 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
-            createdOnUtc));
+            createdOnUtc,
+            consultationPrice));
     }
 
     private static bool IsAllowedTransition(

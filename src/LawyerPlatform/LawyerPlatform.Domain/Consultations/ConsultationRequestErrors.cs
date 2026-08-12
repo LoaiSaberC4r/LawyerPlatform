@@ -44,6 +44,18 @@ public static class ConsultationRequestErrors
         "ConsultationRequest.PreferredAppointmentMustBeFuture",
         "The preferred appointment must be a future UTC time.");
 
+    public static readonly Error LawyerAvailabilityNotConfigured = Error.Domain(
+        "ConsultationRequest.LawyerAvailabilityNotConfigured",
+        "The selected lawyer has not configured appointment availability.");
+
+    public static readonly Error LawyerNotAvailableOnSelectedDay = Error.Domain(
+        "ConsultationRequest.LawyerNotAvailableOnSelectedDay",
+        "The selected lawyer is not available on the appointment day.");
+
+    public static readonly Error OutsideLawyerWorkingHours = Error.Domain(
+        "ConsultationRequest.OutsideLawyerWorkingHours",
+        "The preferred appointment is outside the lawyer's working hours.");
+
     public static readonly Error ReferenceNumberConflict = Error.Conflict(
         "ConsultationRequest.ReferenceNumberConflict",
         "A unique consultation reference could not be allocated. Please retry.");
