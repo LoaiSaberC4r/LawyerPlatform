@@ -9,6 +9,209 @@ namespace LawyerPlatform.IntegrationTests;
 public sealed class LawyerConsultationSettingsEndpointsTests
 {
     [Fact]
+    public async Task LawyerCanPerformMultipleSequentialConsultationSettingsUpdatesUsingLatestRowVersion()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.sequential",
+            "01073333333"));
+
+        var createResponse = await PutSettingsAsync(client, 500m, null,
+            new AvailabilityJson("Sunday", "10:00:00", "17:00:00"));
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+        Assert.False(string.IsNullOrWhiteSpace(firstRowVersion));
+
+        var rowVersions = new List<string> { firstRowVersion };
+        var updates = new[]
+        {
+            new SettingsUpdate(500m,
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ]),
+            new SettingsUpdate(600m,
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ]),
+            new SettingsUpdate(600m,
+            [
+                new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"),
+                new AvailabilityJson("Thursday", "10:00:00", "19:00:00")
+            ]),
+            new SettingsUpdate(600m,
+            [
+                new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+                new AvailabilityJson("Wednesday", "11:00:00", "20:00:00"),
+                new AvailabilityJson("Friday", "10:00:00", "16:00:00")
+            ]),
+            new SettingsUpdate(650m, [])
+        };
+
+        foreach (var update in updates)
+        {
+            var response = await PutSettingsAsync(
+                client,
+                update.Price,
+                rowVersions[^1],
+                update.Availability);
+            Assert.True(
+                response.StatusCode == HttpStatusCode.OK,
+                await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            var rowVersion = (await ReadJsonAsync(response)).GetProperty("rowVersion").GetString()!;
+            Assert.False(string.IsNullOrWhiteSpace(rowVersion));
+            Assert.NotEqual(rowVersions[^1], rowVersion);
+            rowVersions.Add(rowVersion);
+        }
+
+        var staleResponse = await PutSettingsAsync(client, 700m, rowVersions[^3]);
+        await AssertProblemAsync(
+            staleResponse,
+            HttpStatusCode.Conflict,
+            "Lawyer.ConsultationSettingsConcurrencyConflict");
+    }
+
+    [Fact]
+    public async Task LawyerCanPutExistingConsultationSettingsUsingLatestRowVersionWithoutFalseConcurrencyConflict()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.noop",
+            "01074444444"));
+
+        var availability = new AvailabilityJson("Sunday", "10:00:00", "17:00:00");
+        var createResponse = await PutSettingsAsync(client, 500m, null, availability);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+
+        var noOpResponse = await PutSettingsAsync(client, 500m, firstRowVersion, availability);
+        Assert.True(
+            noOpResponse.StatusCode == HttpStatusCode.OK,
+            await noOpResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var secondRowVersion = (await ReadJsonAsync(noOpResponse)).GetProperty("rowVersion").GetString()!;
+
+        Assert.False(string.IsNullOrWhiteSpace(secondRowVersion));
+        Assert.NotEqual(firstRowVersion, secondRowVersion);
+    }
+
+    [Fact]
+    public async Task AvailabilityOnlyUpdateAdvancesSettingsConcurrencyToken()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.availability",
+            "01075555555"));
+
+        var createResponse = await PutSettingsAsync(client, 500m, null,
+            new AvailabilityJson("Sunday", "10:00:00", "17:00:00"));
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+
+        var updateResponse = await PutSettingsAsync(client, 500m, firstRowVersion,
+            new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+            new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"));
+        Assert.True(
+            updateResponse.StatusCode == HttpStatusCode.OK,
+            await updateResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var updated = await ReadJsonAsync(updateResponse);
+        var secondRowVersion = updated.GetProperty("rowVersion").GetString()!;
+
+        Assert.NotEqual(firstRowVersion, secondRowVersion);
+        Assert.Equal(
+            ["Sunday", "Wednesday"],
+            updated.GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+
+        var nextResponse = await PutSettingsAsync(client, 550m, secondRowVersion,
+            new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+            new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"));
+        Assert.Equal(HttpStatusCode.OK, nextResponse.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("price")]
+    [InlineData("times")]
+    [InlineData("add")]
+    [InlineData("remove")]
+    [InlineData("replace")]
+    [InlineData("empty")]
+    public async Task LawyerCanUpdateExistingConsultationSettingsForEachSupportedReplacementShape(
+        string updateShape)
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            $"settings.shape.{updateShape}",
+            "01076666666"));
+
+        var initial = updateShape switch
+        {
+            "remove" or "replace" => new[]
+            {
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"),
+                new AvailabilityJson("Thursday", "10:00:00", "19:00:00")
+            },
+            "empty" =>
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ],
+            _ => [new AvailabilityJson("Sunday", "10:00:00", "17:00:00")]
+        };
+        var expectedPrice = updateShape == "price" ? 600m : 500m;
+        var replacement = updateShape switch
+        {
+            "times" =>
+            [new AvailabilityJson("Sunday", "09:00:00", "18:00:00")],
+            "add" =>
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ],
+            "remove" =>
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ],
+            "replace" =>
+            [
+                new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+                new AvailabilityJson("Wednesday", "11:00:00", "20:00:00"),
+                new AvailabilityJson("Friday", "10:00:00", "16:00:00")
+            ],
+            "empty" => [],
+            _ => initial
+        };
+
+        var createResponse = await PutSettingsAsync(client, 500m, null, initial);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+
+        var updateResponse = await PutSettingsAsync(client, expectedPrice, firstRowVersion, replacement);
+        Assert.True(
+            updateResponse.StatusCode == HttpStatusCode.OK,
+            await updateResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var updated = await ReadJsonAsync(updateResponse);
+
+        Assert.Equal(expectedPrice, updated.GetProperty("consultationPrice").GetDecimal());
+        Assert.Equal(
+            replacement.Select(item => item.DayOfWeek).OrderBy(DayIndex).ToArray(),
+            updated.GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+        Assert.NotEqual(firstRowVersion, updated.GetProperty("rowVersion").GetString());
+    }
+
+    [Fact]
     public async Task LawyerCanCreateReadReplaceAndConcurrentlyUpdateOwnSettings()
     {
         await using var factory = await CreateFactoryAsync();
@@ -44,6 +247,13 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
             new AvailabilityJson("sunday", "12:00:00", "16:00:00"));
         await AssertProblemAsync(duplicate, HttpStatusCode.UnprocessableEntity, "Lawyer.DuplicateAvailabilityDay");
+
+        var invalidRowVersion = await PutSettingsAsync(client, 500m, "not-base64",
+            new AvailabilityJson("Sunday", "10:00:00", "17:00:00"));
+        await AssertProblemAsync(
+            invalidRowVersion,
+            HttpStatusCode.UnprocessableEntity,
+            "Lawyer.ConsultationSettingsInvalidRowVersion");
 
         var invalidRange = await PutSettingsAsync(client, 500m, firstRowVersion,
             new AvailabilityJson("Sunday", "17:00:00", "10:00:00"));
@@ -178,5 +388,10 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             error => error.GetProperty("code").GetString() == code);
     }
 
+    private static int DayIndex(string day)
+        => (int)Enum.Parse<DayOfWeek>(day);
+
     private sealed record AvailabilityJson(string DayOfWeek, string StartTime, string EndTime);
+
+    private sealed record SettingsUpdate(decimal Price, AvailabilityJson[] Availability);
 }

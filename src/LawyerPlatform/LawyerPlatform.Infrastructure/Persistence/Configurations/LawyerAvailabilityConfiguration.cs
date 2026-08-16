@@ -11,6 +11,8 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
     {
         builder.ToTable("LawyerAvailabilities");
         builder.HasKey(availability => availability.Id);
+        builder.Property(availability => availability.Id)
+            .ValueGeneratedNever();
         builder.Property(availability => availability.DayOfWeek)
             .HasConversion<int>()
             .IsRequired();

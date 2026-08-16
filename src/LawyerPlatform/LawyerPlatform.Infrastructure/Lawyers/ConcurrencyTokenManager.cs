@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Infrastructure.Persistence;
 
@@ -13,10 +14,13 @@ internal sealed class ConcurrencyTokenManager(LawyerPlatformDbContext dbContext)
         dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
     }
 
-    public void MarkModified<TEntity>(TEntity entity)
+    public void MarkPropertyModified<TEntity, TProperty>(
+        TEntity entity,
+        Expression<Func<TEntity, TProperty>> propertyExpression)
         where TEntity : class
     {
         ArgumentNullException.ThrowIfNull(entity);
-        dbContext.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+        ArgumentNullException.ThrowIfNull(propertyExpression);
+        dbContext.Entry(entity).Property(propertyExpression).IsModified = true;
     }
 }

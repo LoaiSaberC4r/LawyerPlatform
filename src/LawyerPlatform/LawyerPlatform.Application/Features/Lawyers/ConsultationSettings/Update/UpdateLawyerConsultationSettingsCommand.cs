@@ -96,8 +96,11 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
                 return Result<LawyerConsultationSettingsResponse>.Fail(update.Errors);
             }
 
-            // Availability-only replacements must also advance the independent settings RowVersion.
-            concurrencyTokenManager.MarkModified(settings);
+            // Touch one aggregate-root scalar so availability-only and no-op PUTs advance
+            // the independent settings RowVersion without changing child entity states.
+            concurrencyTokenManager.MarkPropertyModified(
+                settings,
+                item => item.ConsultationPrice);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
