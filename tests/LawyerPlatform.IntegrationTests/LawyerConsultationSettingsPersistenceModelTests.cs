@@ -1,7 +1,11 @@
+using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Infrastructure.Lawyers;
 using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -32,5 +36,79 @@ public sealed class LawyerConsultationSettingsPersistenceModelTests
             index.IsUnique && index.GetDatabaseName() == "UX_LawyerAvailabilities_SettingsId_DayOfWeek");
         Assert.Equal(DeleteBehavior.Restrict, settings.GetForeignKeys().Single().DeleteBehavior);
         Assert.Equal(DeleteBehavior.Cascade, availability.GetForeignKeys().Single().DeleteBehavior);
+        Assert.Equal(ValueGenerated.Never, availability.FindProperty(nameof(LawyerAvailability.Id))!.ValueGenerated);
     }
+
+    [Fact]
+    public async Task ClientGeneratedAvailabilityIdsPreserveAggregateReplacementEntityStates()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        var options = new DbContextOptionsBuilder<LawyerPlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var context = new LawyerPlatformDbContext(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var nowUtc = new DateTime(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
+        var account = UserAccount.CreateLawyer(
+            "settings.states",
+            "SETTINGS.STATES",
+            "settings.states@example.test",
+            "SETTINGS.STATES@EXAMPLE.TEST",
+            "01078888888",
+            "integration-test-hash",
+            nowUtc).Value;
+        var profile = LawyerProfile.Create(account, "Settings State Lawyer").Value;
+        var settings = LawyerConsultationSettings.Create(
+            profile.Id,
+            500m,
+            [
+                Period(DayOfWeek.Sunday, 10, 17),
+                Period(DayOfWeek.Wednesday, 10, 20),
+                Period(DayOfWeek.Thursday, 10, 19)
+            ],
+            nowUtc).Value;
+        context.LawyerProfiles.Add(profile);
+        context.LawyerConsultationSettings.Add(settings);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var originalRowVersion = settings.RowVersion.ToArray();
+
+        context.ChangeTracker.Clear();
+        var tracked = await context.LawyerConsultationSettings
+            .Include(item => item.Availability)
+            .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
+        var tokenManager = new ConcurrencyTokenManager(context);
+        tokenManager.SetOriginalRowVersion(tracked, originalRowVersion);
+
+        Assert.True(tracked.Update(
+            500m,
+            [
+                Period(DayOfWeek.Sunday, 9, 18),
+                Period(DayOfWeek.Wednesday, 10, 20),
+                Period(DayOfWeek.Friday, 10, 16)
+            ]).IsSuccess);
+        tokenManager.MarkPropertyModified(tracked, item => item.ConsultationPrice);
+        context.ChangeTracker.DetectChanges();
+
+        var settingsEntry = context.Entry(tracked);
+        var rowVersionEntry = settingsEntry.Property(item => item.RowVersion);
+        Assert.Equal(EntityState.Modified, settingsEntry.State);
+        Assert.Equal(originalRowVersion, rowVersionEntry.OriginalValue);
+        Assert.Equal(originalRowVersion, rowVersionEntry.CurrentValue);
+        Assert.True(settingsEntry.Property(item => item.ConsultationPrice).IsModified);
+
+        var availabilityStates = context.ChangeTracker.Entries<LawyerAvailability>()
+            .ToDictionary(entry => entry.Entity.DayOfWeek, entry => entry.State);
+        Assert.Equal(EntityState.Modified, availabilityStates[DayOfWeek.Sunday]);
+        Assert.Equal(EntityState.Unchanged, availabilityStates[DayOfWeek.Wednesday]);
+        Assert.Equal(EntityState.Deleted, availabilityStates[DayOfWeek.Thursday]);
+        Assert.Equal(EntityState.Added, availabilityStates[DayOfWeek.Friday]);
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.False(originalRowVersion.SequenceEqual(tracked.RowVersion));
+    }
+
+    private static LawyerAvailabilityPeriod Period(DayOfWeek day, int startHour, int endHour)
+        => new(day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 }

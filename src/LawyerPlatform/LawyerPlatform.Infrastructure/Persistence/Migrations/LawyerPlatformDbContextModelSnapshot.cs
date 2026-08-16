@@ -295,7 +295,6 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("DayOfWeek")
