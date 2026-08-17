@@ -9,6 +9,7 @@ using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -157,6 +158,27 @@ public sealed class LawyerConsultationRequestEndpointsTests
             (await client.GetAsync(
                 $"/api/v1/lawyer/consultation-requests/{firstGuest.Id}",
                 TestContext.Current.CancellationToken)).StatusCode);
+
+        await using var notificationScope = factory.Services.CreateAsyncScope();
+        var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var firstTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == firstGuest.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var completedTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == completedCandidate.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, firstTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationUnderReview, firstTypes);
+        Assert.Contains(EmailNotificationType.ConsultationRejected, firstTypes);
+        Assert.DoesNotContain(EmailNotificationType.ConsultationApproved, firstTypes);
+        Assert.Equal(4, completedTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationApproved, completedTypes);
+        Assert.Contains(EmailNotificationType.ConsultationCompleted, completedTypes);
     }
 
     private static async Task<(Guid ProfileId, Guid UserAccountId, string Token)> RegisterApproveAndLoginLawyerAsync(

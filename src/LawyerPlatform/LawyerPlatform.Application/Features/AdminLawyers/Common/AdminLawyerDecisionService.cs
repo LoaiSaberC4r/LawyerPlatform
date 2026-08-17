@@ -6,6 +6,7 @@ using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.AdminLawyers.Common;
 
@@ -33,6 +34,7 @@ internal sealed class AdminLawyerDecisionService(
     LawyerAggregateCompletionService completionService,
     ILawyerDocumentPolicy documentPolicy,
     ILawyerAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
 {
     public async Task<Result<AdminLawyerDecisionResponse>> ExecuteAsync(
@@ -88,7 +90,9 @@ internal sealed class AdminLawyerDecisionService(
             return Result<AdminLawyerDecisionResponse>.Fail(transition.Errors);
         }
 
-        aggregatePersistence.Add(profile.StatusHistory.Last());
+        var history = profile.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueLawyerTransitionAsync(profile, history, cancellationToken);
 
         profile.ModifiedOnUtc = nowUtc;
         await unitOfWork.SaveChangesAsync(cancellationToken);

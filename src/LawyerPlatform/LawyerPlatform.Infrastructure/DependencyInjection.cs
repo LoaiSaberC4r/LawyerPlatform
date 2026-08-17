@@ -14,6 +14,8 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Infrastructure.Lawyers;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +47,7 @@ public static class DependencyInjection
         services.AddBuildingBlockPasswordHashing(configuration);
         services.AddBuildingBlockMedia(configuration);
         services.AddBuildingBlockFileSystemMediaStorage();
+        services.AddBuildingBlockMailKitEmail(configuration);
         services.AddBuildingBlockSqlServerExceptionMapping();
 
         services.AddOptions<InitialSuperAdminOptions>()
@@ -71,6 +74,15 @@ public static class DependencyInjection
                 options => ConsultationSchedulingTimeZone.CanResolve(options.TimeZoneId),
                 "Consultation scheduling time zone is invalid.")
             .ValidateOnStart();
+        services.AddOptions<EmailOutboxOptions>()
+            .Bind(configuration.GetSection(EmailOutboxOptions.SectionName))
+            .Validate(
+                options => options.PollingIntervalSeconds > 0 &&
+                           options.BatchSize is > 0 and <= 100 &&
+                           options.MaxAttempts is > 0 and <= 20 &&
+                           options.ClaimLeaseSeconds >= 120,
+                "Email outbox options are invalid.")
+            .ValidateOnStart();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
@@ -82,6 +94,8 @@ public static class DependencyInjection
         services.AddSingleton<IStoredFileReader, StoredFileReader>();
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
+        services.AddScoped<IEmailNotificationOutbox, EmailNotificationOutbox>();
+        services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();
         services.AddScoped<ISeeder, SuperAdminSeeder>();
@@ -92,6 +106,7 @@ public static class DependencyInjection
         services.AddScoped<IEnsureSeeding, EnsureSeeding>();
         services.AddSingleton<IDatabaseMigrationService, EfCoreDatabaseMigrationService>();
         services.AddHostedService<DatabaseInitializationHostedService>();
+        services.AddHostedService<EmailOutboxBackgroundService>();
 
         services.AddDbContext<LawyerPlatformDbContext>((serviceProvider, options) =>
             options

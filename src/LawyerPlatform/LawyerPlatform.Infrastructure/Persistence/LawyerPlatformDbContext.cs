@@ -5,6 +5,7 @@ using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -28,6 +29,7 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     public DbSet<LawyerAvailability> LawyerAvailabilities => Set<LawyerAvailability>();
     public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
     public DbSet<ConsultationRequestStatusHistory> ConsultationRequestStatusHistory => Set<ConsultationRequestStatusHistory>();
+    public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

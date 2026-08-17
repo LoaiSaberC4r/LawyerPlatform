@@ -10,6 +10,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.Lawyers.SubmitForApproval;
 
@@ -35,6 +36,7 @@ internal sealed class SubmitForApprovalCommandHandler(
     LawyerAggregateCompletionService completionService,
     ILawyerDocumentPolicy documentPolicy,
     ILawyerAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
     : ICommandHandler<SubmitForApprovalCommand, SubmitForApprovalResponse>
 {
@@ -86,7 +88,9 @@ internal sealed class SubmitForApprovalCommandHandler(
             return Result<SubmitForApprovalResponse>.Fail(transition.Errors);
         }
 
-        aggregatePersistence.Add(profile.StatusHistory.Last());
+        var history = profile.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueLawyerTransitionAsync(profile, history, cancellationToken);
 
         profile.ModifiedOnUtc = clock.UtcNow;
         await unitOfWork.SaveChangesAsync(cancellationToken);

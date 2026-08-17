@@ -10,6 +10,7 @@ using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -213,6 +214,24 @@ public sealed class ClientProfileAndAdminClientManagementEndpointsTests(CustomWe
             PhaseOneTestHelpers.ClientPassword,
             cancellationToken);
         Assert.Equal(HttpStatusCode.OK, activeLogin.StatusCode);
+
+        await using (var notificationScope = factory.Services.CreateAsyncScope())
+        {
+            var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var notifications = await notificationContext.EmailOutboxMessages
+                .AsNoTracking()
+                .Where(message => message.AggregateId == first.ClientProfileId)
+                .ToListAsync(cancellationToken);
+            Assert.Equal(2, notifications.Count);
+            Assert.Contains(notifications, message =>
+                message.NotificationType == EmailNotificationType.ClientSuspended &&
+                message.RecipientEmail == "phase1.client.one@example.test");
+            Assert.Contains(notifications, message =>
+                message.NotificationType == EmailNotificationType.ClientReactivated &&
+                message.RecipientEmail == "phase1.client.one@example.test");
+            Assert.All(notifications, message =>
+                Assert.DoesNotContain("password", message.HtmlBody, StringComparison.OrdinalIgnoreCase));
+        }
 
         string inactiveRowVersion;
         await using (var scope = factory.Services.CreateAsyncScope())

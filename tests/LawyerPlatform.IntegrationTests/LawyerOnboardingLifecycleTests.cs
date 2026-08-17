@@ -8,6 +8,10 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -220,9 +224,71 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             rowVersion = suspendBody.GetProperty("rowVersion").GetString()
         }, cancellationToken);
         Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+        var reactivateBody = await reactivate.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var invalidReactivate = await client.PostAsJsonAsync($"/api/v1/admin/lawyers/{lawyerId}/reactivate", new
+        {
+            rowVersion = reactivateBody.GetProperty("rowVersion").GetString()
+        }, cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidReactivate.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = null;
         Assert.True(await PublicSearchContainsAsync(client, lawyerId, cancellationToken));
+
+        var pendingRejectedLawyer = await SeedPendingLawyerAsync(cancellationToken);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var reject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/lawyers/{pendingRejectedLawyer.LawyerId}/reject",
+            new
+            {
+                reason = "Application requirements were not met.",
+                rowVersion = pendingRejectedLawyer.RowVersion
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, reject.StatusCode);
+        var rejectBody = await reject.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var invalidReject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/lawyers/{pendingRejectedLawyer.LawyerId}/reject",
+            new
+            {
+                reason = "Duplicate invalid rejection.",
+                rowVersion = rejectBody.GetProperty("rowVersion").GetString()
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidReject.StatusCode);
+
+        await using var notificationScope = factory.Services.CreateAsyncScope();
+        var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var lifecycleNotifications = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == lawyerId)
+            .ToListAsync(cancellationToken);
+        var rejectedNotifications = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == pendingRejectedLawyer.LawyerId)
+            .ToListAsync(cancellationToken);
+
+        Assert.Equal(6, lifecycleNotifications.Count);
+        Assert.Equal(2, lifecycleNotifications.Count(message =>
+            message.NotificationType == EmailNotificationType.LawyerSubmittedForApproval &&
+            message.RecipientEmail == "admin@lawyerplatform.test"));
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerChangesRequested &&
+            message.RecipientEmail == "ahmed.lifecycle@example.test");
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerApproved);
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerSuspended);
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerReactivated);
+        Assert.Single(rejectedNotifications);
+        Assert.Equal(EmailNotificationType.LawyerRejected, rejectedNotifications[0].NotificationType);
+        Assert.Equal("rejected.notification@example.test", rejectedNotifications[0].RecipientEmail);
+        Assert.All(lifecycleNotifications.Concat(rejectedNotifications), message =>
+        {
+            Assert.DoesNotContain("Clarified commercial", message.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("storageKey", message.HtmlBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("password", message.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     [Fact]
@@ -280,6 +346,55 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
 
         dbContext.LegalSpecializations.Add(LegalSpecialization.Create(1, "قانون مدني", "Civil Law", 1).Value);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<(Guid LawyerId, string RowVersion)> SeedPendingLawyerAsync(
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = new DateTime(2026, 8, 16, 10, 0, 0, DateTimeKind.Utc);
+        var account = UserAccount.CreateLawyer(
+            "rejected.notification",
+            "REJECTED.NOTIFICATION",
+            "rejected.notification@example.test",
+            "REJECTED.NOTIFICATION@EXAMPLE.TEST",
+            "01077777777",
+            "hash",
+            nowUtc).Value;
+        var profile = LawyerProfile.Create(account, "Rejected Notification Lawyer").Value;
+        profile.UpdateProfessionalProfile(
+            "Rejected Notification Lawyer",
+            "Attorney",
+            "Private biography",
+            5,
+            "REG-REJECT-NOTIFICATION");
+        profile.UpsertPrimaryOffice(
+            OfficeCity.GovernorateId,
+            OfficeCity.Id,
+            OfficeArea.Id,
+            "Complete office address",
+            null);
+        profile.ReplaceSpecializations(CivilLawSpecialization);
+        profile.AddDocument(
+            "IdentityVerification",
+            "documents/reject-id.pdf",
+            "identity.pdf",
+            "application/pdf",
+            100,
+            nowUtc);
+        profile.AddDocument(
+            "ProfessionalMembership",
+            "documents/reject-membership.pdf",
+            "membership.pdf",
+            "application/pdf",
+            100,
+            nowUtc);
+        Assert.True(profile.SubmitForApproval(account.Id, true, true, nowUtc.AddMinutes(1)).IsSuccess);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        context.LawyerProfiles.Add(profile);
+        await context.SaveChangesAsync(cancellationToken);
+        return (profile.Id, Convert.ToBase64String(profile.RowVersion));
     }
 
     private static async Task<JsonElement> UploadPdfAsync(

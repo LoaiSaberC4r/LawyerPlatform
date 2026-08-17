@@ -42,6 +42,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["PasswordLifecycle:ExpiryDays"] = "90",
                 ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
+                ["EmailOutbox:Enabled"] = "false",
                 ["Cors:AllowAnyOrigin"] = "false",
                 ["Cors:AllowCredentials"] = "false",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:4200",
