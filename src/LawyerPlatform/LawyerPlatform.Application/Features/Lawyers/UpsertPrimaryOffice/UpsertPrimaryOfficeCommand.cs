@@ -7,6 +7,7 @@ using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -31,7 +32,10 @@ internal sealed class UpsertPrimaryOfficeCommandValidator : AbstractValidator<Up
         RuleFor(command => command.CityId).GreaterThan(0);
         RuleFor(command => command.AreaId).GreaterThan(0);
         RuleFor(command => command.DetailedAddress).NotEmpty().MaximumLength(500);
-        RuleFor(command => command.PublicPhoneNumber).MaximumLength(30);
+        RuleFor(command => command.PublicPhoneNumber)
+            .EgyptianMobileNumber()
+            .WithErrorCode("Lawyer.InvalidPublicPhoneNumber")
+            .When(command => !string.IsNullOrWhiteSpace(command.PublicPhoneNumber));
         RuleFor(command => command.RowVersion)
             .Must(value => value is null || RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode("Lawyer.InvalidRowVersion");

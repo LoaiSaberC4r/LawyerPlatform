@@ -1,8 +1,8 @@
-using System.Text.RegularExpressions;
 using BuildingBlock.Application.Abstraction;
 using BuildingBlock.Application.Abstraction.Persistence;
 using BuildingBlock.Domain.Results;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.ConsultationRequests.Create;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
@@ -19,7 +19,7 @@ public sealed record CreateGuestConsultationRequestCommand(
     DateTime? PreferredAppointmentOnUtc)
     : ICommand<CreateConsultationRequestResponse>, ITransactionalCommand<LawyerPlatformWritePersistence>;
 
-internal sealed partial class CreateGuestConsultationRequestCommandValidator
+internal sealed class CreateGuestConsultationRequestCommandValidator
     : AbstractValidator<CreateGuestConsultationRequestCommand>
 {
     public CreateGuestConsultationRequestCommandValidator()
@@ -30,10 +30,9 @@ internal sealed partial class CreateGuestConsultationRequestCommandValidator
             .When(command => command.LegalSpecializationId.HasValue);
         RuleFor(command => command.FullName).NotEmpty().MaximumLength(200);
         RuleFor(command => command.PhoneNumber)
-            .NotEmpty()
-            .MaximumLength(30)
-            .Matches(EgyptianMobileNumberRegex())
-            .WithErrorCode("ConsultationRequest.InvalidPhoneNumber");
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty().WithErrorCode("ConsultationRequest.PhoneNumberRequired")
+            .EgyptianMobileNumber().WithErrorCode("ConsultationRequest.InvalidPhoneNumber");
         RuleFor(command => command.Email)
             .MaximumLength(320)
             .EmailAddress()
@@ -42,9 +41,6 @@ internal sealed partial class CreateGuestConsultationRequestCommandValidator
             .NotEmpty()
             .MaximumLength(ConsultationRequest.MaximumDescriptionLength);
     }
-
-    [GeneratedRegex("^(?:\\+20|0020|0)1[0125][0-9]{8}$", RegexOptions.CultureInvariant)]
-    private static partial Regex EgyptianMobileNumberRegex();
 }
 
 internal sealed class CreateGuestConsultationRequestCommandHandler(

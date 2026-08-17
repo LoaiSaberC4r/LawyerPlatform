@@ -578,9 +578,9 @@ public sealed class PhaseOneAuthorizationSwaggerAndCatalogRemovalTests(CustomWeb
         Assert.Empty(emptyClients.GetProperty("items").EnumerateArray());
 
         var registeredClient = await PhaseOneTestHelpers.RegisterClientAsync(
-            client, "authorization.client", "authorization.client@example.test", "01400000001", "Authorization Client", cancellationToken);
+            client, "authorization.client", "authorization.client@example.test", "01500000001", "Authorization Client", cancellationToken);
         var registeredLawyer = await PhaseOneTestHelpers.RegisterLawyerAsync(
-            client, "authorization.lawyer", "authorization.lawyer@example.test", "01400000002", "Authorization Lawyer", cancellationToken);
+            client, "authorization.lawyer", "authorization.lawyer@example.test", "01500000002", "Authorization Lawyer", cancellationToken);
         var clientToken = await PhaseOneTestHelpers.LoginAndReadTokenAsync(
             client, "authorization.client", PhaseOneTestHelpers.ClientPassword, cancellationToken);
         var lawyerToken = await PhaseOneTestHelpers.LoginAndReadTokenAsync(
