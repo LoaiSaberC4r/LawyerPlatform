@@ -23739,6 +23739,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Features.AdminLawyers.Common;
 using LawyerPlatform.Application.Features.ConsultationRequests.Create;
 using LawyerPlatform.Application.Features.AdminClients.Common;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application;
 
@@ -23758,6 +23759,8 @@ public static class DependencyInjection
         services.AddScoped<AdminLawyerDecisionService>();
         services.AddScoped<ConsultationRequestCreationService>();
         services.AddScoped<AdminClientLifecycleService>();
+        services.AddScoped<EmailNotificationCoordinator>();
+        services.AddSingleton<IEmailNotificationFactory, BilingualEmailNotificationFactory>();
 
         return services;
     }
@@ -23854,6 +23857,8 @@ public interface IConsultationSchedulingTimeZone
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Lawyers\IConcurrencyTokenManager.cs ==================== 
+using System.Linq.Expressions;
+
 namespace LawyerPlatform.Application.Abstractions.Lawyers;
 
 public interface IConcurrencyTokenManager
@@ -23861,7 +23866,9 @@ public interface IConcurrencyTokenManager
     void SetOriginalRowVersion<TEntity>(TEntity entity, byte[] rowVersion)
         where TEntity : class;
 
-    void MarkModified<TEntity>(TEntity entity)
+    void MarkPropertyModified<TEntity, TProperty>(
+        TEntity entity,
+        Expression<Func<TEntity, TProperty>> propertyExpression)
         where TEntity : class;
 }
  
@@ -23935,6 +23942,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.AdminClients.Common;
 
@@ -23947,6 +23955,7 @@ internal enum AdminClientLifecycleAction
 internal sealed class AdminClientLifecycleService(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IConcurrencyTokenManager concurrencyTokenManager,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
 {
     public async Task<Result<AdminClientLifecycleResponse>> ExecuteAsync(
@@ -23969,10 +23978,12 @@ internal sealed class AdminClientLifecycleService(
 
         var account = profile.UserAccount;
         concurrencyTokenManager.SetOriginalRowVersion(account, rowVersion);
+        var oldStatus = account.Status;
+        var nowUtc = clock.UtcNow;
         var transition = action switch
         {
-            AdminClientLifecycleAction.Suspend => account.Suspend(clock.UtcNow),
-            AdminClientLifecycleAction.Reactivate => account.Reactivate(clock.UtcNow),
+            AdminClientLifecycleAction.Suspend => account.Suspend(nowUtc),
+            AdminClientLifecycleAction.Reactivate => account.Reactivate(nowUtc),
             _ => Result.Fail(AccountErrors.InvalidStatusTransition)
         };
         if (transition.IsFailure)
@@ -23980,6 +23991,12 @@ internal sealed class AdminClientLifecycleService(
             return Result<AdminClientLifecycleResponse>.Fail(transition.Errors);
         }
 
+        await emailNotifications.QueueClientTransitionAsync(
+            profile,
+            oldStatus,
+            account.Status,
+            nowUtc,
+            cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<AdminClientLifecycleResponse>.Ok(new AdminClientLifecycleResponse(
             profile.Id,
@@ -24424,6 +24441,7 @@ using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.AdminLawyers.Common;
 
@@ -24451,6 +24469,7 @@ internal sealed class AdminLawyerDecisionService(
     LawyerAggregateCompletionService completionService,
     ILawyerDocumentPolicy documentPolicy,
     ILawyerAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
 {
     public async Task<Result<AdminLawyerDecisionResponse>> ExecuteAsync(
@@ -24506,7 +24525,9 @@ internal sealed class AdminLawyerDecisionService(
             return Result<AdminLawyerDecisionResponse>.Fail(transition.Errors);
         }
 
-        aggregatePersistence.Add(profile.StatusHistory.Last());
+        var history = profile.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueLawyerTransitionAsync(profile, history, cancellationToken);
 
         profile.ModifiedOnUtc = nowUtc;
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -27575,6 +27596,7 @@ using LawyerPlatform.Application.Features.ConsultationRequests.Lawyer.UpdateStat
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.ConsultationRequests.Admin.UpdateStatus;
 
@@ -27603,6 +27625,7 @@ internal sealed class UpdateAdminConsultationStatusCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IConcurrencyTokenManager concurrencyTokenManager,
     IConsultationAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
     : ICommandHandler<UpdateAdminConsultationStatusCommand, UpdateLawyerConsultationStatusResponse>
 {
@@ -27623,7 +27646,9 @@ internal sealed class UpdateAdminConsultationStatusCommandHandler(
         var change = request.ChangeStatus(command.Status, userId, command.Reason, clock.UtcNow);
         if (change.IsFailure)
             return Result<UpdateLawyerConsultationStatusResponse>.Fail(change.Errors);
-        aggregatePersistence.Add(request.StatusHistory.Last());
+        var history = request.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueConsultationTransitionAsync(request, history, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<UpdateLawyerConsultationStatusResponse>.Ok(new(
             request.Id, request.Status.ToString(),
@@ -27864,6 +27889,7 @@ using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.ConsultationRequests.Create;
 
@@ -27881,6 +27907,7 @@ internal sealed class ConsultationRequestCreationService(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     ILawyerDocumentPolicy documentPolicy,
     IConsultationSchedulingTimeZone schedulingTimeZone,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
 {
     public async Task<Result<CreateConsultationRequestResponse>> CreateGuestAsync(
@@ -27901,12 +27928,17 @@ internal sealed class ConsultationRequestCreationService(
             email,
             description,
             preferredAppointmentOnUtc,
+            null,
+            null,
+            null,
             cancellationToken);
 
     public async Task<Result<CreateConsultationRequestResponse>> CreateClientAsync(
         Guid clientProfileId,
         Guid lawyerId,
         int? legalSpecializationId,
+        string requesterName,
+        string requesterEmail,
         string description,
         DateTime? preferredAppointmentOnUtc,
         CancellationToken cancellationToken)
@@ -27919,6 +27951,9 @@ internal sealed class ConsultationRequestCreationService(
             null,
             description,
             preferredAppointmentOnUtc,
+            requesterName,
+            requesterEmail,
+            clientProfileId.ToString("N"),
             cancellationToken);
 
     private async Task<Result<CreateConsultationRequestResponse>> CreateAsync(
@@ -27930,8 +27965,13 @@ internal sealed class ConsultationRequestCreationService(
         string? guestEmail,
         string description,
         DateTime? preferredAppointmentOnUtc,
+        string? persistedRequesterName,
+        string? persistedRequesterEmail,
+        string? requesterIdentity,
         CancellationToken cancellationToken)
     {
+        var specializationNameAr = "غير محدد";
+        var specializationNameEn = "Not specified";
         if (legalSpecializationId is { } specializationId)
         {
             var specialization = await specializationReader.FirstOrDefaultAsync(
@@ -27948,6 +27988,8 @@ internal sealed class ConsultationRequestCreationService(
                     LawyerPlatform.Application.Features.Lawyers.Common.LawyerApplicationErrors.SpecializationInactive);
             }
 
+            specializationNameAr = specialization.NameAr;
+            specializationNameEn = specialization.NameEn;
         }
 
         var lawyer = await lawyerReader.FirstOrDefaultAsync(
@@ -28033,6 +28075,18 @@ internal sealed class ConsultationRequestCreationService(
 
         var request = creation.Value;
         await unitOfWork.WriteRepository<ConsultationRequest>().AddAsync(request, cancellationToken);
+        await emailNotifications.QueueConsultationCreatedAsync(
+            request,
+            new ConsultationCreationEmailContext(
+                lawyer.UserAccountId,
+                lawyer.FullName,
+                lawyer.Email,
+                persistedRequesterName ?? request.GuestFullName!,
+                persistedRequesterEmail ?? request.GuestEmail,
+                requesterIdentity ?? request.Id.ToString("N"),
+                specializationNameAr,
+                specializationNameEn),
+            cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
             request.Id,
@@ -28060,6 +28114,9 @@ internal sealed class ConsultationRequestCreationService(
 
 internal sealed record EligibleConsultationLawyerSnapshot(
     Guid Id,
+    Guid UserAccountId,
+    string FullName,
+    string Email,
     IReadOnlyList<int> ActiveSpecializationIds,
     bool HasConsultationSettings,
     decimal? ConsultationPrice,
@@ -28080,6 +28137,9 @@ internal sealed class EligibleLawyerForConsultationSpecification
         UseNoTracking();
         Select(profile => new EligibleConsultationLawyerSnapshot(
             profile.Id,
+            profile.UserAccountId,
+            profile.FullName,
+            profile.UserAccount.Email,
             profile.Specializations
                 .Where(item => item.LegalSpecialization.IsActive)
                 .Select(item => item.LegalSpecializationId)
@@ -28099,7 +28159,11 @@ internal sealed class EligibleLawyerForConsultationSpecification
     }
 }
 
-internal sealed record ConsultationSpecializationSnapshot(int Id, bool IsActive);
+internal sealed record ConsultationSpecializationSnapshot(
+    int Id,
+    bool IsActive,
+    string NameAr,
+    string NameEn);
 
 internal sealed class ConsultationSpecializationByIdSpecification
     : Specification<LegalSpecialization, ConsultationSpecializationSnapshot>
@@ -28108,7 +28172,11 @@ internal sealed class ConsultationSpecializationByIdSpecification
     {
         AddCriteria(item => item.Id == id);
         UseNoTracking();
-        Select(item => new ConsultationSpecializationSnapshot(item.Id, item.IsActive));
+        Select(item => new ConsultationSpecializationSnapshot(
+            item.Id,
+            item.IsActive,
+            item.NameAr,
+            item.NameEn));
     }
 }
  
@@ -28178,6 +28246,8 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
             client.Id,
             command.LawyerId,
             command.LegalSpecializationId,
+            client.FullName,
+            client.Email,
             command.Description,
             command.PreferredAppointmentOnUtc,
             cancellationToken);
@@ -28718,6 +28788,7 @@ using LawyerPlatform.Application.Abstractions.Consultations;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.ConsultationRequests.Lawyer.UpdateStatus;
 
@@ -28758,6 +28829,7 @@ internal sealed class UpdateLawyerConsultationStatusCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IConcurrencyTokenManager concurrencyTokenManager,
     IConsultationAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
     : ICommandHandler<UpdateLawyerConsultationStatusCommand, UpdateLawyerConsultationStatusResponse>
 {
@@ -28793,7 +28865,9 @@ internal sealed class UpdateLawyerConsultationStatusCommandHandler(
             return Result<UpdateLawyerConsultationStatusResponse>.Fail(change.Errors);
         }
 
-        aggregatePersistence.Add(request.StatusHistory.Last());
+        var history = request.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueConsultationTransitionAsync(request, history, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<UpdateLawyerConsultationStatusResponse>.Ok(
             new UpdateLawyerConsultationStatusResponse(
@@ -29359,8 +29433,11 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
                 return Result<LawyerConsultationSettingsResponse>.Fail(update.Errors);
             }
 
-            // Availability-only replacements must also advance the independent settings RowVersion.
-            concurrencyTokenManager.MarkModified(settings);
+            // Touch one aggregate-root scalar so availability-only and no-op PUTs advance
+            // the independent settings RowVersion without changing child entity states.
+            concurrencyTokenManager.MarkPropertyModified(
+                settings,
+                item => item.ConsultationPrice);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -30183,6 +30260,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.Lawyers.SubmitForApproval;
 
@@ -30208,6 +30286,7 @@ internal sealed class SubmitForApprovalCommandHandler(
     LawyerAggregateCompletionService completionService,
     ILawyerDocumentPolicy documentPolicy,
     ILawyerAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
     : ICommandHandler<SubmitForApprovalCommand, SubmitForApprovalResponse>
 {
@@ -30259,7 +30338,9 @@ internal sealed class SubmitForApprovalCommandHandler(
             return Result<SubmitForApprovalResponse>.Fail(transition.Errors);
         }
 
-        aggregatePersistence.Add(profile.StatusHistory.Last());
+        var history = profile.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueLawyerTransitionAsync(profile, history, cancellationToken);
 
         profile.ModifiedOnUtc = clock.UtcNow;
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -31438,6 +31519,762 @@ internal sealed class GetLegalSpecializationsQueryHandler(
     public async Task<Result<IReadOnlyList<ReferenceDataResponse>>> Handle(GetLegalSpecializationsQuery query, CancellationToken cancellationToken)
         => Result<IReadOnlyList<ReferenceDataResponse>>.Ok(
             await repository.ListAsync(new ActiveLegalSpecializationsSpec(), cancellationToken));
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\BilingualEmailNotificationFactory.cs ==================== 
+using System.Net;
+using System.Text;
+using BuildingBlock.Application.Time;
+
+namespace LawyerPlatform.Application.Notifications.Email;
+
+internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
+    : IEmailNotificationFactory
+{
+    public EmailNotificationContent Create(
+        EmailNotificationType notificationType,
+        EmailNotificationModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        return notificationType switch
+        {
+            EmailNotificationType.LawyerSubmittedForApproval => LawyerSubmitted(RequireLawyer(model)),
+            EmailNotificationType.LawyerApproved => LawyerApproved(RequireLawyer(model)),
+            EmailNotificationType.LawyerChangesRequested => LawyerChangesRequested(RequireLawyer(model)),
+            EmailNotificationType.LawyerRejected => LawyerRejected(RequireLawyer(model)),
+            EmailNotificationType.LawyerSuspended => LawyerSuspended(RequireLawyer(model)),
+            EmailNotificationType.LawyerReactivated => LawyerReactivated(RequireLawyer(model)),
+            EmailNotificationType.ConsultationRequestCreatedForLawyer => ConsultationCreatedForLawyer(RequireConsultation(model)),
+            EmailNotificationType.ConsultationRequestCreatedConfirmation => ConsultationCreatedConfirmation(RequireConsultation(model)),
+            EmailNotificationType.ConsultationUnderReview => ConsultationUnderReview(RequireConsultation(model)),
+            EmailNotificationType.ConsultationApproved => ConsultationApproved(RequireConsultation(model)),
+            EmailNotificationType.ConsultationRejected => ConsultationRejected(RequireConsultation(model)),
+            EmailNotificationType.ConsultationCompleted => ConsultationCompleted(RequireConsultation(model)),
+            EmailNotificationType.ClientSuspended => ClientSuspended(RequireClient(model)),
+            EmailNotificationType.ClientReactivated => ClientReactivated(RequireClient(model)),
+            _ => throw new ArgumentOutOfRangeException(nameof(notificationType), notificationType, "Unknown email notification type.")
+        };
+    }
+
+    private EmailNotificationContent LawyerSubmitted(LawyerEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | طلب محامٍ جديد للمراجعة | New Lawyer Application",
+            [
+                Lines("مرحبًا،"),
+                Lines($"قام المحامي {model.LawyerName} بإرسال ملفه للمراجعة والاعتماد."),
+                Lines("حالة الملف الحالية:", "قيد المراجعة"),
+                Lines("يرجى الدخول إلى لوحة الإدارة لمراجعة بيانات المحامي والمستندات واتخاذ الإجراء المناسب."),
+                Lines("رقم المحامي:", model.LawyerId.ToString()),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines("Hello,"),
+                Lines($"Lawyer {model.LawyerName} has submitted their profile for review and approval."),
+                Lines("Current status:", "Pending Approval"),
+                Lines("Please sign in to the administration dashboard to review the lawyer's information and documents and take the appropriate action."),
+                Lines("Lawyer ID:", model.LawyerId.ToString()),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent LawyerApproved(LawyerEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تم اعتماد حسابك | Your Profile Has Been Approved",
+            [
+                Lines($"مرحبًا {model.LawyerName}،"),
+                Lines("يسعدنا إبلاغك بأنه تم اعتماد ملفك بنجاح على Lawyer Platform."),
+                Lines("حالة الملف:", "معتمد"),
+                Lines("أصبح ملفك مؤهلًا للظهور للعملاء على المنصة وفقًا لقواعد ظهور المحامين المعتمدة."),
+                Lines("يمكنك الآن تسجيل الدخول ومتابعة حسابك وطلبات الاستشارات الواردة إليك."),
+                Lines("مع تمنياتنا لك بالتوفيق،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.LawyerName},"),
+                Lines("We are pleased to inform you that your profile has been successfully approved on Lawyer Platform."),
+                Lines("Profile status:", "Approved"),
+                Lines("Your profile is now eligible to appear to clients on the platform, subject to the platform's lawyer visibility rules."),
+                Lines("You can now sign in and manage your account and incoming consultation requests."),
+                Lines("Best regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent LawyerChangesRequested(LawyerEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | مطلوب تعديلات على ملفك | Changes Required",
+            [
+                Lines($"مرحبًا {model.LawyerName}،"),
+                Lines("تمت مراجعة ملفك بواسطة إدارة Lawyer Platform، وهناك بعض التعديلات المطلوبة قبل استكمال عملية الاعتماد."),
+                Lines("حالة الملف:", "مطلوب تعديلات"),
+                Lines("ملاحظات المراجعة:", RequireReason(model)),
+                Lines("يرجى تسجيل الدخول إلى حسابك، مراجعة الملاحظات، وتحديث البيانات المطلوبة."),
+                Lines("بعد الانتهاء يمكنك إرسال الملف للمراجعة مرة أخرى."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.LawyerName},"),
+                Lines("Your profile has been reviewed by the Lawyer Platform administration, and some changes are required before the approval process can continue."),
+                Lines("Profile status:", "Changes Requested"),
+                Lines("Review notes:", RequireReason(model)),
+                Lines("Please sign in to your account, review the notes, and update the required information."),
+                Lines("Once completed, you can submit your profile for review again."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent LawyerRejected(LawyerEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تحديث حالة طلب الاعتماد | Lawyer Application Update",
+            [
+                Lines($"مرحبًا {model.LawyerName}،"),
+                Lines("نود إبلاغك بأنه بعد مراجعة ملفك، لم تتم الموافقة على طلب الاعتماد."),
+                Lines("حالة الملف:", "مرفوض"),
+                Lines("سبب الرفض:", RequireReason(model)),
+                Lines("إذا كنت بحاجة إلى معلومات إضافية، يرجى التواصل مع إدارة Lawyer Platform."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.LawyerName},"),
+                Lines("We would like to inform you that after reviewing your profile, your approval application has not been approved."),
+                Lines("Profile status:", "Rejected"),
+                Lines("Reason:", RequireReason(model)),
+                Lines("If you require additional information, please contact the Lawyer Platform administration."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent LawyerSuspended(LawyerEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تم تعليق حساب المحامي | Lawyer Profile Suspended",
+            [
+                Lines($"مرحبًا {model.LawyerName}،"),
+                Lines("نود إبلاغك بأنه تم تعليق ملفك على Lawyer Platform."),
+                Lines("حالة الملف:", "معلق"),
+                Lines("سبب التعليق:", RequireReason(model)),
+                Lines("أثناء فترة التعليق لن يكون ملفك متاحًا للعملاء على المنصة."),
+                Lines("للاستفسار عن القرار أو الخطوات المطلوبة، يرجى التواصل مع إدارة Lawyer Platform."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.LawyerName},"),
+                Lines("We would like to inform you that your lawyer profile on Lawyer Platform has been suspended."),
+                Lines("Profile status:", "Suspended"),
+                Lines("Reason:", RequireReason(model)),
+                Lines("While your profile is suspended, it will not be available to clients on the platform."),
+                Lines("For further information about this decision or any required actions, please contact the Lawyer Platform administration."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent LawyerReactivated(LawyerEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated",
+            [
+                Lines($"مرحبًا {model.LawyerName}،"),
+                Lines("تمت إعادة تفعيل ملفك بنجاح على Lawyer Platform."),
+                Lines("حالة الملف:", "معتمد"),
+                Lines("أصبح ملفك مؤهلًا مرة أخرى للظهور للعملاء واستقبال طلبات الاستشارات وفقًا لقواعد المنصة."),
+                Lines("مرحبًا بعودتك."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.LawyerName},"),
+                Lines("Your lawyer profile has been successfully reactivated on Lawyer Platform."),
+                Lines("Profile status:", "Approved"),
+                Lines("Your profile is once again eligible to appear to clients and receive consultation requests according to the platform rules."),
+                Lines("Welcome back."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent ConsultationCreatedForLawyer(ConsultationEmailNotificationModel model)
+    {
+        var arabic = new List<string>
+        {
+            Lines($"مرحبًا {model.LawyerName}،"),
+            Lines("لديك طلب استشارة قانونية جديد على Lawyer Platform."),
+            Lines("رقم الطلب:", model.ReferenceNumber),
+            Lines("التخصص:", model.SpecializationNameAr),
+            Lines("مقدم الطلب:", model.RequesterName)
+        };
+        var english = new List<string>
+        {
+            Lines($"Hello {model.LawyerName},"),
+            Lines("You have received a new legal consultation request on Lawyer Platform."),
+            Lines("Request Reference:", model.ReferenceNumber),
+            Lines("Specialization:", model.SpecializationNameEn),
+            Lines("Requested by:", model.RequesterName)
+        };
+        AddPreferredAppointment(model, arabic, english, "التاريخ المفضل للاستشارة:", "Preferred consultation date:");
+        arabic.Add(Lines("يرجى تسجيل الدخول إلى حسابك لمراجعة تفاصيل الطلب واتخاذ الإجراء المناسب."));
+        arabic.Add(Lines("للحفاظ على خصوصية مقدم الطلب، لا يتم إرسال وصف الاستشارة أو البيانات الحساسة عبر البريد الإلكتروني."));
+        arabic.Add(Lines("مع تحيات،", "Lawyer Platform"));
+        english.Add(Lines("Please sign in to your account to review the request details and take the appropriate action."));
+        english.Add(Lines("To protect the requester's privacy, consultation descriptions and sensitive information are not included in email notifications."));
+        english.Add(Lines("Regards,", "Lawyer Platform"));
+        return Build("Lawyer Platform | طلب استشارة جديد | New Consultation Request", arabic, english);
+    }
+
+    private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تم استلام طلب الاستشارة | Consultation Request Received",
+            [
+                Lines($"مرحبًا {model.RequesterName}،"),
+                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Lawyer Platform."),
+                Lines("رقم متابعة الطلب:", model.ReferenceNumber),
+                Lines("المحامي:", model.LawyerName),
+                Lines("التخصص:", model.SpecializationNameAr),
+                Lines("حالة الطلب:", "جديد"),
+                Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."),
+                Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.RequesterName},"),
+                Lines("Your consultation request has been successfully received by Lawyer Platform."),
+                Lines("Request Reference:", model.ReferenceNumber),
+                Lines("Lawyer:", model.LawyerName),
+                Lines("Specialization:", model.SpecializationNameEn),
+                Lines("Current status:", "New"),
+                Lines("Please keep your request reference as you may need it to track your request."),
+                Lines("We will notify you when important updates are made to your request status."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | طلب الاستشارة قيد المراجعة | Consultation Under Review",
+            [
+                Lines($"مرحبًا {model.RequesterName}،"),
+                Lines("هناك تحديث جديد على طلب الاستشارة الخاص بك."),
+                Lines("رقم الطلب:", model.ReferenceNumber),
+                Lines("المحامي:", model.LawyerName),
+                Lines("الحالة الجديدة:", "قيد المراجعة"),
+                Lines("بدأ المحامي في مراجعة طلب الاستشارة الخاص بك."),
+                Lines("سنقوم بإبلاغك عند حدوث تحديث جديد على الطلب."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.RequesterName},"),
+                Lines("There is a new update regarding your consultation request."),
+                Lines("Request Reference:", model.ReferenceNumber),
+                Lines("Lawyer:", model.LawyerName),
+                Lines("New status:", "Under Review"),
+                Lines("The lawyer has started reviewing your consultation request."),
+                Lines("We will notify you when there is another important update."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent ConsultationApproved(ConsultationEmailNotificationModel model)
+    {
+        var arabic = new List<string>
+        {
+            Lines($"مرحبًا {model.RequesterName}،"),
+            Lines("يسعدنا إبلاغك بأنه تمت الموافقة على طلب الاستشارة الخاص بك."),
+            Lines("رقم الطلب:", model.ReferenceNumber),
+            Lines("المحامي:", model.LawyerName),
+            Lines("التخصص:", model.SpecializationNameAr),
+            Lines("الحالة:", "تمت الموافقة")
+        };
+        var english = new List<string>
+        {
+            Lines($"Hello {model.RequesterName},"),
+            Lines("We are pleased to inform you that your consultation request has been approved."),
+            Lines("Request Reference:", model.ReferenceNumber),
+            Lines("Lawyer:", model.LawyerName),
+            Lines("Specialization:", model.SpecializationNameEn),
+            Lines("Status:", "Approved")
+        };
+        AddPreferredAppointment(model, arabic, english, "التاريخ المفضل المسجل:", "Recorded preferred date:");
+        arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Lawyer Platform."));
+        arabic.Add(Lines("مع تحيات،", "Lawyer Platform"));
+        english.Add(Lines("You can continue tracking your request through Lawyer Platform."));
+        english.Add(Lines("Regards,", "Lawyer Platform"));
+        return Build("Lawyer Platform | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
+    }
+
+    private EmailNotificationContent ConsultationRejected(ConsultationEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تحديث طلب الاستشارة | Consultation Request Update",
+            [
+                Lines($"مرحبًا {model.RequesterName}،"),
+                Lines("نود إبلاغك بوجود تحديث على طلب الاستشارة الخاص بك."),
+                Lines("رقم الطلب:", model.ReferenceNumber),
+                Lines("المحامي:", model.LawyerName),
+                Lines("الحالة:", "مرفوض"),
+                Lines("سبب الرفض:", RequireReason(model)),
+                Lines("يمكنك الرجوع إلى Lawyer Platform للبحث عن محامٍ آخر مناسب إذا رغبت."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.RequesterName},"),
+                Lines("We would like to inform you of an update to your consultation request."),
+                Lines("Request Reference:", model.ReferenceNumber),
+                Lines("Lawyer:", model.LawyerName),
+                Lines("Status:", "Rejected"),
+                Lines("Reason:", RequireReason(model)),
+                Lines("You may return to Lawyer Platform to find another suitable lawyer if needed."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent ConsultationCompleted(ConsultationEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تم إكمال طلب الاستشارة | Consultation Completed",
+            [
+                Lines($"مرحبًا {model.RequesterName}،"),
+                Lines("تم تحديث طلب الاستشارة الخاص بك إلى مكتمل."),
+                Lines("رقم الطلب:", model.ReferenceNumber),
+                Lines("المحامي:", model.LawyerName),
+                Lines("الحالة:", "مكتمل"),
+                Lines("نشكرك على استخدام Lawyer Platform."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.RequesterName},"),
+                Lines("Your consultation request has been marked as completed."),
+                Lines("Request Reference:", model.ReferenceNumber),
+                Lines("Lawyer:", model.LawyerName),
+                Lines("Status:", "Completed"),
+                Lines("Thank you for using Lawyer Platform."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent ClientSuspended(ClientEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تم تعليق حسابك | Your Account Has Been Suspended",
+            [
+                Lines($"مرحبًا {model.ClientName}،"),
+                Lines("نود إبلاغك بأنه تم تعليق حسابك على Lawyer Platform."),
+                Lines("حالة الحساب:", "معلق"),
+                Lines("لن تتمكن من استخدام الوظائف التي تتطلب حسابًا نشطًا أثناء فترة التعليق."),
+                Lines("للحصول على معلومات إضافية، يرجى التواصل مع إدارة Lawyer Platform."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.ClientName},"),
+                Lines("We would like to inform you that your Lawyer Platform account has been suspended."),
+                Lines("Account status:", "Suspended"),
+                Lines("While your account is suspended, features requiring an active account will not be available."),
+                Lines("For additional information, please contact the Lawyer Platform administration."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent ClientReactivated(ClientEmailNotificationModel model)
+        => Build(
+            "Lawyer Platform | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated",
+            [
+                Lines($"مرحبًا {model.ClientName}،"),
+                Lines("تمت إعادة تفعيل حسابك بنجاح على Lawyer Platform."),
+                Lines("حالة الحساب:", "نشط"),
+                Lines("يمكنك الآن تسجيل الدخول واستخدام خدمات حسابك مرة أخرى."),
+                Lines("مرحبًا بعودتك."),
+                Lines("مع تحيات،", "Lawyer Platform")
+            ],
+            [
+                Lines($"Hello {model.ClientName},"),
+                Lines("Your Lawyer Platform account has been successfully reactivated."),
+                Lines("Account status:", "Active"),
+                Lines("You can now sign in and use your account services again."),
+                Lines("Welcome back."),
+                Lines("Regards,", "Lawyer Platform")
+            ]);
+
+    private EmailNotificationContent Build(
+        string subject,
+        IEnumerable<string> arabicParagraphs,
+        IEnumerable<string> englishParagraphs)
+    {
+        var body = new StringBuilder(2048);
+        body.Append("<!doctype html><html><head><meta charset=\"utf-8\"></head>")
+            .Append("<body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.6\">")
+            .Append("<div style=\"max-width:680px;margin:0 auto\">")
+            .Append("<h2 style=\"margin-bottom:24px\">Lawyer Platform</h2>")
+            .Append("<section dir=\"rtl\" lang=\"ar\" style=\"text-align:right\">")
+            .AppendJoin(string.Empty, arabicParagraphs)
+            .Append("</section><hr style=\"border:0;border-top:1px solid #bbb;margin:28px 0\">")
+            .Append("<section dir=\"ltr\" lang=\"en\" style=\"text-align:left\">")
+            .AppendJoin(string.Empty, englishParagraphs)
+            .Append("</section><footer style=\"margin-top:28px;color:#666\">")
+            .Append("Lawyer Platform<br>&copy; ")
+            .Append(clock.UtcNow.Year)
+            .Append("</footer></div></body></html>");
+        return new EmailNotificationContent(subject, body.ToString());
+    }
+
+    private static string Lines(params string[] values)
+        => $"<p>{string.Join("<br>", values.Select(WebUtility.HtmlEncode))}</p>";
+
+    private static void AddPreferredAppointment(
+        ConsultationEmailNotificationModel model,
+        List<string> arabic,
+        List<string> english,
+        string arabicLabel,
+        string englishLabel)
+    {
+        if (model.PreferredAppointmentOnUtc is not { } preferred)
+        {
+            return;
+        }
+
+        var utc = preferred.Kind == DateTimeKind.Utc ? preferred : preferred.ToUniversalTime();
+        var formatted = utc.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
+        arabic.Add(Lines(arabicLabel, formatted));
+        english.Add(Lines(englishLabel, formatted));
+    }
+
+    private static LawyerEmailNotificationModel RequireLawyer(EmailNotificationModel model)
+        => model as LawyerEmailNotificationModel
+           ?? throw new ArgumentException("A lawyer notification model is required.", nameof(model));
+
+    private static ConsultationEmailNotificationModel RequireConsultation(EmailNotificationModel model)
+        => model as ConsultationEmailNotificationModel
+           ?? throw new ArgumentException("A consultation notification model is required.", nameof(model));
+
+    private static ClientEmailNotificationModel RequireClient(EmailNotificationModel model)
+        => model as ClientEmailNotificationModel
+           ?? throw new ArgumentException("A client notification model is required.", nameof(model));
+
+    private static string RequireReason(LawyerEmailNotificationModel model)
+        => !string.IsNullOrWhiteSpace(model.Reason)
+            ? model.Reason
+            : throw new ArgumentException("A reason is required for this notification.", nameof(model));
+
+    private static string RequireReason(ConsultationEmailNotificationModel model)
+        => !string.IsNullOrWhiteSpace(model.Reason)
+            ? model.Reason
+            : throw new ArgumentException("A reason is required for this notification.", nameof(model));
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\EmailNotificationCoordinator.cs ==================== 
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Domain.Specification;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Domain.Lawyers;
+
+namespace LawyerPlatform.Application.Notifications.Email;
+
+internal sealed record ConsultationCreationEmailContext(
+    Guid LawyerUserAccountId,
+    string LawyerName,
+    string LawyerEmail,
+    string RequesterName,
+    string? RequesterEmail,
+    string RequesterIdentity,
+    string SpecializationNameAr,
+    string SpecializationNameEn);
+
+internal sealed class EmailNotificationCoordinator(
+    IEmailNotificationFactory factory,
+    IEmailNotificationOutbox outbox,
+    IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
+    IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> consultationReader)
+{
+    public async Task QueueLawyerTransitionAsync(
+        LawyerProfile profile,
+        LawyerApprovalStatusHistory history,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(history);
+
+        var notificationType = (history.OldStatus, history.NewStatus) switch
+        {
+            (LawyerApprovalStatus.Draft or LawyerApprovalStatus.ChangesRequested,
+                LawyerApprovalStatus.PendingApproval) => EmailNotificationType.LawyerSubmittedForApproval,
+            (LawyerApprovalStatus.PendingApproval, LawyerApprovalStatus.Approved) => EmailNotificationType.LawyerApproved,
+            (LawyerApprovalStatus.PendingApproval, LawyerApprovalStatus.ChangesRequested) => EmailNotificationType.LawyerChangesRequested,
+            (LawyerApprovalStatus.PendingApproval, LawyerApprovalStatus.Rejected) => EmailNotificationType.LawyerRejected,
+            (LawyerApprovalStatus.Approved, LawyerApprovalStatus.Suspended) => EmailNotificationType.LawyerSuspended,
+            (LawyerApprovalStatus.Suspended, LawyerApprovalStatus.Approved) => EmailNotificationType.LawyerReactivated,
+            _ => (EmailNotificationType?)null
+        };
+        if (notificationType is null)
+        {
+            return;
+        }
+
+        var model = new LawyerEmailNotificationModel(profile.FullName, profile.Id, history.Reason);
+        if (notificationType == EmailNotificationType.LawyerSubmittedForApproval)
+        {
+            var administrators = await accountReader.ListAsync(
+                new ActiveSuperAdminEmailRecipientsSpecification(),
+                cancellationToken);
+            foreach (var administrator in administrators
+                         .GroupBy(item => item.Email, StringComparer.OrdinalIgnoreCase)
+                         .Select(group => group.First()))
+            {
+                await QueueAsync(
+                    notificationType.Value,
+                    profile.Id,
+                    history.Id.ToString("N"),
+                    administrator.Id.ToString("N"),
+                    administrator.Email,
+                    model,
+                    cancellationToken);
+            }
+
+            return;
+        }
+
+        await QueueAsync(
+            notificationType.Value,
+            profile.Id,
+            history.Id.ToString("N"),
+            profile.UserAccountId.ToString("N"),
+            profile.UserAccount.Email,
+            model,
+            cancellationToken);
+    }
+
+    public async Task QueueConsultationCreatedAsync(
+        ConsultationRequest request,
+        ConsultationCreationEmailContext context,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var model = new ConsultationEmailNotificationModel(
+            context.RequesterName,
+            context.LawyerName,
+            request.ReferenceNumber,
+            context.SpecializationNameAr,
+            context.SpecializationNameEn,
+            request.PreferredAppointmentOnUtc);
+        var eventId = request.Id.ToString("N");
+
+        await QueueAsync(
+            EmailNotificationType.ConsultationRequestCreatedForLawyer,
+            request.Id,
+            eventId,
+            context.LawyerUserAccountId.ToString("N"),
+            context.LawyerEmail,
+            model,
+            cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(context.RequesterEmail))
+        {
+            await QueueAsync(
+                EmailNotificationType.ConsultationRequestCreatedConfirmation,
+                request.Id,
+                eventId,
+                context.RequesterIdentity,
+                context.RequesterEmail,
+                model,
+                cancellationToken);
+        }
+    }
+
+    public async Task QueueConsultationTransitionAsync(
+        ConsultationRequest request,
+        ConsultationRequestStatusHistory history,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(history);
+
+        var notificationType = (history.OldStatus, history.NewStatus) switch
+        {
+            (ConsultationRequestStatus.New, ConsultationRequestStatus.UnderReview) => EmailNotificationType.ConsultationUnderReview,
+            (ConsultationRequestStatus.New or ConsultationRequestStatus.UnderReview, ConsultationRequestStatus.Approved) => EmailNotificationType.ConsultationApproved,
+            (ConsultationRequestStatus.New or ConsultationRequestStatus.UnderReview, ConsultationRequestStatus.Rejected) => EmailNotificationType.ConsultationRejected,
+            (ConsultationRequestStatus.Approved, ConsultationRequestStatus.Completed) => EmailNotificationType.ConsultationCompleted,
+            _ => (EmailNotificationType?)null
+        };
+        if (notificationType is null)
+        {
+            return;
+        }
+
+        var snapshot = await consultationReader.FirstOrDefaultAsync(
+            new ConsultationEmailSnapshotByIdSpecification(request.Id),
+            cancellationToken);
+        if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.RequesterEmail))
+        {
+            return;
+        }
+
+        var model = new ConsultationEmailNotificationModel(
+            snapshot.RequesterName,
+            snapshot.LawyerName,
+            snapshot.ReferenceNumber,
+            snapshot.SpecializationNameAr,
+            snapshot.SpecializationNameEn,
+            snapshot.PreferredAppointmentOnUtc,
+            history.Reason);
+        await QueueAsync(
+            notificationType.Value,
+            request.Id,
+            history.Id.ToString("N"),
+            snapshot.RequesterIdentity,
+            snapshot.RequesterEmail,
+            model,
+            cancellationToken);
+    }
+
+    public Task QueueClientTransitionAsync(
+        LawyerPlatform.Domain.Clients.ClientProfile profile,
+        AccountStatus oldStatus,
+        AccountStatus newStatus,
+        DateTime changedOnUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        var notificationType = (oldStatus, newStatus) switch
+        {
+            (AccountStatus.Active, AccountStatus.Suspended) => EmailNotificationType.ClientSuspended,
+            (AccountStatus.Suspended, AccountStatus.Active) => EmailNotificationType.ClientReactivated,
+            _ => (EmailNotificationType?)null
+        };
+        return notificationType is null
+            ? Task.CompletedTask
+            : QueueAsync(
+                notificationType.Value,
+                profile.Id,
+                changedOnUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                profile.UserAccountId.ToString("N"),
+                profile.UserAccount.Email,
+                new ClientEmailNotificationModel(profile.FullName),
+                cancellationToken);
+    }
+
+    private Task QueueAsync(
+        EmailNotificationType notificationType,
+        Guid aggregateId,
+        string eventId,
+        string recipientIdentity,
+        string recipientEmail,
+        EmailNotificationModel model,
+        CancellationToken cancellationToken)
+    {
+        var content = factory.Create(notificationType, model);
+        var idempotencyKey = $"{notificationType}:{aggregateId:N}:{eventId}:{recipientIdentity}";
+        return outbox.QueueAsync(
+            new QueueEmailNotification(
+                notificationType,
+                aggregateId,
+                idempotencyKey,
+                recipientEmail,
+                content.Subject,
+                content.HtmlBody),
+            cancellationToken);
+    }
+}
+
+internal sealed record EmailRecipientSnapshot(Guid Id, string Email);
+
+internal sealed class ActiveSuperAdminEmailRecipientsSpecification
+    : Specification<UserAccount, EmailRecipientSnapshot>
+{
+    public ActiveSuperAdminEmailRecipientsSpecification()
+    {
+        AddCriteria(account =>
+            account.Role == AccountRole.SuperAdmin &&
+            account.Status == AccountStatus.Active);
+        UseNoTracking();
+        Select(account => new EmailRecipientSnapshot(account.Id, account.Email));
+    }
+}
+
+internal sealed record ConsultationEmailSnapshot(
+    string ReferenceNumber,
+    string RequesterName,
+    string? RequesterEmail,
+    string RequesterIdentity,
+    string LawyerName,
+    string SpecializationNameAr,
+    string SpecializationNameEn,
+    DateTime? PreferredAppointmentOnUtc);
+
+internal sealed class ConsultationEmailSnapshotByIdSpecification
+    : Specification<ConsultationRequest, ConsultationEmailSnapshot>
+{
+    public ConsultationEmailSnapshotByIdSpecification(Guid requestId)
+    {
+        AddCriteria(request => request.Id == requestId);
+        UseNoTracking();
+        Select(request => new ConsultationEmailSnapshot(
+            request.ReferenceNumber,
+            request.ClientProfileId != null ? request.ClientProfile!.FullName : request.GuestFullName!,
+            request.ClientProfileId != null ? request.ClientProfile!.UserAccount.Email : request.GuestEmail,
+            request.ClientProfileId != null
+                ? request.ClientProfileId.Value.ToString()
+                : request.Id.ToString(),
+            request.LawyerProfile.FullName,
+            request.LegalSpecialization == null ? "غير محدد" : request.LegalSpecialization.NameAr,
+            request.LegalSpecialization == null ? "Not specified" : request.LegalSpecialization.NameEn,
+            request.PreferredAppointmentOnUtc));
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\EmailNotificationModels.cs ==================== 
+namespace LawyerPlatform.Application.Notifications.Email;
+
+public abstract record EmailNotificationModel;
+
+public sealed record LawyerEmailNotificationModel(
+    string LawyerName,
+    Guid LawyerId,
+    string? Reason = null) : EmailNotificationModel;
+
+public sealed record ConsultationEmailNotificationModel(
+    string RequesterName,
+    string LawyerName,
+    string ReferenceNumber,
+    string SpecializationNameAr,
+    string SpecializationNameEn,
+    DateTime? PreferredAppointmentOnUtc = null,
+    string? Reason = null) : EmailNotificationModel;
+
+public sealed record ClientEmailNotificationModel(
+    string ClientName) : EmailNotificationModel;
+
+public sealed record EmailNotificationContent(
+    string Subject,
+    string HtmlBody);
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\EmailNotificationType.cs ==================== 
+namespace LawyerPlatform.Application.Notifications.Email;
+
+public enum EmailNotificationType
+{
+    LawyerSubmittedForApproval = 1,
+    LawyerApproved = 2,
+    LawyerChangesRequested = 3,
+    LawyerRejected = 4,
+    LawyerSuspended = 5,
+    LawyerReactivated = 6,
+    ConsultationRequestCreatedForLawyer = 7,
+    ConsultationRequestCreatedConfirmation = 8,
+    ConsultationUnderReview = 9,
+    ConsultationApproved = 10,
+    ConsultationRejected = 11,
+    ConsultationCompleted = 12,
+    ClientSuspended = 13,
+    ClientReactivated = 14
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\IEmailNotificationFactory.cs ==================== 
+namespace LawyerPlatform.Application.Notifications.Email;
+
+public interface IEmailNotificationFactory
+{
+    EmailNotificationContent Create(
+        EmailNotificationType notificationType,
+        EmailNotificationModel model);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\IEmailNotificationOutbox.cs ==================== 
+namespace LawyerPlatform.Application.Notifications.Email;
+
+public sealed record QueueEmailNotification(
+    EmailNotificationType NotificationType,
+    Guid AggregateId,
+    string IdempotencyKey,
+    string RecipientEmail,
+    string Subject,
+    string HtmlBody);
+
+public interface IEmailNotificationOutbox
+{
+    Task QueueAsync(QueueEmailNotification notification, CancellationToken cancellationToken);
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Persistence\LawyerPlatformReadPersistence.cs ==================== 
@@ -33314,6 +34151,8 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Infrastructure.Lawyers;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33345,6 +34184,7 @@ public static class DependencyInjection
         services.AddBuildingBlockPasswordHashing(configuration);
         services.AddBuildingBlockMedia(configuration);
         services.AddBuildingBlockFileSystemMediaStorage();
+        services.AddBuildingBlockMailKitEmail(configuration);
         services.AddBuildingBlockSqlServerExceptionMapping();
 
         services.AddOptions<InitialSuperAdminOptions>()
@@ -33371,6 +34211,15 @@ public static class DependencyInjection
                 options => ConsultationSchedulingTimeZone.CanResolve(options.TimeZoneId),
                 "Consultation scheduling time zone is invalid.")
             .ValidateOnStart();
+        services.AddOptions<EmailOutboxOptions>()
+            .Bind(configuration.GetSection(EmailOutboxOptions.SectionName))
+            .Validate(
+                options => options.PollingIntervalSeconds > 0 &&
+                           options.BatchSize is > 0 and <= 100 &&
+                           options.MaxAttempts is > 0 and <= 20 &&
+                           options.ClaimLeaseSeconds >= 120,
+                "Email outbox options are invalid.")
+            .ValidateOnStart();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
@@ -33382,6 +34231,8 @@ public static class DependencyInjection
         services.AddSingleton<IStoredFileReader, StoredFileReader>();
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
+        services.AddScoped<IEmailNotificationOutbox, EmailNotificationOutbox>();
+        services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();
         services.AddScoped<ISeeder, SuperAdminSeeder>();
@@ -33392,6 +34243,7 @@ public static class DependencyInjection
         services.AddScoped<IEnsureSeeding, EnsureSeeding>();
         services.AddSingleton<IDatabaseMigrationService, EfCoreDatabaseMigrationService>();
         services.AddHostedService<DatabaseInitializationHostedService>();
+        services.AddHostedService<EmailOutboxBackgroundService>();
 
         services.AddDbContext<LawyerPlatformDbContext>((serviceProvider, options) =>
             options
@@ -33645,7 +34497,414 @@ internal sealed class ConsultationSchedulingTimeZone : IConsultationSchedulingTi
     }
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailNotificationOutbox.cs ==================== 
+using System.Net.Mail;
+using BuildingBlock.Application.Time;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace LawyerPlatform.Infrastructure.Email;
+
+internal sealed partial class EmailNotificationOutbox(
+    LawyerPlatformDbContext dbContext,
+    IDateTimeProvider clock,
+    ILogger<EmailNotificationOutbox> logger)
+    : IEmailNotificationOutbox
+{
+    public async Task QueueAsync(
+        QueueEmailNotification notification,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!IsSafeRecipient(notification.RecipientEmail))
+        {
+            InvalidRecipientSkipped(logger, notification.NotificationType, notification.AggregateId);
+            return;
+        }
+
+        ValidateNotification(notification);
+        var alreadyTracked = dbContext.EmailOutboxMessages.Local.Any(
+            message => message.IdempotencyKey == notification.IdempotencyKey);
+        if (alreadyTracked || await dbContext.EmailOutboxMessages
+                .AsNoTracking()
+                .AnyAsync(
+                    message => message.IdempotencyKey == notification.IdempotencyKey,
+                    cancellationToken))
+        {
+            return;
+        }
+
+        dbContext.EmailOutboxMessages.Add(new EmailOutboxMessage(
+            Guid.NewGuid(),
+            notification.NotificationType,
+            notification.AggregateId,
+            notification.IdempotencyKey,
+            notification.RecipientEmail.Trim(),
+            notification.Subject,
+            notification.HtmlBody,
+            RequireUtc(clock.UtcNow)));
+        NotificationQueued(logger, notification.NotificationType, notification.AggregateId);
+    }
+
+    private static void ValidateNotification(QueueEmailNotification notification)
+    {
+        if (notification.AggregateId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(notification.IdempotencyKey) ||
+            notification.IdempotencyKey.Length > 450 ||
+            string.IsNullOrWhiteSpace(notification.Subject) ||
+            notification.Subject.Length > 500 ||
+            notification.Subject.Contains('\r', StringComparison.Ordinal) ||
+            notification.Subject.Contains('\n', StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(notification.HtmlBody))
+        {
+            throw new InvalidOperationException("The email notification is invalid.");
+        }
+    }
+
+    private static bool IsSafeRecipient(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length > 320 ||
+            value.Contains('\r', StringComparison.Ordinal) ||
+            value.Contains('\n', StringComparison.Ordinal) ||
+            !MailAddress.TryCreate(value.Trim(), out var parsed))
+        {
+            return false;
+        }
+
+        return string.Equals(parsed.Address, value.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateTime RequireUtc(DateTime value)
+        => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
+
+    [LoggerMessage(
+        EventId = 4300,
+        Level = LogLevel.Information,
+        Message = "Email notification {NotificationType} queued for aggregate {AggregateId}.")]
+    private static partial void NotificationQueued(
+        ILogger logger,
+        EmailNotificationType notificationType,
+        Guid aggregateId);
+
+    [LoggerMessage(
+        EventId = 4301,
+        Level = LogLevel.Warning,
+        Message = "Email notification {NotificationType} for aggregate {AggregateId} was skipped because its persisted recipient is invalid.")]
+    private static partial void InvalidRecipientSkipped(
+        ILogger logger,
+        EmailNotificationType notificationType,
+        Guid aggregateId);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailOutboxBackgroundService.cs ==================== 
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.Infrastructure.Email;
+
+internal sealed partial class EmailOutboxBackgroundService(
+    IServiceScopeFactory scopeFactory,
+    IOptions<EmailOutboxOptions> options,
+    ILogger<EmailOutboxBackgroundService> logger)
+    : BackgroundService
+{
+    private readonly EmailOutboxOptions _options = options.Value;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!_options.Enabled)
+        {
+            return;
+        }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var processed = 0;
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                processed = await scope.ServiceProvider
+                    .GetRequiredService<EmailOutboxProcessor>()
+                    .ProcessBatchAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                ProcessorFailed(logger, exception.GetType().Name);
+            }
+
+            var delay = processed >= _options.BatchSize
+                ? TimeSpan.FromMilliseconds(250)
+                : TimeSpan.FromSeconds(_options.PollingIntervalSeconds);
+            await Task.Delay(delay, stoppingToken);
+        }
+    }
+
+    [LoggerMessage(
+        EventId = 4320,
+        Level = LogLevel.Error,
+        Message = "Email outbox processing cycle failed with {ExceptionType}.")]
+    private static partial void ProcessorFailed(ILogger logger, string exceptionType);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailOutboxMessage.cs ==================== 
+using LawyerPlatform.Application.Notifications.Email;
+
+namespace LawyerPlatform.Infrastructure.Email;
+
+public sealed class EmailOutboxMessage
+{
+    private EmailOutboxMessage()
+    {
+    }
+
+    internal EmailOutboxMessage(
+        Guid id,
+        EmailNotificationType notificationType,
+        Guid aggregateId,
+        string idempotencyKey,
+        string recipientEmail,
+        string subject,
+        string htmlBody,
+        DateTime createdOnUtc)
+    {
+        Id = id;
+        NotificationType = notificationType;
+        AggregateId = aggregateId;
+        IdempotencyKey = idempotencyKey;
+        RecipientEmail = recipientEmail;
+        Subject = subject;
+        HtmlBody = htmlBody;
+        CreatedOnUtc = createdOnUtc;
+        Status = EmailOutboxStatus.Pending;
+    }
+
+    public Guid Id { get; private set; }
+    public EmailNotificationType NotificationType { get; private set; }
+    public Guid AggregateId { get; private set; }
+    public string IdempotencyKey { get; private set; } = string.Empty;
+    public string RecipientEmail { get; private set; } = string.Empty;
+    public string Subject { get; private set; } = string.Empty;
+    public string HtmlBody { get; private set; } = string.Empty;
+    public DateTime CreatedOnUtc { get; private set; }
+    public DateTime? ProcessedOnUtc { get; private set; }
+    public int AttemptCount { get; private set; }
+    public DateTime? NextAttemptOnUtc { get; private set; }
+    public string? LastError { get; private set; }
+    public EmailOutboxStatus Status { get; private set; }
+    public Guid? ProcessingToken { get; private set; }
+    public byte[] RowVersion { get; private set; } = [];
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailOutboxProcessor.cs ==================== 
+using BuildingBlock.Application.Email;
+using BuildingBlock.Application.Time;
+using BuildingBlock.Infrastructure.Exceptions;
+using LawyerPlatform.Infrastructure.Options;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.Infrastructure.Email;
+
+internal sealed partial class EmailOutboxProcessor(
+    LawyerPlatformDbContext dbContext,
+    IEmailSender emailSender,
+    IDateTimeProvider clock,
+    IOptions<EmailOutboxOptions> options,
+    ILogger<EmailOutboxProcessor> logger)
+{
+    private readonly EmailOutboxOptions _options = options.Value;
+
+    public async Task<int> ProcessBatchAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var nowUtc = RequireUtc(clock.UtcNow);
+        var candidateIds = await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.Status == EmailOutboxStatus.Pending &&
+                (message.NextAttemptOnUtc == null || message.NextAttemptOnUtc <= nowUtc) ||
+                message.Status == EmailOutboxStatus.Processing &&
+                message.NextAttemptOnUtc != null &&
+                message.NextAttemptOnUtc <= nowUtc)
+            .OrderBy(message => message.CreatedOnUtc)
+            .Select(message => message.Id)
+            .Take(_options.BatchSize)
+            .ToListAsync(cancellationToken);
+        if (candidateIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var claimedOnUtc = RequireUtc(clock.UtcNow);
+        var leaseUntilUtc = claimedOnUtc.AddSeconds(_options.ClaimLeaseSeconds);
+        var processingToken = Guid.NewGuid();
+        await dbContext.EmailOutboxMessages
+            .Where(message =>
+                candidateIds.Contains(message.Id) &&
+                (message.Status == EmailOutboxStatus.Pending &&
+                 (message.NextAttemptOnUtc == null || message.NextAttemptOnUtc <= claimedOnUtc) ||
+                 message.Status == EmailOutboxStatus.Processing &&
+                 message.NextAttemptOnUtc != null &&
+                 message.NextAttemptOnUtc <= claimedOnUtc))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(message => message.Status, EmailOutboxStatus.Processing)
+                    .SetProperty(message => message.AttemptCount, message => message.AttemptCount + 1)
+                    .SetProperty(message => message.NextAttemptOnUtc, leaseUntilUtc)
+                    .SetProperty(message => message.LastError, (string?)null)
+                    .SetProperty(message => message.ProcessingToken, processingToken),
+                cancellationToken);
+
+        var claimedMessages = await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.Status == EmailOutboxStatus.Processing &&
+                message.ProcessingToken == processingToken)
+            .OrderBy(message => message.CreatedOnUtc)
+            .ToListAsync(cancellationToken);
+        foreach (var message in claimedMessages)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await ProcessClaimedAsync(message, processingToken, cancellationToken);
+        }
+
+        return claimedMessages.Count;
+    }
+
+    private async Task ProcessClaimedAsync(
+        EmailOutboxMessage message,
+        Guid processingToken,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await emailSender.SendAsync(
+                new EmailMessage
+                {
+                    To = [message.RecipientEmail],
+                    Subject = message.Subject,
+                    HtmlBody = message.HtmlBody
+                },
+                cancellationToken);
+
+            var sentOnUtc = RequireUtc(clock.UtcNow);
+            await dbContext.EmailOutboxMessages
+                .Where(item =>
+                    item.Id == message.Id &&
+                    item.Status == EmailOutboxStatus.Processing &&
+                    item.ProcessingToken == processingToken)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(item => item.Status, EmailOutboxStatus.Sent)
+                        .SetProperty(item => item.ProcessedOnUtc, sentOnUtc)
+                        .SetProperty(item => item.NextAttemptOnUtc, (DateTime?)null)
+                        .SetProperty(item => item.LastError, (string?)null)
+                        .SetProperty(item => item.ProcessingToken, (Guid?)null),
+                    cancellationToken);
+            MessageSent(logger, message.Id);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await RecordFailureAsync(message, processingToken, exception, cancellationToken);
+        }
+    }
+
+    private async Task RecordFailureAsync(
+        EmailOutboxMessage message,
+        Guid processingToken,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        var isPermanent = IsPermanent(exception);
+        var exhausted = message.AttemptCount >= _options.MaxAttempts;
+        var status = isPermanent || exhausted
+            ? EmailOutboxStatus.Failed
+            : EmailOutboxStatus.Pending;
+        var nextAttemptOnUtc = status == EmailOutboxStatus.Pending
+            ? RequireUtc(clock.UtcNow).Add(CalculateRetryDelay(message.AttemptCount))
+            : (DateTime?)null;
+        var safeError = SafeErrorCode(exception);
+
+        await dbContext.EmailOutboxMessages
+            .Where(item =>
+                item.Id == message.Id &&
+                item.Status == EmailOutboxStatus.Processing &&
+                item.ProcessingToken == processingToken)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.Status, status)
+                    .SetProperty(item => item.NextAttemptOnUtc, nextAttemptOnUtc)
+                    .SetProperty(item => item.LastError, safeError)
+                    .SetProperty(item => item.ProcessingToken, (Guid?)null),
+                cancellationToken);
+        MessageFailed(logger, message.Id, message.AttemptCount, status);
+    }
+
+    private static bool IsPermanent(Exception exception)
+        => exception is EmailServiceException emailException &&
+           emailException.Error.Code is
+               ExternalServiceErrorCodes.Email.InvalidMessage or
+               ExternalServiceErrorCodes.Email.AuthenticationFailed;
+
+    private static string SafeErrorCode(Exception exception)
+        => exception is EmailServiceException emailException
+            ? emailException.Error.Code
+            : ExternalServiceErrorCodes.Email.SendFailed;
+
+    private static TimeSpan CalculateRetryDelay(int attemptCount)
+        => TimeSpan.FromMinutes(Math.Min(Math.Pow(2, Math.Max(0, attemptCount - 1)), 60));
+
+    private static DateTime RequireUtc(DateTime value)
+        => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
+
+    [LoggerMessage(
+        EventId = 4310,
+        Level = LogLevel.Information,
+        Message = "Email outbox message {MessageId} sent successfully.")]
+    private static partial void MessageSent(ILogger logger, Guid messageId);
+
+    [LoggerMessage(
+        EventId = 4311,
+        Level = LogLevel.Warning,
+        Message = "Email outbox message {MessageId} failed attempt {AttemptCount}; status is {Status}.")]
+    private static partial void MessageFailed(
+        ILogger logger,
+        Guid messageId,
+        int attemptCount,
+        EmailOutboxStatus status);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailOutboxStatus.cs ==================== 
+namespace LawyerPlatform.Infrastructure.Email;
+
+public enum EmailOutboxStatus
+{
+    Pending = 1,
+    Processing = 2,
+    Sent = 3,
+    Failed = 4
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Lawyers\ConcurrencyTokenManager.cs ==================== 
+using System.Linq.Expressions;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Infrastructure.Persistence;
 
@@ -33661,11 +34920,14 @@ internal sealed class ConcurrencyTokenManager(LawyerPlatformDbContext dbContext)
         dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
     }
 
-    public void MarkModified<TEntity>(TEntity entity)
+    public void MarkPropertyModified<TEntity, TProperty>(
+        TEntity entity,
+        Expression<Func<TEntity, TProperty>> propertyExpression)
         where TEntity : class
     {
         ArgumentNullException.ThrowIfNull(entity);
-        dbContext.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+        ArgumentNullException.ThrowIfNull(propertyExpression);
+        dbContext.Entry(entity).Property(propertyExpression).IsModified = true;
     }
 }
  
@@ -33842,6 +35104,20 @@ public sealed class DatabaseInitializationOptions
     public const string SectionName = "DatabaseInitialization";
 
     public bool ApplyMigrationsOnStartup { get; init; } = true;
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Options\EmailOutboxOptions.cs ==================== 
+namespace LawyerPlatform.Infrastructure.Options;
+
+public sealed class EmailOutboxOptions
+{
+    public const string SectionName = "EmailOutbox";
+
+    public bool Enabled { get; set; } = true;
+    public int PollingIntervalSeconds { get; set; } = 15;
+    public int BatchSize { get; set; } = 20;
+    public int MaxAttempts { get; set; } = 5;
+    public int ClaimLeaseSeconds { get; set; } = 300;
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Options\InitialSuperAdminOptions.cs ==================== 
@@ -34113,6 +35389,7 @@ using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -34136,6 +35413,7 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     public DbSet<LawyerAvailability> LawyerAvailabilities => Set<LawyerAvailability>();
     public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
     public DbSet<ConsultationRequestStatusHistory> ConsultationRequestStatusHistory => Set<ConsultationRequestStatusHistory>();
+    public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -34763,6 +36041,39 @@ internal sealed class ConsultationRequestStatusHistoryConfiguration
     }
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Configurations\EmailOutboxMessageConfiguration.cs ==================== 
+using BuildingBlock.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Email;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace LawyerPlatform.Infrastructure.Persistence.Configurations;
+
+internal sealed class EmailOutboxMessageConfiguration : IWriteEntityConfiguration<EmailOutboxMessage>
+{
+    public void ConfigureAggregate(EntityTypeBuilder<EmailOutboxMessage> builder)
+    {
+        builder.ToTable("EmailOutboxMessages");
+        builder.HasKey(message => message.Id);
+        builder.Property(message => message.NotificationType).HasConversion<int>().IsRequired();
+        builder.Property(message => message.IdempotencyKey).HasMaxLength(450).IsRequired();
+        builder.Property(message => message.RecipientEmail).HasMaxLength(320).IsRequired();
+        builder.Property(message => message.Subject).HasMaxLength(500).IsRequired();
+        builder.Property(message => message.HtmlBody).IsRequired();
+        builder.Property(message => message.LastError).HasMaxLength(500);
+        builder.Property(message => message.Status).HasConversion<int>().IsRequired();
+        builder.Property(message => message.RowVersion).IsRowVersion().IsConcurrencyToken();
+
+        builder.HasIndex(message => message.IdempotencyKey)
+            .IsUnique()
+            .HasDatabaseName("UX_EmailOutboxMessages_IdempotencyKey");
+        builder.HasIndex(message => new { message.Status, message.NextAttemptOnUtc })
+            .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
+        builder.HasIndex(message => message.CreatedOnUtc)
+            .HasDatabaseName("IX_EmailOutboxMessages_CreatedOnUtc");
+    }
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Configurations\GovernorateConfiguration.cs ==================== 
 using BuildingBlock.Infrastructure.Persistence;
 using LawyerPlatform.Domain.ReferenceData;
@@ -34828,6 +36139,8 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
     {
         builder.ToTable("LawyerAvailabilities");
         builder.HasKey(availability => availability.Id);
+        builder.Property(availability => availability.Id)
+            .ValueGeneratedNever();
         builder.Property(availability => availability.DayOfWeek)
             .HasConversion<int>()
             .IsRequired();
@@ -41958,13 +43271,81 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
     }
 }
  
-// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\LawyerPlatformDbContextModelSnapshot.cs ==================== 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260816110959_AddBilingualEmailNotificationOutbox.cs ==================== 
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddBilingualEmailNotificationOutbox : Migration
+    {
+        private static readonly string[] StatusAndNextAttemptColumns = ["Status", "NextAttemptOnUtc"];
+
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "EmailOutboxMessages",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    NotificationType = table.Column<int>(type: "int", nullable: false),
+                    AggregateId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    IdempotencyKey = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: false),
+                    RecipientEmail = table.Column<string>(type: "nvarchar(320)", maxLength: 320, nullable: false),
+                    Subject = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    HtmlBody = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CreatedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ProcessedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    AttemptCount = table.Column<int>(type: "int", nullable: false),
+                    NextAttemptOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    LastError = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    ProcessingToken = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_EmailOutboxMessages", x => x.Id);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_EmailOutboxMessages_CreatedOnUtc",
+                table: "EmailOutboxMessages",
+                column: "CreatedOnUtc");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_EmailOutboxMessages_Status_NextAttemptOnUtc",
+                table: "EmailOutboxMessages",
+                columns: StatusAndNextAttemptColumns);
+
+            migrationBuilder.CreateIndex(
+                name: "UX_EmailOutboxMessages_IdempotencyKey",
+                table: "EmailOutboxMessages",
+                column: "IdempotencyKey",
+                unique: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "EmailOutboxMessages");
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260816110959_AddBilingualEmailNotificationOutbox.Designer.cs ==================== 
 ﻿// <auto-generated />
 using System;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -41972,9 +43353,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(LawyerPlatformDbContext))]
-    partial class LawyerPlatformDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816110959_AddBilingualEmailNotificationOutbox")]
+    partial class AddBilingualEmailNotificationOutbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -42256,7 +43639,6 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("DayOfWeek")
@@ -42756,6 +44138,1164 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_LegalSpecializations_IsActive_DisplayOrder");
 
                     b.ToTable("LegalSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Infrastructure.Email.EmailOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("NextAttemptOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NotificationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProcessedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProcessingToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_CreatedOnUtc");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EmailOutboxMessages_IdempotencyKey");
+
+                    b.HasIndex("Status", "NextAttemptOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
+
+                    b.ToTable("EmailOutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Clients.ClientProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Clients.ClientProfile", "ClientProfile")
+                        .WithMany()
+                        .HasForeignKey("ClientProfileId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany()
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ClientProfile");
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Consultations.ConsultationRequest", "ConsultationRequest")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("ConsultationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ConsultationRequest");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerConsultationSettings")
+                        .WithMany("Availability")
+                        .HasForeignKey("LawyerConsultationSettingsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LawyerConsultationSettings");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithOne("ConsultationSettings")
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Documents")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Area", "Area")
+                        .WithMany()
+                        .HasForeignKey("AreaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Offices")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Area");
+
+                    b.Navigation("City");
+
+                    b.Navigation("Governorate");
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Specializations")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("City");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Governorate");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Navigation("Availability");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Navigation("ConsultationSettings");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("Offices");
+
+                    b.Navigation("Specializations");
+
+                    b.Navigation("StatusHistory");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\LawyerPlatformDbContextModelSnapshot.cs ==================== 
+﻿// <auto-generated />
+using System;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    [DbContext(typeof(LawyerPlatformDbContext))]
+    partial class LawyerPlatformDbContextModelSnapshot : ModelSnapshot
+    {
+        protected override void BuildModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.UserAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsFirstLogin")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedUserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("PasswordChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedEmail");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedUserName");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_PhoneNumber");
+
+                    b.HasIndex("Role", "Status")
+                        .HasDatabaseName("IX_UserAccounts_Role_Status");
+
+                    b.ToTable("UserAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ClientProfiles_UserAccountId");
+
+                    b.ToTable("ClientProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("ConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("GuestEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("GuestFullName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("GuestPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PreferredAppointmentOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LegalSpecializationId");
+
+                    b.HasIndex("ReferenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ConsultationRequests_ReferenceNumber");
+
+                    b.HasIndex("ClientProfileId", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_ClientProfileId_CreatedOnUtc");
+
+                    b.HasIndex("LawyerProfileId", "Status", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_LawyerProfileId_Status_CreatedOnUtc");
+
+                    b.ToTable("ConsultationRequests", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ConsultationRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("ConsultationRequestId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequestStatusHistory_ConsultationRequestId_ChangedOnUtc");
+
+                    b.ToTable("ConsultationRequestStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc");
+
+                    b.ToTable("LawyerApprovalStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time");
+
+                    b.Property<Guid>("LawyerConsultationSettingsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerConsultationSettingsId", "DayOfWeek")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_DayOfWeek");
+
+                    b.ToTable("LawyerAvailabilities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerConsultationSettings_LawyerProfileId");
+
+                    b.ToTable("LawyerConsultationSettings", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "DocumentType", "IsDeleted")
+                        .HasDatabaseName("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted");
+
+                    b.ToTable("LawyerDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AreaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DetailedAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublicPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AreaId");
+
+                    b.HasIndex("CityId");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerOffices_LawyerProfileId_Primary")
+                        .HasFilter("[IsPrimary] = 1");
+
+                    b.HasIndex("GovernorateId", "CityId", "AreaId")
+                        .HasDatabaseName("IX_LawyerOffices_GovernorateId_CityId_AreaId");
+
+                    b.ToTable("LawyerOffices", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ApprovalStatus")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ApprovedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ApprovedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Biography")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProfessionalRegistrationNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ProfessionalTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProfileImageStorageKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("SubmittedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SuspendedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("YearsOfExperience")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessionalRegistrationNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_ProfessionalRegistrationNumber")
+                        .HasFilter("[ProfessionalRegistrationNumber] IS NOT NULL");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_UserAccountId");
+
+                    b.HasIndex("ApprovalStatus", "SubmittedOnUtc")
+                        .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc");
+
+                    b.ToTable("LawyerProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("LawyerProfileId", "LegalSpecializationId");
+
+                    b.HasIndex("LegalSpecializationId", "LawyerProfileId")
+                        .HasDatabaseName("IX_LawyerSpecializations_LegalSpecializationId_LawyerProfileId");
+
+                    b.ToTable("LawyerSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CityId")
+                        .HasDatabaseName("IX_Areas_CityId");
+
+                    b.HasIndex("CityId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameAr");
+
+                    b.HasIndex("CityId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameEn");
+
+                    b.HasIndex("CityId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Areas_CityId_IsActive_DisplayOrder");
+
+                    b.ToTable("Areas", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GovernorateId")
+                        .HasDatabaseName("IX_Cities_GovernorateId");
+
+                    b.HasIndex("GovernorateId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameAr");
+
+                    b.HasIndex("GovernorateId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameEn");
+
+                    b.HasIndex("GovernorateId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Cities_GovernorateId_IsActive_DisplayOrder");
+
+                    b.ToTable("Cities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Governorate", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Governorates_IsActive_DisplayOrder");
+
+                    b.ToTable("Governorates", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_LegalSpecializations_IsActive_DisplayOrder");
+
+                    b.ToTable("LegalSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Infrastructure.Email.EmailOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("NextAttemptOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NotificationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProcessedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProcessingToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_CreatedOnUtc");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EmailOutboxMessages_IdempotencyKey");
+
+                    b.HasIndex("Status", "NextAttemptOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
+
+                    b.ToTable("EmailOutboxMessages", (string)null);
                 });
 
             modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
@@ -44266,6 +46806,14 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using LawyerPlatform.Application.Notifications.Email;
+using BuildingBlock.Application.Email;
+using BuildingBlock.Application.Time;
+using LawyerPlatform.Infrastructure.Email;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -44387,6 +46935,48 @@ public sealed class AdminConsultationRequestEndpointsTests
             null,
             approvedBody.GetProperty("rowVersion").GetString()!);
         Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+
+        await using var notificationScope = factory.Services.CreateAsyncScope();
+        var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var firstTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == first.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var secondTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == second.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, firstTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationUnderReview, firstTypes);
+        Assert.Contains(EmailNotificationType.ConsultationRejected, firstTypes);
+        Assert.DoesNotContain(EmailNotificationType.ConsultationApproved, firstTypes);
+        Assert.Equal(4, secondTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationApproved, secondTypes);
+        Assert.Contains(EmailNotificationType.ConsultationCompleted, secondTypes);
+
+        var processor = new EmailOutboxProcessor(
+            notificationContext,
+            new FailingEmailSender(),
+            notificationScope.ServiceProvider.GetRequiredService<IDateTimeProvider>(),
+            notificationScope.ServiceProvider.GetRequiredService<IOptions<EmailOutboxOptions>>(),
+            NullLogger<EmailOutboxProcessor>.Instance);
+        Assert.True(await processor.ProcessBatchAsync(TestContext.Current.CancellationToken) > 0);
+        notificationContext.ChangeTracker.Clear();
+        Assert.Equal(
+            ConsultationRequestStatus.Rejected,
+            await notificationContext.ConsultationRequests
+                .Where(request => request.Id == first.Id)
+                .Select(request => request.Status)
+                .SingleAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            ConsultationRequestStatus.Completed,
+            await notificationContext.ConsultationRequests
+                .Where(request => request.Id == second.Id)
+                .Select(request => request.Status)
+                .SingleAsync(TestContext.Current.CancellationToken));
     }
 
     private static async Task<JsonElement> GetDetailsAsync(HttpClient client, Guid id)
@@ -44501,6 +47091,12 @@ public sealed class AdminConsultationRequestEndpointsTests
     {
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         return body.GetProperty("errors")[0].GetProperty("code").GetString();
+    }
+
+    private sealed class FailingEmailSender : IEmailSender
+    {
+        public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+            => throw new IOException("simulated SMTP provider failure");
     }
 }
  
@@ -46012,6 +48608,7 @@ using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -46032,6 +48629,50 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var created = await success.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal("New", created.GetProperty("status").GetString());
         Assert.StartsWith("CR-", created.GetProperty("referenceNumber").GetString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("smtp", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("emailSent", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
+
+        var guestWithoutEmail = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
+        {
+            lawyerId = eligibleLawyerId,
+            fullName = "Guest Without Email",
+            phoneNumber = "01012345679",
+            description = "Private guest description"
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, guestWithoutEmail.StatusCode);
+        var guestWithoutEmailBody = await guestWithoutEmail.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var createdId = created.GetProperty("id").GetGuid();
+            var guestWithoutEmailId = guestWithoutEmailBody.GetProperty("id").GetGuid();
+            var withEmailNotifications = await context.EmailOutboxMessages
+                .AsNoTracking()
+                .Where(message => message.AggregateId == createdId)
+                .ToListAsync(TestContext.Current.CancellationToken);
+            var withoutEmailNotifications = await context.EmailOutboxMessages
+                .AsNoTracking()
+                .Where(message => message.AggregateId == guestWithoutEmailId)
+                .ToListAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(2, withEmailNotifications.Count);
+            Assert.Contains(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
+            Assert.Contains(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+            Assert.DoesNotContain(withEmailNotifications, message =>
+                message.HtmlBody.Contains("Legal consultation description", StringComparison.Ordinal));
+            Assert.Single(withoutEmailNotifications);
+            Assert.Equal(
+                EmailNotificationType.ConsultationRequestCreatedForLawyer,
+                withoutEmailNotifications[0].NotificationType);
+            Assert.DoesNotContain(
+                "Private guest description",
+                withoutEmailNotifications[0].HtmlBody,
+                StringComparison.Ordinal);
+        }
 
         var missingName = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
@@ -46150,6 +48791,23 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Null(stored.GuestPhoneNumber);
         Assert.Equal("Authenticated client request", stored.Description);
         Assert.Equal(ConsultationRequestStatus.New, stored.Status);
+
+        var notifications = await context.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == stored.Id)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, notifications.Count);
+        Assert.Contains(notifications, message =>
+            message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer &&
+            message.RecipientEmail == "client.target@example.test");
+        Assert.Contains(notifications, message =>
+            message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation &&
+            message.RecipientEmail == "consultation.client@example.test");
+        Assert.All(notifications, message =>
+        {
+            Assert.DoesNotContain("Authenticated client request", message.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("Impersonated Name", message.HtmlBody, StringComparison.Ordinal);
+        });
     }
 
     [Fact]
@@ -46702,6 +49360,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["PasswordLifecycle:ExpiryDays"] = "90",
                 ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
+                ["EmailOutbox:Enabled"] = "false",
                 ["Cors:AllowAnyOrigin"] = "false",
                 ["Cors:AllowCredentials"] = "false",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:4200",
@@ -46752,6 +49411,237 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\EmailOutboxProcessorTests.cs ==================== 
+using BuildingBlock.Application.Email;
+using BuildingBlock.Application.Time;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure.Email;
+using LawyerPlatform.Infrastructure.Options;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using BuildingBlock.Domain.Results;
+using BuildingBlock.Infrastructure.Exceptions;
+
+namespace LawyerPlatform.IntegrationTests;
+
+public sealed class EmailOutboxProcessorTests
+{
+    [Fact]
+    public async Task SuccessfulSend_MarksSent_AndNeverSendsAgain()
+    {
+        await using var fixture = await OutboxFixture.CreateAsync();
+        var sender = new FakeEmailSender();
+        await fixture.QueueAsync("success", TestContext.Current.CancellationToken);
+
+        var first = await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken);
+        var second = await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken);
+        var message = await fixture.LoadSingleAsync();
+
+        Assert.Equal(1, first);
+        Assert.Equal(0, second);
+        Assert.Equal(1, sender.SendCount);
+        Assert.Equal(EmailOutboxStatus.Sent, message.Status);
+        Assert.Equal(1, message.AttemptCount);
+        Assert.NotNull(message.ProcessedOnUtc);
+        Assert.Null(message.LastError);
+    }
+
+    [Fact]
+    public async Task TransientFailure_RetriesWhenDue_AndStopsAtMaximumAttempts()
+    {
+        await using var fixture = await OutboxFixture.CreateAsync(maxAttempts: 2);
+        var sender = new FakeEmailSender { Fail = true };
+        await fixture.QueueAsync("retry", TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken));
+        var afterFirst = await fixture.LoadSingleAsync();
+        Assert.Equal(EmailOutboxStatus.Pending, afterFirst.Status);
+        Assert.Equal(1, afterFirst.AttemptCount);
+        Assert.NotNull(afterFirst.NextAttemptOnUtc);
+        Assert.Equal("Email.SendFailed", afterFirst.LastError);
+
+        Assert.Equal(0, await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken));
+        fixture.Clock.UtcNow = fixture.Clock.UtcNow.AddMinutes(2);
+        Assert.Equal(1, await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken));
+
+        var exhausted = await fixture.LoadSingleAsync();
+        Assert.Equal(EmailOutboxStatus.Failed, exhausted.Status);
+        Assert.Equal(2, exhausted.AttemptCount);
+        Assert.Null(exhausted.NextAttemptOnUtc);
+        Assert.Equal(2, sender.SendCount);
+        Assert.Equal(0, await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Queue_DeduplicatesLogicalMessage_AndProcessorHonorsBatchSizeAndCancellation()
+    {
+        await using var fixture = await OutboxFixture.CreateAsync(batchSize: 2);
+        await fixture.QueueAsync("duplicate", TestContext.Current.CancellationToken);
+        await fixture.QueueAsync("duplicate", TestContext.Current.CancellationToken);
+        await fixture.QueueAsync("second", TestContext.Current.CancellationToken);
+        await fixture.QueueAsync("third", TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, await fixture.CountAsync());
+
+        var sender = new FakeEmailSender();
+        Assert.Equal(2, await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(2, sender.SendCount);
+
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            fixture.CreateProcessor(sender).ProcessBatchAsync(cancellation.Token));
+    }
+
+    [Fact]
+    public async Task PermanentFailure_MarksMessageFailedWithoutRetry()
+    {
+        await using var fixture = await OutboxFixture.CreateAsync();
+        var sender = new FakeEmailSender
+        {
+            Exception = new EmailServiceException(
+                Error.Validation("Email.InvalidMessage", "invalid", source: "Email"))
+        };
+        await fixture.QueueAsync("permanent", TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, await fixture.CreateProcessor(sender).ProcessBatchAsync(TestContext.Current.CancellationToken));
+        var message = await fixture.LoadSingleAsync();
+
+        Assert.Equal(EmailOutboxStatus.Failed, message.Status);
+        Assert.Equal(1, message.AttemptCount);
+        Assert.Null(message.NextAttemptOnUtc);
+        Assert.Equal("Email.InvalidMessage", message.LastError);
+    }
+
+    private sealed class OutboxFixture : IAsyncDisposable
+    {
+        private readonly SqliteConnection _connection;
+        private readonly DbContextOptions<LawyerPlatformDbContext> _dbOptions;
+        private readonly EmailOutboxOptions _options;
+
+        private OutboxFixture(
+            SqliteConnection connection,
+            DbContextOptions<LawyerPlatformDbContext> dbOptions,
+            EmailOutboxOptions options,
+            MutableClock clock)
+        {
+            _connection = connection;
+            _dbOptions = dbOptions;
+            _options = options;
+            Clock = clock;
+        }
+
+        public MutableClock Clock { get; }
+
+        public static async Task<OutboxFixture> CreateAsync(int batchSize = 20, int maxAttempts = 5)
+        {
+            var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            var options = new DbContextOptionsBuilder<LawyerPlatformDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using (var context = new LawyerPlatformDbContext(options))
+            {
+                await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            }
+
+            return new OutboxFixture(
+                connection,
+                options,
+                new EmailOutboxOptions
+                {
+                    Enabled = true,
+                    BatchSize = batchSize,
+                    MaxAttempts = maxAttempts,
+                    PollingIntervalSeconds = 1,
+                    ClaimLeaseSeconds = 300
+                },
+                new MutableClock(new DateTime(2026, 8, 16, 10, 0, 0, DateTimeKind.Utc)));
+        }
+
+        public async Task QueueAsync(string logicalKey, CancellationToken cancellationToken)
+        {
+            await using var context = new LawyerPlatformDbContext(_dbOptions);
+            var outbox = new EmailNotificationOutbox(
+                context,
+                Clock,
+                NullLogger<EmailNotificationOutbox>.Instance);
+            await outbox.QueueAsync(
+                new QueueEmailNotification(
+                    EmailNotificationType.ClientReactivated,
+                    Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                    $"ClientReactivated:{logicalKey}",
+                    "client@example.com",
+                    "Safe subject",
+                    "<div dir=\"rtl\" lang=\"ar\">مرحبًا</div><div dir=\"ltr\" lang=\"en\">Hello</div>"),
+                cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
+        }
+
+        public EmailOutboxProcessor CreateProcessor(IEmailSender sender)
+        {
+            var context = new LawyerPlatformDbContext(_dbOptions);
+            return new EmailOutboxProcessor(
+                context,
+                sender,
+                Clock,
+                Options.Create(_options),
+                NullLogger<EmailOutboxProcessor>.Instance);
+        }
+
+        public async Task<EmailOutboxMessage> LoadSingleAsync()
+        {
+            await using var context = new LawyerPlatformDbContext(_dbOptions);
+            return await context.EmailOutboxMessages
+                .AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken);
+        }
+
+        public async Task<int> CountAsync()
+        {
+            await using var context = new LawyerPlatformDbContext(_dbOptions);
+            return await context.EmailOutboxMessages.CountAsync(TestContext.Current.CancellationToken);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _connection.DisposeAsync();
+        }
+    }
+
+    private sealed class MutableClock(DateTime utcNow) : IDateTimeProvider
+    {
+        public DateTime UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class FakeEmailSender : IEmailSender
+    {
+        public bool Fail { get; init; }
+        public Exception? Exception { get; init; }
+        public int SendCount { get; private set; }
+
+        public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            SendCount++;
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            if (Fail)
+            {
+                throw new IOException("provider detail must not be persisted");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\GlobalUsings.cs ==================== 
 global using Xunit;
  
@@ -46767,6 +49657,7 @@ using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -46915,6 +49806,27 @@ public sealed class LawyerConsultationRequestEndpointsTests
             (await client.GetAsync(
                 $"/api/v1/lawyer/consultation-requests/{firstGuest.Id}",
                 TestContext.Current.CancellationToken)).StatusCode);
+
+        await using var notificationScope = factory.Services.CreateAsyncScope();
+        var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var firstTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == firstGuest.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var completedTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == completedCandidate.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, firstTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationUnderReview, firstTypes);
+        Assert.Contains(EmailNotificationType.ConsultationRejected, firstTypes);
+        Assert.DoesNotContain(EmailNotificationType.ConsultationApproved, firstTypes);
+        Assert.Equal(4, completedTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationApproved, completedTypes);
+        Assert.Contains(EmailNotificationType.ConsultationCompleted, completedTypes);
     }
 
     private static async Task<(Guid ProfileId, Guid UserAccountId, string Token)> RegisterApproveAndLoginLawyerAsync(
@@ -47065,6 +49977,209 @@ namespace LawyerPlatform.IntegrationTests;
 public sealed class LawyerConsultationSettingsEndpointsTests
 {
     [Fact]
+    public async Task LawyerCanPerformMultipleSequentialConsultationSettingsUpdatesUsingLatestRowVersion()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.sequential",
+            "01073333333"));
+
+        var createResponse = await PutSettingsAsync(client, 500m, null,
+            new AvailabilityJson("Sunday", "10:00:00", "17:00:00"));
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+        Assert.False(string.IsNullOrWhiteSpace(firstRowVersion));
+
+        var rowVersions = new List<string> { firstRowVersion };
+        var updates = new[]
+        {
+            new SettingsUpdate(500m,
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ]),
+            new SettingsUpdate(600m,
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ]),
+            new SettingsUpdate(600m,
+            [
+                new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"),
+                new AvailabilityJson("Thursday", "10:00:00", "19:00:00")
+            ]),
+            new SettingsUpdate(600m,
+            [
+                new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+                new AvailabilityJson("Wednesday", "11:00:00", "20:00:00"),
+                new AvailabilityJson("Friday", "10:00:00", "16:00:00")
+            ]),
+            new SettingsUpdate(650m, [])
+        };
+
+        foreach (var update in updates)
+        {
+            var response = await PutSettingsAsync(
+                client,
+                update.Price,
+                rowVersions[^1],
+                update.Availability);
+            Assert.True(
+                response.StatusCode == HttpStatusCode.OK,
+                await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            var rowVersion = (await ReadJsonAsync(response)).GetProperty("rowVersion").GetString()!;
+            Assert.False(string.IsNullOrWhiteSpace(rowVersion));
+            Assert.NotEqual(rowVersions[^1], rowVersion);
+            rowVersions.Add(rowVersion);
+        }
+
+        var staleResponse = await PutSettingsAsync(client, 700m, rowVersions[^3]);
+        await AssertProblemAsync(
+            staleResponse,
+            HttpStatusCode.Conflict,
+            "Lawyer.ConsultationSettingsConcurrencyConflict");
+    }
+
+    [Fact]
+    public async Task LawyerCanPutExistingConsultationSettingsUsingLatestRowVersionWithoutFalseConcurrencyConflict()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.noop",
+            "01074444444"));
+
+        var availability = new AvailabilityJson("Sunday", "10:00:00", "17:00:00");
+        var createResponse = await PutSettingsAsync(client, 500m, null, availability);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+
+        var noOpResponse = await PutSettingsAsync(client, 500m, firstRowVersion, availability);
+        Assert.True(
+            noOpResponse.StatusCode == HttpStatusCode.OK,
+            await noOpResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var secondRowVersion = (await ReadJsonAsync(noOpResponse)).GetProperty("rowVersion").GetString()!;
+
+        Assert.False(string.IsNullOrWhiteSpace(secondRowVersion));
+        Assert.NotEqual(firstRowVersion, secondRowVersion);
+    }
+
+    [Fact]
+    public async Task AvailabilityOnlyUpdateAdvancesSettingsConcurrencyToken()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.availability",
+            "01075555555"));
+
+        var createResponse = await PutSettingsAsync(client, 500m, null,
+            new AvailabilityJson("Sunday", "10:00:00", "17:00:00"));
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+
+        var updateResponse = await PutSettingsAsync(client, 500m, firstRowVersion,
+            new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+            new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"));
+        Assert.True(
+            updateResponse.StatusCode == HttpStatusCode.OK,
+            await updateResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var updated = await ReadJsonAsync(updateResponse);
+        var secondRowVersion = updated.GetProperty("rowVersion").GetString()!;
+
+        Assert.NotEqual(firstRowVersion, secondRowVersion);
+        Assert.Equal(
+            ["Sunday", "Wednesday"],
+            updated.GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+
+        var nextResponse = await PutSettingsAsync(client, 550m, secondRowVersion,
+            new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+            new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"));
+        Assert.Equal(HttpStatusCode.OK, nextResponse.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("price")]
+    [InlineData("times")]
+    [InlineData("add")]
+    [InlineData("remove")]
+    [InlineData("replace")]
+    [InlineData("empty")]
+    public async Task LawyerCanUpdateExistingConsultationSettingsForEachSupportedReplacementShape(
+        string updateShape)
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            $"settings.shape.{updateShape}",
+            "01076666666"));
+
+        var initial = updateShape switch
+        {
+            "remove" or "replace" => new[]
+            {
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00"),
+                new AvailabilityJson("Thursday", "10:00:00", "19:00:00")
+            },
+            "empty" =>
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ],
+            _ => [new AvailabilityJson("Sunday", "10:00:00", "17:00:00")]
+        };
+        var expectedPrice = updateShape == "price" ? 600m : 500m;
+        var replacement = updateShape switch
+        {
+            "times" =>
+            [new AvailabilityJson("Sunday", "09:00:00", "18:00:00")],
+            "add" =>
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ],
+            "remove" =>
+            [
+                new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
+                new AvailabilityJson("Wednesday", "10:00:00", "20:00:00")
+            ],
+            "replace" =>
+            [
+                new AvailabilityJson("Sunday", "09:00:00", "18:00:00"),
+                new AvailabilityJson("Wednesday", "11:00:00", "20:00:00"),
+                new AvailabilityJson("Friday", "10:00:00", "16:00:00")
+            ],
+            "empty" => [],
+            _ => initial
+        };
+
+        var createResponse = await PutSettingsAsync(client, 500m, null, initial);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var firstRowVersion = (await ReadJsonAsync(createResponse)).GetProperty("rowVersion").GetString()!;
+
+        var updateResponse = await PutSettingsAsync(client, expectedPrice, firstRowVersion, replacement);
+        Assert.True(
+            updateResponse.StatusCode == HttpStatusCode.OK,
+            await updateResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var updated = await ReadJsonAsync(updateResponse);
+
+        Assert.Equal(expectedPrice, updated.GetProperty("consultationPrice").GetDecimal());
+        Assert.Equal(
+            replacement.Select(item => item.DayOfWeek).OrderBy(DayIndex).ToArray(),
+            updated.GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+        Assert.NotEqual(firstRowVersion, updated.GetProperty("rowVersion").GetString());
+    }
+
+    [Fact]
     public async Task LawyerCanCreateReadReplaceAndConcurrentlyUpdateOwnSettings()
     {
         await using var factory = await CreateFactoryAsync();
@@ -47100,6 +50215,13 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             new AvailabilityJson("Sunday", "10:00:00", "17:00:00"),
             new AvailabilityJson("sunday", "12:00:00", "16:00:00"));
         await AssertProblemAsync(duplicate, HttpStatusCode.UnprocessableEntity, "Lawyer.DuplicateAvailabilityDay");
+
+        var invalidRowVersion = await PutSettingsAsync(client, 500m, "not-base64",
+            new AvailabilityJson("Sunday", "10:00:00", "17:00:00"));
+        await AssertProblemAsync(
+            invalidRowVersion,
+            HttpStatusCode.UnprocessableEntity,
+            "Lawyer.ConsultationSettingsInvalidRowVersion");
 
         var invalidRange = await PutSettingsAsync(client, 500m, firstRowVersion,
             new AvailabilityJson("Sunday", "17:00:00", "10:00:00"));
@@ -47234,14 +50356,23 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             error => error.GetProperty("code").GetString() == code);
     }
 
+    private static int DayIndex(string day)
+        => (int)Enum.Parse<DayOfWeek>(day);
+
     private sealed record AvailabilityJson(string DayOfWeek, string StartTime, string EndTime);
+
+    private sealed record SettingsUpdate(decimal Price, AvailabilityJson[] Availability);
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\LawyerConsultationSettingsPersistenceModelTests.cs ==================== 
+using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Infrastructure.Lawyers;
 using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -47272,21 +50403,214 @@ public sealed class LawyerConsultationSettingsPersistenceModelTests
             index.IsUnique && index.GetDatabaseName() == "UX_LawyerAvailabilities_SettingsId_DayOfWeek");
         Assert.Equal(DeleteBehavior.Restrict, settings.GetForeignKeys().Single().DeleteBehavior);
         Assert.Equal(DeleteBehavior.Cascade, availability.GetForeignKeys().Single().DeleteBehavior);
+        Assert.Equal(ValueGenerated.Never, availability.FindProperty(nameof(LawyerAvailability.Id))!.ValueGenerated);
     }
+
+    [Fact]
+    public async Task ClientGeneratedAvailabilityIdsPreserveAggregateReplacementEntityStates()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        var options = new DbContextOptionsBuilder<LawyerPlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var context = new LawyerPlatformDbContext(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+
+        var nowUtc = new DateTime(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
+        var account = UserAccount.CreateLawyer(
+            "settings.states",
+            "SETTINGS.STATES",
+            "settings.states@example.test",
+            "SETTINGS.STATES@EXAMPLE.TEST",
+            "01078888888",
+            "integration-test-hash",
+            nowUtc).Value;
+        var profile = LawyerProfile.Create(account, "Settings State Lawyer").Value;
+        var settings = LawyerConsultationSettings.Create(
+            profile.Id,
+            500m,
+            [
+                Period(DayOfWeek.Sunday, 10, 17),
+                Period(DayOfWeek.Wednesday, 10, 20),
+                Period(DayOfWeek.Thursday, 10, 19)
+            ],
+            nowUtc).Value;
+        context.LawyerProfiles.Add(profile);
+        context.LawyerConsultationSettings.Add(settings);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var originalRowVersion = settings.RowVersion.ToArray();
+
+        context.ChangeTracker.Clear();
+        var tracked = await context.LawyerConsultationSettings
+            .Include(item => item.Availability)
+            .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
+        var tokenManager = new ConcurrencyTokenManager(context);
+        tokenManager.SetOriginalRowVersion(tracked, originalRowVersion);
+
+        Assert.True(tracked.Update(
+            500m,
+            [
+                Period(DayOfWeek.Sunday, 9, 18),
+                Period(DayOfWeek.Wednesday, 10, 20),
+                Period(DayOfWeek.Friday, 10, 16)
+            ]).IsSuccess);
+        tokenManager.MarkPropertyModified(tracked, item => item.ConsultationPrice);
+        context.ChangeTracker.DetectChanges();
+
+        var settingsEntry = context.Entry(tracked);
+        var rowVersionEntry = settingsEntry.Property(item => item.RowVersion);
+        Assert.Equal(EntityState.Modified, settingsEntry.State);
+        Assert.Equal(originalRowVersion, rowVersionEntry.OriginalValue);
+        Assert.Equal(originalRowVersion, rowVersionEntry.CurrentValue);
+        Assert.True(settingsEntry.Property(item => item.ConsultationPrice).IsModified);
+
+        var availabilityStates = context.ChangeTracker.Entries<LawyerAvailability>()
+            .ToDictionary(entry => entry.Entity.DayOfWeek, entry => entry.State);
+        Assert.Equal(EntityState.Modified, availabilityStates[DayOfWeek.Sunday]);
+        Assert.Equal(EntityState.Unchanged, availabilityStates[DayOfWeek.Wednesday]);
+        Assert.Equal(EntityState.Deleted, availabilityStates[DayOfWeek.Thursday]);
+        Assert.Equal(EntityState.Added, availabilityStates[DayOfWeek.Friday]);
+
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.False(originalRowVersion.SequenceEqual(tracked.RowVersion));
+    }
+
+    private static LawyerAvailabilityPeriod Period(DayOfWeek day, int startHour, int endHour)
+        => new(day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\LawyerConsultationSettingsSqlServerTests.cs ==================== 
+using System.Data.Common;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Infrastructure.Lawyers;
+using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace LawyerPlatform.IntegrationTests;
 
 [Collection(LawyerPlatformSqlServerTestGroup.Name)]
 public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlServerFixture fixture)
 {
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task SqlServerAllowsSequentialSettingsUpdatesUsingLatestRowVersionAndRejectsStaleToken()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var nowUtc = DateTime.UtcNow;
+        var account = UserAccount.CreateLawyer(
+            $"sequential-{suffix[..8]}",
+            $"SEQUENTIAL-{suffix[..8]}",
+            $"sequential-{suffix}@example.test",
+            $"SEQUENTIAL-{suffix.ToUpperInvariant()}@EXAMPLE.TEST",
+            $"010{Random.Shared.Next(10_000_000, 99_999_999)}",
+            "integration-test-hash",
+            nowUtc).Value;
+        var profile = LawyerProfile.Create(account, "SQL Sequential Settings Lawyer").Value;
+        var settings = LawyerConsultationSettings.Create(
+            profile.Id,
+            500m,
+            [Period(DayOfWeek.Sunday, 10, 17)],
+            nowUtc).Value;
+
+        await using (var seedContext = fixture.CreateContext())
+        {
+            seedContext.LawyerProfiles.Add(profile);
+            seedContext.LawyerConsultationSettings.Add(settings);
+            await seedContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var rowVersions = new List<byte[]> { settings.RowVersion.ToArray() };
+        var updates = new[]
+        {
+            new SettingsUpdate(500m,
+            [
+                Period(DayOfWeek.Sunday, 10, 17),
+                Period(DayOfWeek.Wednesday, 10, 20)
+            ]),
+            new SettingsUpdate(600m,
+            [
+                Period(DayOfWeek.Sunday, 10, 17),
+                Period(DayOfWeek.Wednesday, 10, 20)
+            ]),
+            new SettingsUpdate(600m,
+            [
+                Period(DayOfWeek.Sunday, 9, 18),
+                Period(DayOfWeek.Wednesday, 10, 20),
+                Period(DayOfWeek.Thursday, 10, 19)
+            ]),
+            new SettingsUpdate(600m,
+            [
+                Period(DayOfWeek.Sunday, 9, 18),
+                Period(DayOfWeek.Wednesday, 11, 20),
+                Period(DayOfWeek.Friday, 10, 16)
+            ]),
+            new SettingsUpdate(650m, [])
+        };
+        var sqlCapture = new SqlCaptureInterceptor();
+
+        for (var index = 0; index < updates.Length; index++)
+        {
+            await using var updateContext = CreateSqlCaptureContext(sqlCapture);
+            var tracked = await updateContext.LawyerConsultationSettings
+                .Include(item => item.Availability)
+                .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
+            var tokenManager = new ConcurrencyTokenManager(updateContext);
+            tokenManager.SetOriginalRowVersion(tracked, rowVersions[^1]);
+            Assert.True(tracked.Update(updates[index].Price, updates[index].Availability).IsSuccess);
+            tokenManager.MarkPropertyModified(tracked, item => item.ConsultationPrice);
+            updateContext.ChangeTracker.DetectChanges();
+
+            Assert.Equal(rowVersions[^1], updateContext.Entry(tracked).Property(item => item.RowVersion).OriginalValue);
+            Assert.True(updateContext.Entry(tracked).Property(item => item.ConsultationPrice).IsModified);
+            if (index == 0)
+            {
+                Assert.Equal(
+                    EntityState.Added,
+                    updateContext.ChangeTracker.Entries<LawyerAvailability>()
+                        .Single(entry => entry.Entity.DayOfWeek == DayOfWeek.Wednesday).State);
+            }
+
+            await updateContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Assert.NotEmpty(tracked.RowVersion);
+            Assert.False(rowVersions[^1].SequenceEqual(tracked.RowVersion));
+            rowVersions.Add(tracked.RowVersion.ToArray());
+        }
+
+        Assert.Contains(sqlCapture.Commands, command =>
+            command.Contains("UPDATE [LawyerConsultationSettings]", StringComparison.Ordinal) &&
+            command.Contains("WHERE [Id] =", StringComparison.Ordinal) &&
+            command.Contains("[RowVersion] =", StringComparison.Ordinal));
+
+        await using var staleContext = fixture.CreateContext();
+        var staleCopy = await staleContext.LawyerConsultationSettings
+            .Include(item => item.Availability)
+            .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
+        var staleTokenManager = new ConcurrencyTokenManager(staleContext);
+        staleTokenManager.SetOriginalRowVersion(staleCopy, rowVersions[^3]);
+        Assert.True(staleCopy.Update(999m, []).IsSuccess);
+        staleTokenManager.MarkPropertyModified(staleCopy, item => item.ConsultationPrice);
+
+        var exception = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            staleContext.SaveChangesAsync(TestContext.Current.CancellationToken));
+        Assert.Single(exception.Entries);
+        Assert.IsType<LawyerConsultationSettings>(exception.Entries[0].Entity);
+        var mapper = new LawyerPlatformUniqueConstraintExceptionMapper();
+        Assert.True(mapper.TryMap(exception, out var error));
+        Assert.Equal("Lawyer.ConsultationSettingsConcurrencyConflict", error.Code);
+
+        await using var verificationContext = fixture.CreateContext();
+        Assert.Equal(
+            650m,
+            (await verificationContext.LawyerConsultationSettings.AsNoTracking()
+                .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken))
+            .ConsultationPrice);
+    }
+
     [Fact]
     [Trait("Category", "SqlServerIntegration")]
     public async Task SqlServerEnforcesSettingsMappingsUniquenessConcurrencyAndNullableSnapshots()
@@ -47375,6 +50699,37 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
             secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
+
+    private LawyerPlatformDbContext CreateSqlCaptureContext(SqlCaptureInterceptor interceptor)
+    {
+        var options = new DbContextOptionsBuilder<LawyerPlatformDbContext>()
+            .UseSqlServer(fixture.ConnectionString)
+            .AddInterceptors(interceptor)
+            .Options;
+        return new LawyerPlatformDbContext(options);
+    }
+
+    private static LawyerAvailabilityPeriod Period(DayOfWeek day, int startHour, int endHour)
+        => new(day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
+
+    private sealed record SettingsUpdate(
+        decimal Price,
+        IReadOnlyCollection<LawyerAvailabilityPeriod> Availability);
+
+    private sealed class SqlCaptureInterceptor : DbCommandInterceptor
+    {
+        public List<string> Commands { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command.CommandText);
+            return ValueTask.FromResult(result);
+        }
+    }
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\LawyerOnboardingLifecycleTests.cs ==================== 
@@ -47388,6 +50743,10 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -47600,9 +50959,71 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             rowVersion = suspendBody.GetProperty("rowVersion").GetString()
         }, cancellationToken);
         Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+        var reactivateBody = await reactivate.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var invalidReactivate = await client.PostAsJsonAsync($"/api/v1/admin/lawyers/{lawyerId}/reactivate", new
+        {
+            rowVersion = reactivateBody.GetProperty("rowVersion").GetString()
+        }, cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidReactivate.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = null;
         Assert.True(await PublicSearchContainsAsync(client, lawyerId, cancellationToken));
+
+        var pendingRejectedLawyer = await SeedPendingLawyerAsync(cancellationToken);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var reject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/lawyers/{pendingRejectedLawyer.LawyerId}/reject",
+            new
+            {
+                reason = "Application requirements were not met.",
+                rowVersion = pendingRejectedLawyer.RowVersion
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, reject.StatusCode);
+        var rejectBody = await reject.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var invalidReject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/lawyers/{pendingRejectedLawyer.LawyerId}/reject",
+            new
+            {
+                reason = "Duplicate invalid rejection.",
+                rowVersion = rejectBody.GetProperty("rowVersion").GetString()
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidReject.StatusCode);
+
+        await using var notificationScope = factory.Services.CreateAsyncScope();
+        var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var lifecycleNotifications = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == lawyerId)
+            .ToListAsync(cancellationToken);
+        var rejectedNotifications = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == pendingRejectedLawyer.LawyerId)
+            .ToListAsync(cancellationToken);
+
+        Assert.Equal(6, lifecycleNotifications.Count);
+        Assert.Equal(2, lifecycleNotifications.Count(message =>
+            message.NotificationType == EmailNotificationType.LawyerSubmittedForApproval &&
+            message.RecipientEmail == "admin@lawyerplatform.test"));
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerChangesRequested &&
+            message.RecipientEmail == "ahmed.lifecycle@example.test");
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerApproved);
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerSuspended);
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerReactivated);
+        Assert.Single(rejectedNotifications);
+        Assert.Equal(EmailNotificationType.LawyerRejected, rejectedNotifications[0].NotificationType);
+        Assert.Equal("rejected.notification@example.test", rejectedNotifications[0].RecipientEmail);
+        Assert.All(lifecycleNotifications.Concat(rejectedNotifications), message =>
+        {
+            Assert.DoesNotContain("Clarified commercial", message.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("storageKey", message.HtmlBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("password", message.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     [Fact]
@@ -47660,6 +51081,55 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
 
         dbContext.LegalSpecializations.Add(LegalSpecialization.Create(1, "قانون مدني", "Civil Law", 1).Value);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<(Guid LawyerId, string RowVersion)> SeedPendingLawyerAsync(
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = new DateTime(2026, 8, 16, 10, 0, 0, DateTimeKind.Utc);
+        var account = UserAccount.CreateLawyer(
+            "rejected.notification",
+            "REJECTED.NOTIFICATION",
+            "rejected.notification@example.test",
+            "REJECTED.NOTIFICATION@EXAMPLE.TEST",
+            "01077777777",
+            "hash",
+            nowUtc).Value;
+        var profile = LawyerProfile.Create(account, "Rejected Notification Lawyer").Value;
+        profile.UpdateProfessionalProfile(
+            "Rejected Notification Lawyer",
+            "Attorney",
+            "Private biography",
+            5,
+            "REG-REJECT-NOTIFICATION");
+        profile.UpsertPrimaryOffice(
+            OfficeCity.GovernorateId,
+            OfficeCity.Id,
+            OfficeArea.Id,
+            "Complete office address",
+            null);
+        profile.ReplaceSpecializations(CivilLawSpecialization);
+        profile.AddDocument(
+            "IdentityVerification",
+            "documents/reject-id.pdf",
+            "identity.pdf",
+            "application/pdf",
+            100,
+            nowUtc);
+        profile.AddDocument(
+            "ProfessionalMembership",
+            "documents/reject-membership.pdf",
+            "membership.pdf",
+            "application/pdf",
+            100,
+            nowUtc);
+        Assert.True(profile.SubmitForApproval(account.Id, true, true, nowUtc.AddMinutes(1)).IsSuccess);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        context.LawyerProfiles.Add(profile);
+        await context.SaveChangesAsync(cancellationToken);
+        return (profile.Id, Convert.ToBase64String(profile.RowVersion));
     }
 
     private static async Task<JsonElement> UploadPdfAsync(
@@ -47982,6 +51452,7 @@ using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -48185,6 +51656,24 @@ public sealed class ClientProfileAndAdminClientManagementEndpointsTests(CustomWe
             PhaseOneTestHelpers.ClientPassword,
             cancellationToken);
         Assert.Equal(HttpStatusCode.OK, activeLogin.StatusCode);
+
+        await using (var notificationScope = factory.Services.CreateAsyncScope())
+        {
+            var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var notifications = await notificationContext.EmailOutboxMessages
+                .AsNoTracking()
+                .Where(message => message.AggregateId == first.ClientProfileId)
+                .ToListAsync(cancellationToken);
+            Assert.Equal(2, notifications.Count);
+            Assert.Contains(notifications, message =>
+                message.NotificationType == EmailNotificationType.ClientSuspended &&
+                message.RecipientEmail == "phase1.client.one@example.test");
+            Assert.Contains(notifications, message =>
+                message.NotificationType == EmailNotificationType.ClientReactivated &&
+                message.RecipientEmail == "phase1.client.one@example.test");
+            Assert.All(notifications, message =>
+                Assert.DoesNotContain("password", message.HtmlBody, StringComparison.OrdinalIgnoreCase));
+        }
 
         string inactiveRowVersion;
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -51087,6 +54576,219 @@ public sealed class UploadDocumentHandlerTests
         public void UpdateRange(IEnumerable<LawyerProfile> entities) { }
         public void Delete(LawyerProfile entity) { }
         public void DeleteRange(IEnumerable<LawyerProfile> entities) { }
+    }
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Notifications\BilingualEmailNotificationFactoryTests.cs ==================== 
+using BuildingBlock.Application.Time;
+using LawyerPlatform.Application.Notifications.Email;
+
+namespace LawyerPlatform.UnitTests.Notifications;
+
+public sealed class BilingualEmailNotificationFactoryTests
+{
+    private static readonly Guid LawyerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private readonly BilingualEmailNotificationFactory _factory = new(
+        new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)));
+
+    public static TheoryData<EmailNotificationType, EmailNotificationModel, string, string> Templates => new()
+    {
+        { EmailNotificationType.LawyerSubmittedForApproval, Lawyer(), "Lawyer Platform | طلب محامٍ جديد للمراجعة | New Lawyer Application", LawyerId.ToString() },
+        { EmailNotificationType.LawyerApproved, Lawyer(), "Lawyer Platform | تم اعتماد حسابك | Your Profile Has Been Approved", "Approved" },
+        { EmailNotificationType.LawyerChangesRequested, Lawyer("مراجعة آمنة"), "Lawyer Platform | مطلوب تعديلات على ملفك | Changes Required", "Changes Requested" },
+        { EmailNotificationType.LawyerRejected, Lawyer("سبب آمن"), "Lawyer Platform | تحديث حالة طلب الاعتماد | Lawyer Application Update", "Rejected" },
+        { EmailNotificationType.LawyerSuspended, Lawyer("سبب آمن"), "Lawyer Platform | تم تعليق حساب المحامي | Lawyer Profile Suspended", "Suspended" },
+        { EmailNotificationType.LawyerReactivated, Lawyer(), "Lawyer Platform | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated", "Welcome back" },
+        { EmailNotificationType.ConsultationRequestCreatedForLawyer, Consultation(), "Lawyer Platform | طلب استشارة جديد | New Consultation Request", "REF-2026-001" },
+        { EmailNotificationType.ConsultationRequestCreatedConfirmation, Consultation(), "Lawyer Platform | تم استلام طلب الاستشارة | Consultation Request Received", "Current status" },
+        { EmailNotificationType.ConsultationUnderReview, Consultation(), "Lawyer Platform | طلب الاستشارة قيد المراجعة | Consultation Under Review", "Under Review" },
+        { EmailNotificationType.ConsultationApproved, Consultation(), "Lawyer Platform | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", "Approved" },
+        { EmailNotificationType.ConsultationRejected, Consultation("سبب آمن"), "Lawyer Platform | تحديث طلب الاستشارة | Consultation Request Update", "Rejected" },
+        { EmailNotificationType.ConsultationCompleted, Consultation(), "Lawyer Platform | تم إكمال طلب الاستشارة | Consultation Completed", "Completed" },
+        { EmailNotificationType.ClientSuspended, Client(), "Lawyer Platform | تم تعليق حسابك | Your Account Has Been Suspended", "Suspended" },
+        { EmailNotificationType.ClientReactivated, Client(), "Lawyer Platform | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" }
+    };
+
+    [Theory]
+    [MemberData(nameof(Templates))]
+    public void Create_RendersApprovedBilingualTemplate(
+        EmailNotificationType notificationType,
+        EmailNotificationModel model,
+        string expectedSubject,
+        string expectedField)
+    {
+        var result = _factory.Create(notificationType, model);
+
+        Assert.Equal(expectedSubject, result.Subject);
+        Assert.Contains("dir=\"rtl\" lang=\"ar\"", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("dir=\"ltr\" lang=\"en\"", result.HtmlBody, StringComparison.Ordinal);
+        Assert.True(
+            result.HtmlBody.IndexOf("lang=\"ar\"", StringComparison.Ordinal) <
+            result.HtmlBody.IndexOf("lang=\"en\"", StringComparison.Ordinal));
+        Assert.Contains(expectedField, result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("مرحبًا", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("&copy; 2026", result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_HtmlEncodesAllArbitraryBusinessText()
+    {
+        const string unsafeText = "<script>alert('x')</script> & injected";
+
+        var lawyer = _factory.Create(
+            EmailNotificationType.LawyerChangesRequested,
+            new LawyerEmailNotificationModel(unsafeText, LawyerId, unsafeText));
+        var consultation = _factory.Create(
+            EmailNotificationType.ConsultationRejected,
+            new ConsultationEmailNotificationModel(
+                unsafeText,
+                unsafeText,
+                unsafeText,
+                unsafeText,
+                unsafeText,
+                Reason: unsafeText));
+
+        Assert.DoesNotContain("<script>", lawyer.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<script>", consultation.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("&lt;script&gt;", lawyer.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("&lt;script&gt;", consultation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("&amp; injected", consultation.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationTemplates_NeverIncludeDescription_AndOmitMissingPreferredAppointment()
+    {
+        const string privateDescription = "PRIVATE-CONSULTATION-DESCRIPTION";
+        var model = Consultation("safe reason");
+
+        foreach (var type in Enum.GetValues<EmailNotificationType>()
+                     .Where(type => type is >= EmailNotificationType.ConsultationRequestCreatedForLawyer
+                         and <= EmailNotificationType.ConsultationCompleted))
+        {
+            var body = _factory.Create(type, model).HtmlBody;
+            Assert.DoesNotContain(privateDescription, body, StringComparison.Ordinal);
+            Assert.DoesNotContain("Preferred consultation date:", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("Recorded preferred date:", body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ConsultationTemplates_RenderPreferredAppointmentOnlyWhenPresent()
+    {
+        var model = Consultation() with
+        {
+            PreferredAppointmentOnUtc = new DateTime(2026, 9, 1, 12, 30, 0, DateTimeKind.Utc)
+        };
+
+        var lawyerBody = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedForLawyer,
+            model).HtmlBody;
+        var approvedBody = _factory.Create(
+            EmailNotificationType.ConsultationApproved,
+            model).HtmlBody;
+
+        Assert.Contains("Preferred consultation date:", lawyerBody, StringComparison.Ordinal);
+        Assert.Contains("Recorded preferred date:", approvedBody, StringComparison.Ordinal);
+        Assert.Contains("2026-09-01 12:30 UTC", approvedBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_RejectsUnknownTypeAndIncompatibleModel()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            _factory.Create((EmailNotificationType)999, Client()));
+        Assert.Throws<ArgumentException>(() =>
+            _factory.Create(EmailNotificationType.LawyerApproved, Client()));
+    }
+
+    private static LawyerEmailNotificationModel Lawyer(string? reason = null)
+        => new("المحامي Lawyer", LawyerId, reason);
+
+    private static ConsultationEmailNotificationModel Consultation(string? reason = null)
+        => new(
+            "مقدم الطلب Requester",
+            "المحامي Lawyer",
+            "REF-2026-001",
+            "قانون مدني",
+            "Civil Law",
+            Reason: reason);
+
+    private static ClientEmailNotificationModel Client()
+        => new("العميل Client");
+
+    private sealed class FixedClock(DateTime utcNow) : IDateTimeProvider
+    {
+        public DateTime UtcNow { get; } = utcNow;
+    }
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Notifications\EmailInfrastructureRegistrationTests.cs ==================== 
+using BuildingBlock.Application.Email;
+using BuildingBlock.Infrastructure.Options;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.UnitTests.Notifications;
+
+public sealed class EmailInfrastructureRegistrationTests
+{
+    [Fact]
+    public void AddLawyerPlatformInfrastructure_BindsSmtpCredentialsAndResolvesEmailServices()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Database"] = "Server=(localdb)\\mssqllocaldb;Database=LawyerPlatformEmailRegistration;Trusted_Connection=True;",
+                ["Smtp:Host"] = "smtp.example.test",
+                ["Smtp:Port"] = "2525",
+                ["Smtp:UseSsl"] = "false",
+                ["Smtp:RequireStartTls"] = "true",
+                ["Smtp:UserName"] = "configured-user",
+                ["Smtp:Password"] = "configured-password",
+                ["Smtp:FromEmail"] = "no-reply@example.test",
+                ["Smtp:FromName"] = "Lawyer Platform",
+                ["Smtp:MaxAttachmentBytes"] = "10485760",
+                ["Smtp:MaxTotalAttachmentBytes"] = "26214400",
+                ["Smtp:MaxRecipients"] = "100",
+                ["Smtp:MaxAttachments"] = "20",
+                ["Smtp:TimeoutMilliseconds"] = "100000",
+                ["InitialSuperAdmin:Enabled"] = "false",
+                ["PasswordLifecycle:ExpiryDays"] = "90",
+                ["Authentication:Jwt:Issuer"] = "issuer",
+                ["Authentication:Jwt:Audience"] = "audience",
+                ["Authentication:Jwt:Key"] = new string('k', 64),
+                ["Authentication:Jwt:AccessTokenExpirationMinutes"] = "60",
+                ["LawyerDocuments:RequiredDocumentTypes:0"] = "IdentityVerification",
+                ["LawyerDocuments:AllowedExtensions:0"] = ".pdf",
+                ["LawyerDocuments:AllowedContentTypes:0"] = "application/pdf",
+                ["LawyerDocuments:MaximumFileSizeBytes"] = "1048576",
+                ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
+                ["EmailOutbox:Enabled"] = "false",
+                ["EmailOutbox:PollingIntervalSeconds"] = "15",
+                ["EmailOutbox:BatchSize"] = "20",
+                ["EmailOutbox:MaxAttempts"] = "5",
+                ["EmailOutbox:ClaimLeaseSeconds"] = "300"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddLawyerPlatformInfrastructure(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var smtp = scope.ServiceProvider.GetRequiredService<IOptions<SmtpOptions>>().Value;
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IEmailSender>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IEmailNotificationOutbox>());
+        Assert.Equal("smtp.example.test", smtp.Host);
+        Assert.Equal(2525, smtp.Port);
+        Assert.Equal("configured-user", smtp.UserName);
+        Assert.Equal("configured-password", smtp.Password);
+        Assert.Equal("no-reply@example.test", smtp.FromEmail);
+        Assert.Equal("Lawyer Platform", smtp.FromName);
     }
 }
  

@@ -9,6 +9,7 @@ using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.ConsultationRequests.Create;
 
@@ -26,6 +27,7 @@ internal sealed class ConsultationRequestCreationService(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     ILawyerDocumentPolicy documentPolicy,
     IConsultationSchedulingTimeZone schedulingTimeZone,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
 {
     public async Task<Result<CreateConsultationRequestResponse>> CreateGuestAsync(
@@ -46,12 +48,17 @@ internal sealed class ConsultationRequestCreationService(
             email,
             description,
             preferredAppointmentOnUtc,
+            null,
+            null,
+            null,
             cancellationToken);
 
     public async Task<Result<CreateConsultationRequestResponse>> CreateClientAsync(
         Guid clientProfileId,
         Guid lawyerId,
         int? legalSpecializationId,
+        string requesterName,
+        string requesterEmail,
         string description,
         DateTime? preferredAppointmentOnUtc,
         CancellationToken cancellationToken)
@@ -64,6 +71,9 @@ internal sealed class ConsultationRequestCreationService(
             null,
             description,
             preferredAppointmentOnUtc,
+            requesterName,
+            requesterEmail,
+            clientProfileId.ToString("N"),
             cancellationToken);
 
     private async Task<Result<CreateConsultationRequestResponse>> CreateAsync(
@@ -75,8 +85,13 @@ internal sealed class ConsultationRequestCreationService(
         string? guestEmail,
         string description,
         DateTime? preferredAppointmentOnUtc,
+        string? persistedRequesterName,
+        string? persistedRequesterEmail,
+        string? requesterIdentity,
         CancellationToken cancellationToken)
     {
+        var specializationNameAr = "غير محدد";
+        var specializationNameEn = "Not specified";
         if (legalSpecializationId is { } specializationId)
         {
             var specialization = await specializationReader.FirstOrDefaultAsync(
@@ -93,6 +108,8 @@ internal sealed class ConsultationRequestCreationService(
                     LawyerPlatform.Application.Features.Lawyers.Common.LawyerApplicationErrors.SpecializationInactive);
             }
 
+            specializationNameAr = specialization.NameAr;
+            specializationNameEn = specialization.NameEn;
         }
 
         var lawyer = await lawyerReader.FirstOrDefaultAsync(
@@ -178,6 +195,18 @@ internal sealed class ConsultationRequestCreationService(
 
         var request = creation.Value;
         await unitOfWork.WriteRepository<ConsultationRequest>().AddAsync(request, cancellationToken);
+        await emailNotifications.QueueConsultationCreatedAsync(
+            request,
+            new ConsultationCreationEmailContext(
+                lawyer.UserAccountId,
+                lawyer.FullName,
+                lawyer.Email,
+                persistedRequesterName ?? request.GuestFullName!,
+                persistedRequesterEmail ?? request.GuestEmail,
+                requesterIdentity ?? request.Id.ToString("N"),
+                specializationNameAr,
+                specializationNameEn),
+            cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
             request.Id,
@@ -205,6 +234,9 @@ internal sealed class ConsultationRequestCreationService(
 
 internal sealed record EligibleConsultationLawyerSnapshot(
     Guid Id,
+    Guid UserAccountId,
+    string FullName,
+    string Email,
     IReadOnlyList<int> ActiveSpecializationIds,
     bool HasConsultationSettings,
     decimal? ConsultationPrice,
@@ -225,6 +257,9 @@ internal sealed class EligibleLawyerForConsultationSpecification
         UseNoTracking();
         Select(profile => new EligibleConsultationLawyerSnapshot(
             profile.Id,
+            profile.UserAccountId,
+            profile.FullName,
+            profile.UserAccount.Email,
             profile.Specializations
                 .Where(item => item.LegalSpecialization.IsActive)
                 .Select(item => item.LegalSpecializationId)
@@ -244,7 +279,11 @@ internal sealed class EligibleLawyerForConsultationSpecification
     }
 }
 
-internal sealed record ConsultationSpecializationSnapshot(int Id, bool IsActive);
+internal sealed record ConsultationSpecializationSnapshot(
+    int Id,
+    bool IsActive,
+    string NameAr,
+    string NameEn);
 
 internal sealed class ConsultationSpecializationByIdSpecification
     : Specification<LegalSpecialization, ConsultationSpecializationSnapshot>
@@ -253,6 +292,10 @@ internal sealed class ConsultationSpecializationByIdSpecification
     {
         AddCriteria(item => item.Id == id);
         UseNoTracking();
-        Select(item => new ConsultationSpecializationSnapshot(item.Id, item.IsActive));
+        Select(item => new ConsultationSpecializationSnapshot(
+            item.Id,
+            item.IsActive,
+            item.NameAr,
+            item.NameEn));
     }
 }

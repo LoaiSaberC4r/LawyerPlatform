@@ -10,6 +10,7 @@ using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -30,6 +31,50 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var created = await success.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal("New", created.GetProperty("status").GetString());
         Assert.StartsWith("CR-", created.GetProperty("referenceNumber").GetString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("smtp", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("emailSent", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
+
+        var guestWithoutEmail = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
+        {
+            lawyerId = eligibleLawyerId,
+            fullName = "Guest Without Email",
+            phoneNumber = "01012345679",
+            description = "Private guest description"
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, guestWithoutEmail.StatusCode);
+        var guestWithoutEmailBody = await guestWithoutEmail.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var createdId = created.GetProperty("id").GetGuid();
+            var guestWithoutEmailId = guestWithoutEmailBody.GetProperty("id").GetGuid();
+            var withEmailNotifications = await context.EmailOutboxMessages
+                .AsNoTracking()
+                .Where(message => message.AggregateId == createdId)
+                .ToListAsync(TestContext.Current.CancellationToken);
+            var withoutEmailNotifications = await context.EmailOutboxMessages
+                .AsNoTracking()
+                .Where(message => message.AggregateId == guestWithoutEmailId)
+                .ToListAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(2, withEmailNotifications.Count);
+            Assert.Contains(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
+            Assert.Contains(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+            Assert.DoesNotContain(withEmailNotifications, message =>
+                message.HtmlBody.Contains("Legal consultation description", StringComparison.Ordinal));
+            Assert.Single(withoutEmailNotifications);
+            Assert.Equal(
+                EmailNotificationType.ConsultationRequestCreatedForLawyer,
+                withoutEmailNotifications[0].NotificationType);
+            Assert.DoesNotContain(
+                "Private guest description",
+                withoutEmailNotifications[0].HtmlBody,
+                StringComparison.Ordinal);
+        }
 
         var missingName = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
@@ -148,6 +193,23 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Null(stored.GuestPhoneNumber);
         Assert.Equal("Authenticated client request", stored.Description);
         Assert.Equal(ConsultationRequestStatus.New, stored.Status);
+
+        var notifications = await context.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == stored.Id)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, notifications.Count);
+        Assert.Contains(notifications, message =>
+            message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer &&
+            message.RecipientEmail == "client.target@example.test");
+        Assert.Contains(notifications, message =>
+            message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation &&
+            message.RecipientEmail == "consultation.client@example.test");
+        Assert.All(notifications, message =>
+        {
+            Assert.DoesNotContain("Authenticated client request", message.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("Impersonated Name", message.HtmlBody, StringComparison.Ordinal);
+        });
     }
 
     [Fact]

@@ -9,6 +9,14 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using LawyerPlatform.Application.Notifications.Email;
+using BuildingBlock.Application.Email;
+using BuildingBlock.Application.Time;
+using LawyerPlatform.Infrastructure.Email;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -130,6 +138,48 @@ public sealed class AdminConsultationRequestEndpointsTests
             null,
             approvedBody.GetProperty("rowVersion").GetString()!);
         Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+
+        await using var notificationScope = factory.Services.CreateAsyncScope();
+        var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        var firstTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == first.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var secondTypes = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message => message.AggregateId == second.Id)
+            .Select(message => message.NotificationType)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, firstTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationUnderReview, firstTypes);
+        Assert.Contains(EmailNotificationType.ConsultationRejected, firstTypes);
+        Assert.DoesNotContain(EmailNotificationType.ConsultationApproved, firstTypes);
+        Assert.Equal(4, secondTypes.Count);
+        Assert.Contains(EmailNotificationType.ConsultationApproved, secondTypes);
+        Assert.Contains(EmailNotificationType.ConsultationCompleted, secondTypes);
+
+        var processor = new EmailOutboxProcessor(
+            notificationContext,
+            new FailingEmailSender(),
+            notificationScope.ServiceProvider.GetRequiredService<IDateTimeProvider>(),
+            notificationScope.ServiceProvider.GetRequiredService<IOptions<EmailOutboxOptions>>(),
+            NullLogger<EmailOutboxProcessor>.Instance);
+        Assert.True(await processor.ProcessBatchAsync(TestContext.Current.CancellationToken) > 0);
+        notificationContext.ChangeTracker.Clear();
+        Assert.Equal(
+            ConsultationRequestStatus.Rejected,
+            await notificationContext.ConsultationRequests
+                .Where(request => request.Id == first.Id)
+                .Select(request => request.Status)
+                .SingleAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            ConsultationRequestStatus.Completed,
+            await notificationContext.ConsultationRequests
+                .Where(request => request.Id == second.Id)
+                .Select(request => request.Status)
+                .SingleAsync(TestContext.Current.CancellationToken));
     }
 
     private static async Task<JsonElement> GetDetailsAsync(HttpClient client, Guid id)
@@ -244,5 +294,11 @@ public sealed class AdminConsultationRequestEndpointsTests
     {
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         return body.GetProperty("errors")[0].GetProperty("code").GetString();
+    }
+
+    private sealed class FailingEmailSender : IEmailSender
+    {
+        public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+            => throw new IOException("simulated SMTP provider failure");
     }
 }

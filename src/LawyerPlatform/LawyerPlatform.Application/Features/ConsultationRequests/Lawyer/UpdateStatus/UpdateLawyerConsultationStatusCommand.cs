@@ -11,6 +11,7 @@ using LawyerPlatform.Application.Abstractions.Consultations;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.ConsultationRequests.Lawyer.UpdateStatus;
 
@@ -51,6 +52,7 @@ internal sealed class UpdateLawyerConsultationStatusCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IConcurrencyTokenManager concurrencyTokenManager,
     IConsultationAggregatePersistence aggregatePersistence,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
     : ICommandHandler<UpdateLawyerConsultationStatusCommand, UpdateLawyerConsultationStatusResponse>
 {
@@ -86,7 +88,9 @@ internal sealed class UpdateLawyerConsultationStatusCommandHandler(
             return Result<UpdateLawyerConsultationStatusResponse>.Fail(change.Errors);
         }
 
-        aggregatePersistence.Add(request.StatusHistory.Last());
+        var history = request.StatusHistory.Last();
+        aggregatePersistence.Add(history);
+        await emailNotifications.QueueConsultationTransitionAsync(request, history, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<UpdateLawyerConsultationStatusResponse>.Ok(
             new UpdateLawyerConsultationStatusResponse(

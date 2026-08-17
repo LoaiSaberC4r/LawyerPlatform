@@ -6,6 +6,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application.Features.AdminClients.Common;
 
@@ -18,6 +19,7 @@ internal enum AdminClientLifecycleAction
 internal sealed class AdminClientLifecycleService(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IConcurrencyTokenManager concurrencyTokenManager,
+    EmailNotificationCoordinator emailNotifications,
     IDateTimeProvider clock)
 {
     public async Task<Result<AdminClientLifecycleResponse>> ExecuteAsync(
@@ -40,10 +42,12 @@ internal sealed class AdminClientLifecycleService(
 
         var account = profile.UserAccount;
         concurrencyTokenManager.SetOriginalRowVersion(account, rowVersion);
+        var oldStatus = account.Status;
+        var nowUtc = clock.UtcNow;
         var transition = action switch
         {
-            AdminClientLifecycleAction.Suspend => account.Suspend(clock.UtcNow),
-            AdminClientLifecycleAction.Reactivate => account.Reactivate(clock.UtcNow),
+            AdminClientLifecycleAction.Suspend => account.Suspend(nowUtc),
+            AdminClientLifecycleAction.Reactivate => account.Reactivate(nowUtc),
             _ => Result.Fail(AccountErrors.InvalidStatusTransition)
         };
         if (transition.IsFailure)
@@ -51,6 +55,12 @@ internal sealed class AdminClientLifecycleService(
             return Result<AdminClientLifecycleResponse>.Fail(transition.Errors);
         }
 
+        await emailNotifications.QueueClientTransitionAsync(
+            profile,
+            oldStatus,
+            account.Status,
+            nowUtc,
+            cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<AdminClientLifecycleResponse>.Ok(new AdminClientLifecycleResponse(
             profile.Id,

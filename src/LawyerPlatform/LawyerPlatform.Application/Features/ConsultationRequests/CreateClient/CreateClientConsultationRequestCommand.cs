@@ -63,6 +63,8 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
             client.Id,
             command.LawyerId,
             command.LegalSpecializationId,
+            client.FullName,
+            client.Email,
             command.Description,
             command.PreferredAppointmentOnUtc,
             cancellationToken);

@@ -6,6 +6,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Features.AdminLawyers.Common;
 using LawyerPlatform.Application.Features.ConsultationRequests.Create;
 using LawyerPlatform.Application.Features.AdminClients.Common;
+using LawyerPlatform.Application.Notifications.Email;
 
 namespace LawyerPlatform.Application;
 
@@ -25,6 +26,8 @@ public static class DependencyInjection
         services.AddScoped<AdminLawyerDecisionService>();
         services.AddScoped<ConsultationRequestCreationService>();
         services.AddScoped<AdminClientLifecycleService>();
+        services.AddScoped<EmailNotificationCoordinator>();
+        services.AddSingleton<IEmailNotificationFactory, BilingualEmailNotificationFactory>();
 
         return services;
     }
