@@ -3,6 +3,7 @@ using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.ConsultationRequests.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
@@ -29,7 +30,10 @@ internal sealed class TrackGuestConsultationRequestQueryValidator
     public TrackGuestConsultationRequestQueryValidator()
     {
         RuleFor(query => query.ReferenceNumber).NotEmpty().MaximumLength(ConsultationRequest.MaximumReferenceNumberLength);
-        RuleFor(query => query.PhoneNumber).NotEmpty().MaximumLength(30);
+        RuleFor(query => query.PhoneNumber)
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty().WithErrorCode("ConsultationRequest.PhoneNumberRequired")
+            .EgyptianMobileNumber().WithErrorCode("ConsultationRequest.InvalidPhoneNumber");
     }
 }
 

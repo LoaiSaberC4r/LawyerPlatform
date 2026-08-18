@@ -1,5 +1,6 @@
 using BuildingBlock.Application.Abstraction.Encryption;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.Auth.Common;
 
 namespace LawyerPlatform.Application.Features.Auth.RegisterClient;
@@ -24,8 +25,9 @@ internal sealed class RegisterClientCommandValidator : AbstractValidator<Registe
             .EmailAddress().WithErrorCode("Account.EmailInvalid");
 
         RuleFor(command => command.PhoneNumber)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty().WithErrorCode("Account.PhoneNumberRequired")
-            .MaximumLength(30).WithErrorCode("Account.PhoneNumberInvalid");
+            .EgyptianMobileNumber().WithErrorCode("Account.PhoneNumberInvalid");
 
         RuleFor(command => command.Password)
             .NotEmpty().WithErrorCode("Account.PasswordRequired")
