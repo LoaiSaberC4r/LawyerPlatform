@@ -153,7 +153,7 @@ public sealed class EgyptianMobileNumberValidationTests
 
     private static ValidationResult ValidateOffice(string? phoneNumber)
         => new UpsertPrimaryOfficeCommandValidator().Validate(
-            new UpsertPrimaryOfficeCommand(1, 1, 1, "Office address", phoneNumber, null));
+            new UpsertPrimaryOfficeCommand(1, 1, 1, "Office address", phoneNumber, null, null, null));
 
     private static void AssertSinglePhoneError(
         ValidationResult result,

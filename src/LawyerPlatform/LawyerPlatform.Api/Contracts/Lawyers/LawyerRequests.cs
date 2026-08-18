@@ -14,6 +14,8 @@ public sealed record UpsertLawyerOfficeRequest(
     int AreaId,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string? RowVersion);
 
 public sealed record ReplaceLawyerSpecializationsRequest(

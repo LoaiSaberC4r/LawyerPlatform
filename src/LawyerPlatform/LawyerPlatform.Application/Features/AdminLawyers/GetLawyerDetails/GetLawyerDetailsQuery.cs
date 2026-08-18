@@ -156,6 +156,8 @@ internal sealed class AdminLawyerDetailsSpecification : Specification<LawyerProf
                     office.Area.NameEn,
                     office.DetailedAddress,
                     office.PublicPhoneNumber,
+                    office.Latitude,
+                    office.Longitude,
                     office.RowVersion)).FirstOrDefault(),
             profile.Offices.Any(office =>
                 office.IsPrimary && office.IsActive && office.Governorate.IsActive && office.City.IsActive && office.Area.IsActive &&
@@ -234,13 +236,15 @@ internal sealed record AdminOfficeDetailsSnapshot(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     byte[] RowVersion)
 {
     public LawyerOfficeResponse ToResponse() => new(
         Id, GovernorateId, GovernorateNameAr, GovernorateNameEn,
         CityId, CityNameAr, CityNameEn,
         AreaId, AreaNameAr, AreaNameEn,
-        DetailedAddress, PublicPhoneNumber, RowVersionCodec.Encode(RowVersion));
+        DetailedAddress, PublicPhoneNumber, Latitude, Longitude, RowVersionCodec.Encode(RowVersion));
 }
 
 internal sealed record AdminDocumentSnapshot(

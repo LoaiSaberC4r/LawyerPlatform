@@ -10,6 +10,16 @@
 - Permitted edits to an approved profile do not automatically remove approval or trigger automatic reapproval.
 - Exact required document types, allowed extensions and MIME types, and file-size limits remain deployment configuration decisions under `LawyerDocuments`.
 
+## Approved Decision — Office Coordinates and Email Branding
+
+- `LawyerOffice` supports optional `Latitude` and `Longitude`; both values must be supplied together or both omitted.
+- Coordinates are visible only to the owning Lawyer and SuperAdmin, and are never exposed through public, Client, or Guest API responses.
+- Coordinates are not required for profile completion, submission, approval, or public eligibility.
+- When a Consultation Request is approved, the requester email may include a Google Maps URL generated from the active primary office coordinates.
+- The Google Maps URL is generated at notification preparation time and is not persisted; missing coordinates omit the map section.
+- Client and Guest content does not display raw coordinates.
+- The human-facing email brand is `Avokatoo`; technical project identifiers remain unchanged.
+
 ---
 
 ## Approved Later-Phase Decision — Lawyer Consultation Settings

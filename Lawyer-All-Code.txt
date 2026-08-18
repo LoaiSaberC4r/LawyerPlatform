@@ -22588,6 +22588,8 @@ public sealed record UpsertLawyerOfficeRequest(
     int AreaId,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string? RowVersion);
 
 public sealed record ReplaceLawyerSpecializationsRequest(
@@ -23452,6 +23454,8 @@ public sealed class LawyerController(ISender sender) : ControllerBase
             request.AreaId,
             request.DetailedAddress,
             request.PublicPhoneNumber,
+            request.Latitude,
+            request.Longitude,
             request.RowVersion), cancellationToken)).ToIActionResult(cancellationToken);
 
     [HttpPut("specializations")]
@@ -24726,6 +24730,8 @@ internal sealed class AdminLawyerDetailsSpecification : Specification<LawyerProf
                     office.Area.NameEn,
                     office.DetailedAddress,
                     office.PublicPhoneNumber,
+                    office.Latitude,
+                    office.Longitude,
                     office.RowVersion)).FirstOrDefault(),
             profile.Offices.Any(office =>
                 office.IsPrimary && office.IsActive && office.Governorate.IsActive && office.City.IsActive && office.Area.IsActive &&
@@ -24804,13 +24810,15 @@ internal sealed record AdminOfficeDetailsSnapshot(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     byte[] RowVersion)
 {
     public LawyerOfficeResponse ToResponse() => new(
         Id, GovernorateId, GovernorateNameAr, GovernorateNameEn,
         CityId, CityNameAr, CityNameEn,
         AreaId, AreaNameAr, AreaNameEn,
-        DetailedAddress, PublicPhoneNumber, RowVersionCodec.Encode(RowVersion));
+        DetailedAddress, PublicPhoneNumber, Latitude, Longitude, RowVersionCodec.Encode(RowVersion));
 }
 
 internal sealed record AdminDocumentSnapshot(
@@ -29159,6 +29167,8 @@ public sealed record LawyerOfficeResponse(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string RowVersion);
 
 public sealed record LawyerSpecializationResponse(
@@ -29996,6 +30006,8 @@ internal static class OwnProfileMapper
                 snapshot.PrimaryOffice.AreaNameEn,
                 snapshot.PrimaryOffice.DetailedAddress,
                 snapshot.PrimaryOffice.PublicPhoneNumber,
+                snapshot.PrimaryOffice.Latitude,
+                snapshot.PrimaryOffice.Longitude,
                 RowVersionCodec.Encode(snapshot.PrimaryOffice.RowVersion)),
             snapshot.Specializations.Select(item => new LawyerSpecializationResponse(item.Id, item.NameAr, item.NameEn)).ToArray(),
             snapshot.DocumentCount,
@@ -30037,6 +30049,8 @@ internal sealed class OwnProfileSpecification : Specification<LawyerProfile, Own
                     office.Area.NameEn,
                     office.DetailedAddress,
                     office.PublicPhoneNumber,
+                    office.Latitude,
+                    office.Longitude,
                     office.RowVersion))
                 .FirstOrDefault(),
             profile.Offices.Any(office =>
@@ -30090,6 +30104,8 @@ internal sealed record OwnOfficeSnapshot(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     byte[] RowVersion);
 
 internal sealed record OwnSpecializationSnapshot(int Id, string NameAr, string NameEn, bool IsActive);
@@ -30745,6 +30761,8 @@ public sealed record UpsertPrimaryOfficeCommand(
     int AreaId,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string? RowVersion)
     : ICommand<LawyerOfficeResponse>, ITransactionalCommand<LawyerPlatformWritePersistence>;
 
@@ -30760,6 +30778,18 @@ internal sealed class UpsertPrimaryOfficeCommandValidator : AbstractValidator<Up
             .EgyptianMobileNumber()
             .WithErrorCode("Lawyer.InvalidPublicPhoneNumber")
             .When(command => !string.IsNullOrWhiteSpace(command.PublicPhoneNumber));
+        RuleFor(command => command.Latitude)
+            .InclusiveBetween(-90m, 90m)
+            .WithErrorCode("Lawyer.InvalidLatitude")
+            .When(command => command.Latitude.HasValue);
+        RuleFor(command => command.Longitude)
+            .InclusiveBetween(-180m, 180m)
+            .WithErrorCode("Lawyer.InvalidLongitude")
+            .When(command => command.Longitude.HasValue);
+        RuleFor(command => command.Latitude)
+            .Must((command, _) => command.Latitude.HasValue == command.Longitude.HasValue)
+            .WithErrorCode("Lawyer.InvalidOfficeCoordinates")
+            .WithMessage("Latitude and longitude must both be supplied or both be null.");
         RuleFor(command => command.RowVersion)
             .Must(value => value is null || RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode("Lawyer.InvalidRowVersion");
@@ -30823,7 +30853,9 @@ internal sealed class UpsertPrimaryOfficeCommandHandler(
             command.CityId,
             command.AreaId,
             command.DetailedAddress,
-            command.PublicPhoneNumber);
+            command.PublicPhoneNumber,
+            command.Latitude,
+            command.Longitude);
         if (upsert.IsFailure)
         {
             return Result<LawyerOfficeResponse>.Fail(upsert.Errors);
@@ -30865,6 +30897,8 @@ internal sealed class OwnPrimaryOfficeSpecification : Specification<LawyerProfil
                 office.Area.NameEn,
                 office.DetailedAddress,
                 office.PublicPhoneNumber,
+                office.Latitude,
+                office.Longitude,
                 office.RowVersion))
             .Single());
     }
@@ -30883,6 +30917,8 @@ internal sealed record PrimaryOfficeSnapshot(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     byte[] RowVersion)
 {
     public LawyerOfficeResponse ToResponse() => new(
@@ -30898,6 +30934,8 @@ internal sealed record PrimaryOfficeSnapshot(
         AreaNameEn,
         DetailedAddress,
         PublicPhoneNumber,
+        Latitude,
+        Longitude,
         RowVersionCodec.Encode(RowVersion));
 }
  
@@ -31562,6 +31600,8 @@ namespace LawyerPlatform.Application.Notifications.Email;
 internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
     : IEmailNotificationFactory
 {
+    private const string GoogleMapsUrlPrefix = "https://www.google.com/maps/search/?api=1&query=";
+
     public EmailNotificationContent Create(
         EmailNotificationType notificationType,
         EmailNotificationModel model)
@@ -31590,14 +31630,14 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
 
     private EmailNotificationContent LawyerSubmitted(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | طلب محامٍ جديد للمراجعة | New Lawyer Application",
+            "Avokatoo | طلب محامٍ جديد للمراجعة | New Lawyer Application",
             [
                 Lines("مرحبًا،"),
                 Lines($"قام المحامي {model.LawyerName} بإرسال ملفه للمراجعة والاعتماد."),
                 Lines("حالة الملف الحالية:", "قيد المراجعة"),
                 Lines("يرجى الدخول إلى لوحة الإدارة لمراجعة بيانات المحامي والمستندات واتخاذ الإجراء المناسب."),
                 Lines("رقم المحامي:", model.LawyerId.ToString()),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines("Hello,"),
@@ -31605,111 +31645,111 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("Current status:", "Pending Approval"),
                 Lines("Please sign in to the administration dashboard to review the lawyer's information and documents and take the appropriate action."),
                 Lines("Lawyer ID:", model.LawyerId.ToString()),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerApproved(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم اعتماد حسابك | Your Profile Has Been Approved",
+            "Avokatoo | تم اعتماد حسابك | Your Profile Has Been Approved",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("يسعدنا إبلاغك بأنه تم اعتماد ملفك بنجاح على Lawyer Platform."),
+                Lines("يسعدنا إبلاغك بأنه تم اعتماد ملفك بنجاح على Avokatoo."),
                 Lines("حالة الملف:", "معتمد"),
                 Lines("أصبح ملفك مؤهلًا للظهور للعملاء على المنصة وفقًا لقواعد ظهور المحامين المعتمدة."),
                 Lines("يمكنك الآن تسجيل الدخول ومتابعة حسابك وطلبات الاستشارات الواردة إليك."),
-                Lines("مع تمنياتنا لك بالتوفيق،", "Lawyer Platform")
+                Lines("مع تمنياتنا لك بالتوفيق،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("We are pleased to inform you that your profile has been successfully approved on Lawyer Platform."),
+                Lines("We are pleased to inform you that your profile has been successfully approved on Avokatoo."),
                 Lines("Profile status:", "Approved"),
                 Lines("Your profile is now eligible to appear to clients on the platform, subject to the platform's lawyer visibility rules."),
                 Lines("You can now sign in and manage your account and incoming consultation requests."),
-                Lines("Best regards,", "Lawyer Platform")
+                Lines("Best regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerChangesRequested(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | مطلوب تعديلات على ملفك | Changes Required",
+            "Avokatoo | مطلوب تعديلات على ملفك | Changes Required",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("تمت مراجعة ملفك بواسطة إدارة Lawyer Platform، وهناك بعض التعديلات المطلوبة قبل استكمال عملية الاعتماد."),
+                Lines("تمت مراجعة ملفك بواسطة إدارة Avokatoo، وهناك بعض التعديلات المطلوبة قبل استكمال عملية الاعتماد."),
                 Lines("حالة الملف:", "مطلوب تعديلات"),
                 Lines("ملاحظات المراجعة:", RequireReason(model)),
                 Lines("يرجى تسجيل الدخول إلى حسابك، مراجعة الملاحظات، وتحديث البيانات المطلوبة."),
                 Lines("بعد الانتهاء يمكنك إرسال الملف للمراجعة مرة أخرى."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("Your profile has been reviewed by the Lawyer Platform administration, and some changes are required before the approval process can continue."),
+                Lines("Your profile has been reviewed by the Avokatoo administration, and some changes are required before the approval process can continue."),
                 Lines("Profile status:", "Changes Requested"),
                 Lines("Review notes:", RequireReason(model)),
                 Lines("Please sign in to your account, review the notes, and update the required information."),
                 Lines("Once completed, you can submit your profile for review again."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerRejected(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تحديث حالة طلب الاعتماد | Lawyer Application Update",
+            "Avokatoo | تحديث حالة طلب الاعتماد | Lawyer Application Update",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
                 Lines("نود إبلاغك بأنه بعد مراجعة ملفك، لم تتم الموافقة على طلب الاعتماد."),
                 Lines("حالة الملف:", "مرفوض"),
                 Lines("سبب الرفض:", RequireReason(model)),
-                Lines("إذا كنت بحاجة إلى معلومات إضافية، يرجى التواصل مع إدارة Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("إذا كنت بحاجة إلى معلومات إضافية، يرجى التواصل مع إدارة Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
                 Lines("We would like to inform you that after reviewing your profile, your approval application has not been approved."),
                 Lines("Profile status:", "Rejected"),
                 Lines("Reason:", RequireReason(model)),
-                Lines("If you require additional information, please contact the Lawyer Platform administration."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("If you require additional information, please contact the Avokatoo administration."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerSuspended(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم تعليق حساب المحامي | Lawyer Profile Suspended",
+            "Avokatoo | تم تعليق حساب المحامي | Lawyer Profile Suspended",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("نود إبلاغك بأنه تم تعليق ملفك على Lawyer Platform."),
+                Lines("نود إبلاغك بأنه تم تعليق ملفك على Avokatoo."),
                 Lines("حالة الملف:", "معلق"),
                 Lines("سبب التعليق:", RequireReason(model)),
                 Lines("أثناء فترة التعليق لن يكون ملفك متاحًا للعملاء على المنصة."),
-                Lines("للاستفسار عن القرار أو الخطوات المطلوبة، يرجى التواصل مع إدارة Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("للاستفسار عن القرار أو الخطوات المطلوبة، يرجى التواصل مع إدارة Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("We would like to inform you that your lawyer profile on Lawyer Platform has been suspended."),
+                Lines("We would like to inform you that your lawyer profile on Avokatoo has been suspended."),
                 Lines("Profile status:", "Suspended"),
                 Lines("Reason:", RequireReason(model)),
                 Lines("While your profile is suspended, it will not be available to clients on the platform."),
-                Lines("For further information about this decision or any required actions, please contact the Lawyer Platform administration."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("For further information about this decision or any required actions, please contact the Avokatoo administration."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerReactivated(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated",
+            "Avokatoo | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("تمت إعادة تفعيل ملفك بنجاح على Lawyer Platform."),
+                Lines("تمت إعادة تفعيل ملفك بنجاح على Avokatoo."),
                 Lines("حالة الملف:", "معتمد"),
                 Lines("أصبح ملفك مؤهلًا مرة أخرى للظهور للعملاء واستقبال طلبات الاستشارات وفقًا لقواعد المنصة."),
                 Lines("مرحبًا بعودتك."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("Your lawyer profile has been successfully reactivated on Lawyer Platform."),
+                Lines("Your lawyer profile has been successfully reactivated on Avokatoo."),
                 Lines("Profile status:", "Approved"),
                 Lines("Your profile is once again eligible to appear to clients and receive consultation requests according to the platform rules."),
                 Lines("Welcome back."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationCreatedForLawyer(ConsultationEmailNotificationModel model)
@@ -31717,7 +31757,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         var arabic = new List<string>
         {
             Lines($"مرحبًا {model.LawyerName}،"),
-            Lines("لديك طلب استشارة قانونية جديد على Lawyer Platform."),
+            Lines("لديك طلب استشارة قانونية جديد على Avokatoo."),
             Lines("رقم الطلب:", model.ReferenceNumber),
             Lines("التخصص:", model.SpecializationNameAr),
             Lines("مقدم الطلب:", model.RequesterName)
@@ -31725,7 +31765,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         var english = new List<string>
         {
             Lines($"Hello {model.LawyerName},"),
-            Lines("You have received a new legal consultation request on Lawyer Platform."),
+            Lines("You have received a new legal consultation request on Avokatoo."),
             Lines("Request Reference:", model.ReferenceNumber),
             Lines("Specialization:", model.SpecializationNameEn),
             Lines("Requested by:", model.RequesterName)
@@ -31733,42 +31773,42 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         AddPreferredAppointment(model, arabic, english, "التاريخ المفضل للاستشارة:", "Preferred consultation date:");
         arabic.Add(Lines("يرجى تسجيل الدخول إلى حسابك لمراجعة تفاصيل الطلب واتخاذ الإجراء المناسب."));
         arabic.Add(Lines("للحفاظ على خصوصية مقدم الطلب، لا يتم إرسال وصف الاستشارة أو البيانات الحساسة عبر البريد الإلكتروني."));
-        arabic.Add(Lines("مع تحيات،", "Lawyer Platform"));
+        arabic.Add(Lines("مع تحيات،", "Avokatoo"));
         english.Add(Lines("Please sign in to your account to review the request details and take the appropriate action."));
         english.Add(Lines("To protect the requester's privacy, consultation descriptions and sensitive information are not included in email notifications."));
-        english.Add(Lines("Regards,", "Lawyer Platform"));
-        return Build("Lawyer Platform | طلب استشارة جديد | New Consultation Request", arabic, english);
+        english.Add(Lines("Regards,", "Avokatoo"));
+        return Build("Avokatoo | طلب استشارة جديد | New Consultation Request", arabic, english);
     }
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم استلام طلب الاستشارة | Consultation Request Received",
+            "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
-                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Lawyer Platform."),
+                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
                 Lines("رقم متابعة الطلب:", model.ReferenceNumber),
                 Lines("المحامي:", model.LawyerName),
                 Lines("التخصص:", model.SpecializationNameAr),
                 Lines("حالة الطلب:", "جديد"),
                 Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."),
                 Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
-                Lines("Your consultation request has been successfully received by Lawyer Platform."),
+                Lines("Your consultation request has been successfully received by Avokatoo."),
                 Lines("Request Reference:", model.ReferenceNumber),
                 Lines("Lawyer:", model.LawyerName),
                 Lines("Specialization:", model.SpecializationNameEn),
                 Lines("Current status:", "New"),
                 Lines("Please keep your request reference as you may need it to track your request."),
                 Lines("We will notify you when important updates are made to your request status."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | طلب الاستشارة قيد المراجعة | Consultation Under Review",
+            "Avokatoo | طلب الاستشارة قيد المراجعة | Consultation Under Review",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("هناك تحديث جديد على طلب الاستشارة الخاص بك."),
@@ -31777,7 +31817,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("الحالة الجديدة:", "قيد المراجعة"),
                 Lines("بدأ المحامي في مراجعة طلب الاستشارة الخاص بك."),
                 Lines("سنقوم بإبلاغك عند حدوث تحديث جديد على الطلب."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
@@ -31787,7 +31827,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("New status:", "Under Review"),
                 Lines("The lawyer has started reviewing your consultation request."),
                 Lines("We will notify you when there is another important update."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationApproved(ConsultationEmailNotificationModel model)
@@ -31811,16 +31851,17 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             Lines("Status:", "Approved")
         };
         AddPreferredAppointment(model, arabic, english, "التاريخ المفضل المسجل:", "Recorded preferred date:");
-        arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Lawyer Platform."));
-        arabic.Add(Lines("مع تحيات،", "Lawyer Platform"));
-        english.Add(Lines("You can continue tracking your request through Lawyer Platform."));
-        english.Add(Lines("Regards,", "Lawyer Platform"));
-        return Build("Lawyer Platform | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
+        AddLawyerOfficeMapLocation(model, arabic, english);
+        arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Avokatoo."));
+        arabic.Add(Lines("مع تحيات،", "Avokatoo"));
+        english.Add(Lines("You can continue tracking your request through Avokatoo."));
+        english.Add(Lines("Regards,", "Avokatoo"));
+        return Build("Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
     }
 
     private EmailNotificationContent ConsultationRejected(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تحديث طلب الاستشارة | Consultation Request Update",
+            "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("نود إبلاغك بوجود تحديث على طلب الاستشارة الخاص بك."),
@@ -31828,8 +31869,8 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("المحامي:", model.LawyerName),
                 Lines("الحالة:", "مرفوض"),
                 Lines("سبب الرفض:", RequireReason(model)),
-                Lines("يمكنك الرجوع إلى Lawyer Platform للبحث عن محامٍ آخر مناسب إذا رغبت."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("يمكنك الرجوع إلى Avokatoo للبحث عن محامٍ آخر مناسب إذا رغبت."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
@@ -31838,21 +31879,21 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("Lawyer:", model.LawyerName),
                 Lines("Status:", "Rejected"),
                 Lines("Reason:", RequireReason(model)),
-                Lines("You may return to Lawyer Platform to find another suitable lawyer if needed."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("You may return to Avokatoo to find another suitable lawyer if needed."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationCompleted(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم إكمال طلب الاستشارة | Consultation Completed",
+            "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("تم تحديث طلب الاستشارة الخاص بك إلى مكتمل."),
                 Lines("رقم الطلب:", model.ReferenceNumber),
                 Lines("المحامي:", model.LawyerName),
                 Lines("الحالة:", "مكتمل"),
-                Lines("نشكرك على استخدام Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("نشكرك على استخدام Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
@@ -31860,48 +31901,48 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("Request Reference:", model.ReferenceNumber),
                 Lines("Lawyer:", model.LawyerName),
                 Lines("Status:", "Completed"),
-                Lines("Thank you for using Lawyer Platform."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Thank you for using Avokatoo."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ClientSuspended(ClientEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم تعليق حسابك | Your Account Has Been Suspended",
+            "Avokatoo | تم تعليق حسابك | Your Account Has Been Suspended",
             [
                 Lines($"مرحبًا {model.ClientName}،"),
-                Lines("نود إبلاغك بأنه تم تعليق حسابك على Lawyer Platform."),
+                Lines("نود إبلاغك بأنه تم تعليق حسابك على Avokatoo."),
                 Lines("حالة الحساب:", "معلق"),
                 Lines("لن تتمكن من استخدام الوظائف التي تتطلب حسابًا نشطًا أثناء فترة التعليق."),
-                Lines("للحصول على معلومات إضافية، يرجى التواصل مع إدارة Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("للحصول على معلومات إضافية، يرجى التواصل مع إدارة Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.ClientName},"),
-                Lines("We would like to inform you that your Lawyer Platform account has been suspended."),
+                Lines("We would like to inform you that your Avokatoo account has been suspended."),
                 Lines("Account status:", "Suspended"),
                 Lines("While your account is suspended, features requiring an active account will not be available."),
-                Lines("For additional information, please contact the Lawyer Platform administration."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("For additional information, please contact the Avokatoo administration."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ClientReactivated(ClientEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated",
+            "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated",
             [
                 Lines($"مرحبًا {model.ClientName}،"),
-                Lines("تمت إعادة تفعيل حسابك بنجاح على Lawyer Platform."),
+                Lines("تمت إعادة تفعيل حسابك بنجاح على Avokatoo."),
                 Lines("حالة الحساب:", "نشط"),
                 Lines("يمكنك الآن تسجيل الدخول واستخدام خدمات حسابك مرة أخرى."),
                 Lines("مرحبًا بعودتك."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.ClientName},"),
-                Lines("Your Lawyer Platform account has been successfully reactivated."),
+                Lines("Your Avokatoo account has been successfully reactivated."),
                 Lines("Account status:", "Active"),
                 Lines("You can now sign in and use your account services again."),
                 Lines("Welcome back."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent Build(
@@ -31913,14 +31954,14 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         body.Append("<!doctype html><html><head><meta charset=\"utf-8\"></head>")
             .Append("<body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.6\">")
             .Append("<div style=\"max-width:680px;margin:0 auto\">")
-            .Append("<h2 style=\"margin-bottom:24px\">Lawyer Platform</h2>")
+            .Append("<h2 style=\"margin-bottom:24px\">Avokatoo</h2>")
             .Append("<section dir=\"rtl\" lang=\"ar\" style=\"text-align:right\">")
             .AppendJoin(string.Empty, arabicParagraphs)
             .Append("</section><hr style=\"border:0;border-top:1px solid #bbb;margin:28px 0\">")
             .Append("<section dir=\"ltr\" lang=\"en\" style=\"text-align:left\">")
             .AppendJoin(string.Empty, englishParagraphs)
             .Append("</section><footer style=\"margin-top:28px;color:#666\">")
-            .Append("Lawyer Platform<br>&copy; ")
+            .Append("Avokatoo<br>&copy; ")
             .Append(clock.UtcNow.Year)
             .Append("</footer></div></body></html>");
         return new EmailNotificationContent(subject, body.ToString());
@@ -31946,6 +31987,44 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         arabic.Add(Lines(arabicLabel, formatted));
         english.Add(Lines(englishLabel, formatted));
     }
+
+    private static void AddLawyerOfficeMapLocation(
+        ConsultationEmailNotificationModel model,
+        List<string> arabic,
+        List<string> english)
+    {
+        var safeUrl = GetSafeGoogleMapsUrl(model.LawyerOfficeMapUrl);
+        if (safeUrl is null)
+        {
+            return;
+        }
+
+        arabic.Add(Lines(
+            "موقع مكتب المحامي",
+            "يمكنك الوصول إلى موقع مكتب المحامي من خلال Google Maps:"));
+        arabic.Add(Link(safeUrl, "عرض موقع المكتب على Google Maps"));
+        english.Add(Lines(
+            "Lawyer Office Location",
+            "You can view the lawyer's office location on Google Maps:"));
+        english.Add(Link(safeUrl, "View Lawyer Office on Google Maps"));
+    }
+
+    private static string? GetSafeGoogleMapsUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !value.StartsWith(GoogleMapsUrlPrefix, StringComparison.Ordinal) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.Equals(uri.Host, "www.google.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    private static string Link(string url, string text)
+        => $"<p><a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(text)}</a></p>";
 
     private static LawyerEmailNotificationModel RequireLawyer(EmailNotificationModel model)
         => model as LawyerEmailNotificationModel
@@ -31973,6 +32052,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\EmailNotificationCoordinator.cs ==================== 
 using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Specification;
+using System.Globalization;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Consultations;
@@ -32128,7 +32208,12 @@ internal sealed class EmailNotificationCoordinator(
             snapshot.SpecializationNameAr,
             snapshot.SpecializationNameEn,
             snapshot.PreferredAppointmentOnUtc,
-            history.Reason);
+            history.Reason,
+            notificationType == EmailNotificationType.ConsultationApproved
+                ? LawyerOfficeMapUrlBuilder.Create(
+                    snapshot.PrimaryOffice?.Latitude,
+                    snapshot.PrimaryOffice?.Longitude)
+                : null);
         await QueueAsync(
             notificationType.Value,
             request.Id,
@@ -32212,7 +32297,12 @@ internal sealed record ConsultationEmailSnapshot(
     string LawyerName,
     string SpecializationNameAr,
     string SpecializationNameEn,
-    DateTime? PreferredAppointmentOnUtc);
+    DateTime? PreferredAppointmentOnUtc,
+    ConsultationOfficeCoordinatesSnapshot? PrimaryOffice);
+
+internal sealed record ConsultationOfficeCoordinatesSnapshot(
+    decimal? Latitude,
+    decimal? Longitude);
 
 internal sealed class ConsultationEmailSnapshotByIdSpecification
     : Specification<ConsultationRequest, ConsultationEmailSnapshot>
@@ -32231,7 +32321,30 @@ internal sealed class ConsultationEmailSnapshotByIdSpecification
             request.LawyerProfile.FullName,
             request.LegalSpecialization == null ? "غير محدد" : request.LegalSpecialization.NameAr,
             request.LegalSpecialization == null ? "Not specified" : request.LegalSpecialization.NameEn,
-            request.PreferredAppointmentOnUtc));
+            request.PreferredAppointmentOnUtc,
+            request.LawyerProfile.Offices
+                .Where(office => office.IsPrimary && office.IsActive)
+                .Select(office => new ConsultationOfficeCoordinatesSnapshot(
+                    office.Latitude,
+                    office.Longitude))
+                .FirstOrDefault()));
+    }
+}
+
+internal static class LawyerOfficeMapUrlBuilder
+{
+    public static string? Create(decimal? latitude, decimal? longitude)
+    {
+        if (latitude is null || longitude is null)
+        {
+            return null;
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "https://www.google.com/maps/search/?api=1&query={0:0.000000},{1:0.000000}",
+            latitude.Value,
+            longitude.Value);
     }
 }
  
@@ -32252,7 +32365,8 @@ public sealed record ConsultationEmailNotificationModel(
     string SpecializationNameAr,
     string SpecializationNameEn,
     DateTime? PreferredAppointmentOnUtc = null,
-    string? Reason = null) : EmailNotificationModel;
+    string? Reason = null,
+    string? LawyerOfficeMapUrl = null) : EmailNotificationModel;
 
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;
@@ -33288,6 +33402,9 @@ public static class LawyerErrors
     public static readonly Error RegistrationNumberAlreadyExists = Error.Conflict("Lawyer.ProfessionalRegistrationNumberAlreadyExists", "The professional registration number is already in use.");
     public static readonly Error OfficeNotFound = Error.NotFound("Lawyer.OfficeNotFound", "The primary office was not found.");
     public static readonly Error OfficeEditNotAllowed = Error.Domain("Lawyer.OfficeEditNotAllowed", "The primary office cannot be edited in the current status.");
+    public static readonly Error InvalidLatitude = Error.Validation("Lawyer.InvalidLatitude", "Latitude must be between -90 and 90.");
+    public static readonly Error InvalidLongitude = Error.Validation("Lawyer.InvalidLongitude", "Longitude must be between -180 and 180.");
+    public static readonly Error InvalidOfficeCoordinates = Error.Validation("Lawyer.InvalidOfficeCoordinates", "Latitude and longitude must both be supplied or both be null.");
     public static readonly Error DuplicateSpecialization = Error.Validation("Lawyer.DuplicateSpecialization", "Duplicate specialization identifiers are not allowed.");
     public static readonly Error DocumentNotFound = Error.NotFound("Lawyer.DocumentNotFound", "Document was not found.");
     public static readonly Error DocumentAccessDenied = Error.NotFound("Lawyer.DocumentNotFound", "Document was not found.");
@@ -33335,11 +33452,13 @@ public sealed class LawyerOffice : Entity<Guid>, IAuditableEntity
         int cityId,
         int areaId,
         string detailedAddress,
-        string? publicPhoneNumber)
+        string? publicPhoneNumber,
+        decimal? latitude,
+        decimal? longitude)
         : base(Guid.NewGuid())
     {
         LawyerProfileId = lawyerProfileId;
-        Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber);
+        Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber, latitude, longitude);
         IsPrimary = true;
         IsActive = true;
     }
@@ -33354,6 +33473,8 @@ public sealed class LawyerOffice : Entity<Guid>, IAuditableEntity
     public Area Area { get; private set; } = null!;
     public string DetailedAddress { get; private set; } = string.Empty;
     public string? PublicPhoneNumber { get; private set; }
+    public decimal? Latitude { get; private set; }
+    public decimal? Longitude { get; private set; }
     public bool IsPrimary { get; private set; }
     public bool IsActive { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
@@ -33365,13 +33486,17 @@ public sealed class LawyerOffice : Entity<Guid>, IAuditableEntity
         int cityId,
         int areaId,
         string detailedAddress,
-        string? publicPhoneNumber)
+        string? publicPhoneNumber,
+        decimal? latitude,
+        decimal? longitude)
     {
         GovernorateId = governorateId;
         CityId = cityId;
         AreaId = areaId;
         DetailedAddress = detailedAddress.Trim();
         PublicPhoneNumber = string.IsNullOrWhiteSpace(publicPhoneNumber) ? null : publicPhoneNumber.Trim();
+        Latitude = latitude;
+        Longitude = longitude;
         IsPrimary = true;
         IsActive = true;
     }
@@ -33512,7 +33637,9 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
         int cityId,
         int areaId,
         string detailedAddress,
-        string? publicPhoneNumber)
+        string? publicPhoneNumber,
+        decimal? latitude = null,
+        decimal? longitude = null)
     {
         var editCheck = EnsureEditable(LawyerErrors.OfficeEditNotAllowed);
         if (editCheck.IsFailure)
@@ -33527,15 +33654,30 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
             return Result<LawyerOffice>.Fail(Error.Validation("Lawyer.InvalidOffice", "The primary office is invalid."));
         }
 
+        if (latitude.HasValue != longitude.HasValue)
+        {
+            return Result<LawyerOffice>.Fail(LawyerErrors.InvalidOfficeCoordinates);
+        }
+
+        if (latitude is < -90m or > 90m)
+        {
+            return Result<LawyerOffice>.Fail(LawyerErrors.InvalidLatitude);
+        }
+
+        if (longitude is < -180m or > 180m)
+        {
+            return Result<LawyerOffice>.Fail(LawyerErrors.InvalidLongitude);
+        }
+
         var office = _offices.SingleOrDefault(item => item.IsPrimary && item.IsActive);
         if (office is null)
         {
-            office = new LawyerOffice(Id, governorateId, cityId, areaId, detailedAddress, publicPhoneNumber);
+            office = new LawyerOffice(Id, governorateId, cityId, areaId, detailedAddress, publicPhoneNumber, latitude, longitude);
             _offices.Add(office);
         }
         else
         {
-            office.Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber);
+            office.Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber, latitude, longitude);
         }
 
         return Result<LawyerOffice>.Ok(office);
@@ -36270,6 +36412,8 @@ internal sealed class LawyerOfficeConfiguration : IWriteEntityConfiguration<Lawy
         builder.HasKey(office => office.Id);
         builder.Property(office => office.DetailedAddress).HasMaxLength(500).IsRequired();
         builder.Property(office => office.PublicPhoneNumber).HasMaxLength(30);
+        builder.Property(office => office.Latitude).HasPrecision(9, 6);
+        builder.Property(office => office.Longitude).HasPrecision(9, 6);
         builder.Property(office => office.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasOne(office => office.LawyerProfile).WithMany(profile => profile.Offices)
             .HasForeignKey(office => office.LawyerProfileId).OnDelete(DeleteBehavior.Restrict);
@@ -44456,6 +44600,1145 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
     }
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260818093321_AddLawyerOfficeCoordinates.cs ==================== 
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddLawyerOfficeCoordinates : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<decimal>(
+                name: "Latitude",
+                table: "LawyerOffices",
+                type: "decimal(9,6)",
+                precision: 9,
+                scale: 6,
+                nullable: true);
+
+            migrationBuilder.AddColumn<decimal>(
+                name: "Longitude",
+                table: "LawyerOffices",
+                type: "decimal(9,6)",
+                precision: 9,
+                scale: 6,
+                nullable: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "Latitude",
+                table: "LawyerOffices");
+
+            migrationBuilder.DropColumn(
+                name: "Longitude",
+                table: "LawyerOffices");
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260818093321_AddLawyerOfficeCoordinates.Designer.cs ==================== 
+﻿// <auto-generated />
+using System;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    [DbContext(typeof(LawyerPlatformDbContext))]
+    [Migration("20260818093321_AddLawyerOfficeCoordinates")]
+    partial class AddLawyerOfficeCoordinates
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.UserAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsFirstLogin")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedUserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("PasswordChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedEmail");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedUserName");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_PhoneNumber");
+
+                    b.HasIndex("Role", "Status")
+                        .HasDatabaseName("IX_UserAccounts_Role_Status");
+
+                    b.ToTable("UserAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ClientProfiles_UserAccountId");
+
+                    b.ToTable("ClientProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("ConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("GuestEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("GuestFullName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("GuestPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PreferredAppointmentOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LegalSpecializationId");
+
+                    b.HasIndex("ReferenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ConsultationRequests_ReferenceNumber");
+
+                    b.HasIndex("ClientProfileId", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_ClientProfileId_CreatedOnUtc");
+
+                    b.HasIndex("LawyerProfileId", "Status", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_LawyerProfileId_Status_CreatedOnUtc");
+
+                    b.ToTable("ConsultationRequests", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ConsultationRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("ConsultationRequestId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequestStatusHistory_ConsultationRequestId_ChangedOnUtc");
+
+                    b.ToTable("ConsultationRequestStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc");
+
+                    b.ToTable("LawyerApprovalStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time");
+
+                    b.Property<Guid>("LawyerConsultationSettingsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerConsultationSettingsId", "DayOfWeek")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_DayOfWeek");
+
+                    b.ToTable("LawyerAvailabilities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerConsultationSettings_LawyerProfileId");
+
+                    b.ToTable("LawyerConsultationSettings", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "DocumentType", "IsDeleted")
+                        .HasDatabaseName("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted");
+
+                    b.ToTable("LawyerDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AreaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DetailedAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublicPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AreaId");
+
+                    b.HasIndex("CityId");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerOffices_LawyerProfileId_Primary")
+                        .HasFilter("[IsPrimary] = 1");
+
+                    b.HasIndex("GovernorateId", "CityId", "AreaId")
+                        .HasDatabaseName("IX_LawyerOffices_GovernorateId_CityId_AreaId");
+
+                    b.ToTable("LawyerOffices", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ApprovalStatus")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ApprovedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ApprovedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Biography")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProfessionalRegistrationNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ProfessionalTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProfileImageStorageKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("SubmittedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SuspendedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("YearsOfExperience")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessionalRegistrationNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_ProfessionalRegistrationNumber")
+                        .HasFilter("[ProfessionalRegistrationNumber] IS NOT NULL");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_UserAccountId");
+
+                    b.HasIndex("ApprovalStatus", "SubmittedOnUtc")
+                        .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc");
+
+                    b.ToTable("LawyerProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("LawyerProfileId", "LegalSpecializationId");
+
+                    b.HasIndex("LegalSpecializationId", "LawyerProfileId")
+                        .HasDatabaseName("IX_LawyerSpecializations_LegalSpecializationId_LawyerProfileId");
+
+                    b.ToTable("LawyerSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CityId")
+                        .HasDatabaseName("IX_Areas_CityId");
+
+                    b.HasIndex("CityId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameAr");
+
+                    b.HasIndex("CityId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameEn");
+
+                    b.HasIndex("CityId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Areas_CityId_IsActive_DisplayOrder");
+
+                    b.ToTable("Areas", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GovernorateId")
+                        .HasDatabaseName("IX_Cities_GovernorateId");
+
+                    b.HasIndex("GovernorateId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameAr");
+
+                    b.HasIndex("GovernorateId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameEn");
+
+                    b.HasIndex("GovernorateId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Cities_GovernorateId_IsActive_DisplayOrder");
+
+                    b.ToTable("Cities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Governorate", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Governorates_IsActive_DisplayOrder");
+
+                    b.ToTable("Governorates", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_LegalSpecializations_IsActive_DisplayOrder");
+
+                    b.ToTable("LegalSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Infrastructure.Email.EmailOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("NextAttemptOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NotificationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProcessedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProcessingToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_CreatedOnUtc");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EmailOutboxMessages_IdempotencyKey");
+
+                    b.HasIndex("Status", "NextAttemptOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
+
+                    b.ToTable("EmailOutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Clients.ClientProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Clients.ClientProfile", "ClientProfile")
+                        .WithMany()
+                        .HasForeignKey("ClientProfileId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany()
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ClientProfile");
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Consultations.ConsultationRequest", "ConsultationRequest")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("ConsultationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ConsultationRequest");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerConsultationSettings")
+                        .WithMany("Availability")
+                        .HasForeignKey("LawyerConsultationSettingsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LawyerConsultationSettings");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithOne("ConsultationSettings")
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Documents")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Area", "Area")
+                        .WithMany()
+                        .HasForeignKey("AreaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Offices")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Area");
+
+                    b.Navigation("City");
+
+                    b.Navigation("Governorate");
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Specializations")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("City");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Governorate");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Navigation("Availability");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Navigation("ConsultationSettings");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("Offices");
+
+                    b.Navigation("Specializations");
+
+                    b.Navigation("StatusHistory");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\LawyerPlatformDbContextModelSnapshot.cs ==================== 
 ﻿// <auto-generated />
 using System;
@@ -44904,8 +46187,16 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsPrimary")
                         .HasColumnType("bit");
 
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
                     b.Property<Guid>("LawyerProfileId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
 
                     b.Property<DateTime?>("ModifiedOnUtc")
                         .HasColumnType("datetime2");
@@ -46987,6 +48278,16 @@ public sealed class AdminConsultationRequestEndpointsTests
         Assert.Equal(4, secondTypes.Count);
         Assert.Contains(EmailNotificationType.ConsultationApproved, secondTypes);
         Assert.Contains(EmailNotificationType.ConsultationCompleted, secondTypes);
+        var adminApprovedMessage = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == second.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
+            adminApprovedMessage.HtmlBody,
+            StringComparison.Ordinal);
 
         var processor = new EmailOutboxProcessor(
             notificationContext,
@@ -47105,7 +48406,14 @@ public sealed class AdminConsultationRequestEndpointsTests
         profile.UpdateProfessionalProfile("Administrative Lawyer", "Attorney", "Biography", 9, "REG-ADMIN");
         var area = EgyptLocationSeedCatalog.Areas[0];
         var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
-        profile.UpsertPrimaryOffice(city.GovernorateId, city.Id, area.Id, "Complete address", null);
+        profile.UpsertPrimaryOffice(
+            city.GovernorateId,
+            city.Id,
+            area.Id,
+            "Complete address",
+            null,
+            30.044420m,
+            31.235712m);
         profile.ReplaceSpecializations([1]);
         profile.AddDocument("IdentityVerification", "docs/admin-id.pdf", "id.pdf", "application/pdf", 100, nowUtc);
         profile.AddDocument("ProfessionalMembership", "docs/admin-member.pdf", "member.pdf", "application/pdf", 100, nowUtc);
@@ -48050,6 +49358,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        AssertNoPrivateLocationFields(list.GetRawText());
         Assert.Equal(1, list.GetProperty("totalItems").GetInt64());
         Assert.Equal(firstRequest.Id, list.GetProperty("items")[0].GetProperty("id").GetGuid());
 
@@ -48058,6 +49367,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             TestContext.Current.CancellationToken);
         Assert.Equal("First private description", ownDetails.GetProperty("description").GetString());
         Assert.Equal("Private client rejection", ownDetails.GetProperty("rejectionReason").GetString());
+        AssertNoPrivateLocationFields(ownDetails.GetRawText());
 
         await RegisterAndLoginClientAsync(
             client,
@@ -48073,6 +49383,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             "/api/v1/client/consultation-requests",
             TestContext.Current.CancellationToken);
         Assert.Equal(0, secondList.GetProperty("totalItems").GetInt64());
+        AssertNoPrivateLocationFields(secondList.GetRawText());
 
         client.DefaultRequestHeaders.Authorization = null;
         var guest = await CreateGuestRequestAsync(client, lawyerId);
@@ -48092,6 +49403,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         Assert.DoesNotContain("Never expose this guest reason", trackedText, StringComparison.Ordinal);
         Assert.DoesNotContain("01087333333", trackedText, StringComparison.Ordinal);
         Assert.DoesNotContain(firstClient.ToString(), trackedText, StringComparison.OrdinalIgnoreCase);
+        AssertNoPrivateLocationFields(trackedText);
 
         var wrongReference = await client.PostAsJsonAsync(
             "/api/v1/public/consultation-requests/track",
@@ -48184,6 +49496,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        AssertNoPrivateLocationFields(body.GetRawText());
         return (body.GetProperty("id").GetGuid(), body.GetProperty("referenceNumber").GetString()!);
     }
 
@@ -48202,6 +49515,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        AssertNoPrivateLocationFields(body.GetRawText());
         return (body.GetProperty("id").GetGuid(), body.GetProperty("referenceNumber").GetString()!);
     }
 
@@ -48261,6 +49575,14 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             body.GetProperty("errors").EnumerateArray(),
             error => error.GetProperty("code").GetString() ==
                      "ConsultationRequest.ReferenceVerificationFailed");
+    }
+
+    private static void AssertNoPrivateLocationFields(string json)
+    {
+        Assert.DoesNotContain("latitude", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("longitude", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lawyerOfficeMapUrl", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("googleMapsUrl", json, StringComparison.OrdinalIgnoreCase);
     }
 }
  
@@ -49703,8 +51025,10 @@ public sealed class LawyerConsultationRequestEndpointsTests
         {
             BaseAddress = new Uri("https://localhost")
         });
-        var firstLawyer = await RegisterApproveAndLoginLawyerAsync(factory, client, "request.lawyer.one", "01086111111");
-        var secondLawyer = await RegisterApproveAndLoginLawyerAsync(factory, client, "request.lawyer.two", "01086222222");
+        var firstLawyer = await RegisterApproveAndLoginLawyerAsync(
+            factory, client, "request.lawyer.one", "01086111111", includeCoordinates: true);
+        var secondLawyer = await RegisterApproveAndLoginLawyerAsync(
+            factory, client, "request.lawyer.two", "01086222222", includeCoordinates: false);
 
         client.DefaultRequestHeaders.Authorization = null;
         var firstGuest = await CreateGuestRequestAsync(client, firstLawyer.ProfileId, "First Guest", "01011112222");
@@ -49837,6 +51161,14 @@ public sealed class LawyerConsultationRequestEndpointsTests
             (await client.GetAsync(
                 $"/api/v1/lawyer/consultation-requests/{firstGuest.Id}",
                 TestContext.Current.CancellationToken)).StatusCode);
+        var otherLawyerDetails = await GetDetailsAsync(client, otherLawyerRequest.Id);
+        var otherApproved = await UpdateStatusAsync(
+            client,
+            otherLawyerRequest.Id,
+            ConsultationRequestStatus.Approved,
+            null,
+            otherLawyerDetails.GetProperty("rowVersion").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, otherApproved.StatusCode);
 
         await using var notificationScope = factory.Services.CreateAsyncScope();
         var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
@@ -49858,13 +51190,40 @@ public sealed class LawyerConsultationRequestEndpointsTests
         Assert.Equal(4, completedTypes.Count);
         Assert.Contains(EmailNotificationType.ConsultationApproved, completedTypes);
         Assert.Contains(EmailNotificationType.ConsultationCompleted, completedTypes);
+        var approvedWithMap = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == completedCandidate.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
+        var approvedWithoutMap = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == otherLawyerRequest.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
+        var createdConfirmation = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == completedCandidate.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
+            approvedWithMap.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains("Lawyer Office Location", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", approvedWithoutMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", approvedWithoutMap.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("google.com/maps", createdConfirmation.HtmlBody, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<(Guid ProfileId, Guid UserAccountId, string Token)> RegisterApproveAndLoginLawyerAsync(
         CustomWebApplicationFactory factory,
         HttpClient client,
         string userName,
-        string phoneNumber)
+        string phoneNumber,
+        bool includeCoordinates)
     {
         const string password = "LawyerPassword1";
         client.DefaultRequestHeaders.Authorization = null;
@@ -49890,7 +51249,14 @@ public sealed class LawyerConsultationRequestEndpointsTests
             profile.UpdateProfessionalProfile(profile.FullName, "Attorney", "Biography", 7, $"REG-{userName}");
             var area = EgyptLocationSeedCatalog.Areas[0];
             var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
-            profile.UpsertPrimaryOffice(city.GovernorateId, city.Id, area.Id, "Complete address", null);
+            profile.UpsertPrimaryOffice(
+                city.GovernorateId,
+                city.Id,
+                area.Id,
+                "Complete address",
+                null,
+                includeCoordinates ? 30.044420m : null,
+                includeCoordinates ? 31.235712m : null);
             profile.ReplaceSpecializations([1]);
             profile.AddDocument("IdentityVerification", $"docs/{userName}-id.pdf", "id.pdf", "application/pdf", 100, nowUtc);
             profile.AddDocument("ProfessionalMembership", $"docs/{userName}-member.pdf", "member.pdf", "application/pdf", 100, nowUtc);
@@ -50763,6 +52129,122 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\LawyerOfficeCoordinatesSqlServerTests.cs ==================== 
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+
+namespace LawyerPlatform.IntegrationTests;
+
+[Collection(LawyerPlatformSqlServerTestGroup.Name)]
+public sealed class LawyerOfficeCoordinatesSqlServerTests(LawyerPlatformSqlServerFixture fixture)
+{
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task CoordinatesUseNullableDecimalColumnsAndPersistExactValues()
+    {
+        await using (var seedContext = fixture.CreateContext())
+        await using (var coordinator = new EgyptLocationSeedCoordinator(seedContext))
+        {
+            await coordinator.SeedGovernoratesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedCitiesAsync(TestContext.Current.CancellationToken);
+            await coordinator.SeedAreasAsync(TestContext.Current.CancellationToken);
+        }
+
+        var area = EgyptLocationSeedCatalog.Areas[0];
+        var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
+        var withCoordinates = CreateProfile("coordinates", "01076543210");
+        var withoutCoordinates = CreateProfile("null-coordinates", "01176543210");
+        Assert.True(withCoordinates.UpsertPrimaryOffice(
+            city.GovernorateId,
+            city.Id,
+            area.Id,
+            "Coordinate office",
+            null,
+            30.044420m,
+            31.235712m).IsSuccess);
+        Assert.True(withoutCoordinates.UpsertPrimaryOffice(
+            city.GovernorateId,
+            city.Id,
+            area.Id,
+            "Office without coordinates",
+            null,
+            null,
+            null).IsSuccess);
+
+        await using (var context = fixture.CreateContext())
+        {
+            context.LawyerProfiles.AddRange(withCoordinates, withoutCoordinates);
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using (var context = fixture.CreateContext())
+        {
+            var storedWithCoordinates = await context.LawyerOffices
+                .AsNoTracking()
+                .SingleAsync(
+                    office => office.LawyerProfileId == withCoordinates.Id,
+                    TestContext.Current.CancellationToken);
+            var storedWithoutCoordinates = await context.LawyerOffices
+                .AsNoTracking()
+                .SingleAsync(
+                    office => office.LawyerProfileId == withoutCoordinates.Id,
+                    TestContext.Current.CancellationToken);
+
+            Assert.Equal(30.044420m, storedWithCoordinates.Latitude);
+            Assert.Equal(31.235712m, storedWithCoordinates.Longitude);
+            Assert.Null(storedWithoutCoordinates.Latitude);
+            Assert.Null(storedWithoutCoordinates.Longitude);
+        }
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COLUMN_NAME, NUMERIC_PRECISION, NUMERIC_SCALE, IS_NULLABLE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = 'LawyerOffices' AND COLUMN_NAME IN ('Latitude', 'Longitude')
+            ORDER BY COLUMN_NAME
+            """;
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var columns = new List<(string Name, int Precision, int Scale, string Nullable)>();
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            columns.Add((
+                reader.GetString(0),
+                Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture),
+                Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture),
+                reader.GetString(3)));
+        }
+
+        Assert.Equal(2, columns.Count);
+        Assert.All(columns, column =>
+        {
+            Assert.Equal(9, column.Precision);
+            Assert.Equal(6, column.Scale);
+            Assert.Equal("YES", column.Nullable);
+        });
+    }
+
+    private static LawyerProfile CreateProfile(string prefix, string phoneNumber)
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var account = UserAccount.CreateLawyer(
+            $"{prefix}-{suffix[..8]}",
+            $"{prefix.ToUpperInvariant()}-{suffix[..8].ToUpperInvariant()}",
+            $"{prefix}-{suffix}@example.test",
+            $"{prefix.ToUpperInvariant()}-{suffix.ToUpperInvariant()}@EXAMPLE.TEST",
+            phoneNumber,
+            "integration-test-hash",
+            DateTime.UtcNow).Value;
+        return LawyerProfile.Create(account, $"{prefix} Lawyer").Value;
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\LawyerOnboardingLifecycleTests.cs ==================== 
 using System.Net;
 using System.Net.Http.Headers;
@@ -50845,9 +52327,43 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             areaId = OfficeArea.Id,
             detailedAddress = "Court Street, Building 5",
             publicPhoneNumber = "01012345678",
+            latitude = 30.044420m,
+            longitude = 31.235712m,
             rowVersion = (string?)null
         }, cancellationToken);
         Assert.True(office.StatusCode == HttpStatusCode.OK, await office.Content.ReadAsStringAsync(cancellationToken));
+        var officeBody = await office.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.Equal(30.044420m, officeBody.GetProperty("latitude").GetDecimal());
+        Assert.Equal(31.235712m, officeBody.GetProperty("longitude").GetDecimal());
+
+        foreach (var invalidCoordinates in new[]
+                 {
+                     new { Latitude = (decimal?)90.000001m, Longitude = (decimal?)31.235712m },
+                     new { Latitude = (decimal?)30.044420m, Longitude = (decimal?)180.000001m },
+                     new { Latitude = (decimal?)30.044420m, Longitude = (decimal?)null }
+                 })
+        {
+            var invalidOffice = await client.PutAsJsonAsync("/api/v1/lawyer/office", new
+            {
+                governorateId = OfficeCity.GovernorateId,
+                cityId = OfficeCity.Id,
+                areaId = OfficeArea.Id,
+                detailedAddress = "Invalid coordinate update",
+                publicPhoneNumber = "01012345678",
+                latitude = invalidCoordinates.Latitude,
+                longitude = invalidCoordinates.Longitude,
+                rowVersion = officeBody.GetProperty("rowVersion").GetString()
+            }, cancellationToken);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidOffice.StatusCode);
+        }
+
+        var ownProfileWithCoordinates = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
+        Assert.Equal(
+            30.044420m,
+            ownProfileWithCoordinates.GetProperty("primaryOffice").GetProperty("latitude").GetDecimal());
+        Assert.Equal(
+            31.235712m,
+            ownProfileWithCoordinates.GetProperty("primaryOffice").GetProperty("longitude").GetDecimal());
 
         var staleUpdate = await client.PutAsJsonAsync("/api/v1/lawyer/profile", new
         {
@@ -50948,6 +52464,8 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain("storageKey", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("passwordHash", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("fileBytes", adminJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(30.044420m, adminDetails.GetProperty("primaryOffice").GetProperty("latitude").GetDecimal());
+        Assert.Equal(31.235712m, adminDetails.GetProperty("primaryOffice").GetProperty("longitude").GetDecimal());
         Assert.True(adminDetails.GetProperty("statusHistory").GetArrayLength() >= 4);
 
         client.DefaultRequestHeaders.Authorization = null;
@@ -50958,6 +52476,18 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain("storageKey", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("professionalRegistrationNumber", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("userAccountId", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("latitude", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("longitude", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lawyerOfficeMapUrl", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("googleMapsUrl", publicJson, StringComparison.OrdinalIgnoreCase);
+        var publicListJson = (await GetJsonAsync(
+            client,
+            "/api/v1/public/lawyers?pageNumber=1&pageSize=100",
+            cancellationToken)).GetRawText();
+        Assert.DoesNotContain("latitude", publicListJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("longitude", publicListJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lawyerOfficeMapUrl", publicListJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("googleMapsUrl", publicListJson, StringComparison.OrdinalIgnoreCase);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", lawyerToken);
         using (var protectedDeleteRequest = new HttpRequestMessage(
@@ -51299,6 +52829,14 @@ public sealed class LawyerPersistenceModelTests(CustomWebApplicationFactory fact
         Assert.True(profile.FindProperty(nameof(LawyerProfile.RowVersion))!.IsConcurrencyToken);
         Assert.True(office.FindProperty(nameof(LawyerOffice.RowVersion))!.IsConcurrencyToken);
         Assert.True(document.FindProperty(nameof(LawyerDocument.RowVersion))!.IsConcurrencyToken);
+        var latitude = office.FindProperty(nameof(LawyerOffice.Latitude))!;
+        var longitude = office.FindProperty(nameof(LawyerOffice.Longitude))!;
+        Assert.True(latitude.IsNullable);
+        Assert.Equal(9, latitude.GetPrecision());
+        Assert.Equal(6, latitude.GetScale());
+        Assert.True(longitude.IsNullable);
+        Assert.Equal(9, longitude.GetPrecision());
+        Assert.Equal(6, longitude.GetScale());
         Assert.All(
             new[] { office, document, specialization, history }.SelectMany(entity => entity.GetForeignKeys()),
             foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
@@ -54213,6 +55751,20 @@ public sealed class LawyerProfileLifecycleTests
     private static readonly Guid LawyerUserId = Guid.Parse("11111111-1111-1111-1111-111111111112");
     private static readonly Guid AdminUserId = Guid.Parse("11111111-1111-1111-1111-111111111113");
 
+    public static TheoryData<decimal, decimal, string> InvalidCoordinateRanges => new()
+    {
+        { -90.000001m, 31.235712m, "Lawyer.InvalidLatitude" },
+        { 90.000001m, 31.235712m, "Lawyer.InvalidLatitude" },
+        { 30.044420m, -180.000001m, "Lawyer.InvalidLongitude" },
+        { 30.044420m, 180.000001m, "Lawyer.InvalidLongitude" }
+    };
+
+    public static TheoryData<decimal?, decimal?> PartialCoordinatePairs => new()
+    {
+        { 30.044420m, null },
+        { null, 31.235712m }
+    };
+
     [Fact]
     public void NewLawyerProfile_StartsDraftAndEmpty()
     {
@@ -54343,6 +55895,66 @@ public sealed class LawyerProfileLifecycleTests
         Assert.False(profile.CanAppearPublicly(true, true));
     }
 
+    [Fact]
+    public void PrimaryOffice_AcceptsValidAndNullCoordinatePairs()
+    {
+        var withCoordinates = CreateProfile();
+        var coordinatesResult = withCoordinates.UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, 30.044420m, 31.235712m);
+        var withoutCoordinates = CreateProfile();
+        var nullResult = withoutCoordinates.UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, null, null);
+
+        Assert.True(coordinatesResult.IsSuccess);
+        Assert.Equal(30.044420m, coordinatesResult.Value.Latitude);
+        Assert.Equal(31.235712m, coordinatesResult.Value.Longitude);
+        Assert.True(nullResult.IsSuccess);
+        Assert.Null(nullResult.Value.Latitude);
+        Assert.Null(nullResult.Value.Longitude);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCoordinateRanges))]
+    public void PrimaryOffice_RejectsCoordinatesOutsideValidRanges(
+        decimal latitude,
+        decimal longitude,
+        string expectedErrorCode)
+    {
+        var result = CreateProfile().UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, latitude, longitude);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == expectedErrorCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(PartialCoordinatePairs))]
+    public void PrimaryOffice_RejectsPartialCoordinatePairs(decimal? latitude, decimal? longitude)
+    {
+        var result = CreateProfile().UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, latitude, longitude);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "Lawyer.InvalidOfficeCoordinates");
+    }
+
+    [Fact]
+    public void PrimaryOffice_UpdateChangesCoordinatesAndPreservesIdentity()
+    {
+        var profile = CreateProfile();
+        var created = profile.UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, 30.044420m, 31.235712m).Value;
+
+        var updated = profile.UpsertPrimaryOffice(
+            1, 10, 100, "Updated address", null, 29.975300m, 31.137600m);
+
+        Assert.True(updated.IsSuccess);
+        Assert.Equal(created.Id, updated.Value.Id);
+        Assert.Equal(29.975300m, updated.Value.Latitude);
+        Assert.Equal(31.137600m, updated.Value.Longitude);
+        Assert.Single(profile.Offices);
+    }
+
     private static LawyerProfile CreateApprovedProfile()
     {
         var profile = CreateCompleteProfile();
@@ -54385,6 +55997,7 @@ public sealed class LawyerProfileLifecycleTests
 using LawyerPlatform.Application.Features.AdminLawyers.GetLawyers;
 using LawyerPlatform.Application.Features.AdminLawyers.RejectLawyer;
 using LawyerPlatform.Application.Features.Lawyers.ReplaceSpecializations;
+using LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
 using LawyerPlatform.Application.Features.Lawyers.UpdateOwnProfile;
 using LawyerPlatform.Application.Features.PublicLawyers.SearchLawyers;
 
@@ -54392,6 +56005,16 @@ namespace LawyerPlatform.UnitTests.Lawyers;
 
 public sealed class LawyerValidatorTests
 {
+    public static TheoryData<decimal?, decimal?, bool, string?> CoordinateValidationCases => new()
+    {
+        { 30.044420m, 31.235712m, true, null },
+        { null, null, true, null },
+        { -90.000001m, 31.235712m, false, "Lawyer.InvalidLatitude" },
+        { 30.044420m, 180.000001m, false, "Lawyer.InvalidLongitude" },
+        { 30.044420m, null, false, "Lawyer.InvalidOfficeCoordinates" },
+        { null, 31.235712m, false, "Lawyer.InvalidOfficeCoordinates" }
+    };
+
     [Fact]
     public void UpdateProfile_RejectsInvalidFieldsAndRowVersion()
     {
@@ -54440,6 +56063,25 @@ public sealed class LawyerValidatorTests
         Assert.False(search.IsValid);
         Assert.Contains(admin.Errors, error => error.PropertyName == "PageSize");
         Assert.Contains(search.Errors, error => error.PropertyName == "PageNumber");
+    }
+
+    [Theory]
+    [MemberData(nameof(CoordinateValidationCases))]
+    public void PrimaryOffice_ValidatesCoordinatePairAndRanges(
+        decimal? latitude,
+        decimal? longitude,
+        bool expectedValid,
+        string? expectedErrorCode)
+    {
+        var result = new UpsertPrimaryOfficeCommandValidator().Validate(
+            new UpsertPrimaryOfficeCommand(
+                1, 1, 1, "Office address", "01012345678", latitude, longitude, null));
+
+        Assert.Equal(expectedValid, result.IsValid);
+        if (expectedErrorCode is not null)
+        {
+            Assert.Contains(result.Errors, error => error.ErrorCode == expectedErrorCode);
+        }
     }
 }
  
@@ -54610,9 +56252,294 @@ public sealed class UploadDocumentHandlerTests
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Lawyers\UpsertPrimaryOfficeHandlerTests.cs ==================== 
+using System.Linq.Expressions;
+using BuildingBlock.Application.Abstraction.Persistence;
+using BuildingBlock.Application.Abstraction.Security;
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Application.Time;
+using BuildingBlock.Domain.Specification;
+using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Features.Lawyers.Common;
+using LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Domain.ReferenceData;
+
+namespace LawyerPlatform.UnitTests.Lawyers;
+
+public sealed class UpsertPrimaryOfficeHandlerTests
+{
+    private static readonly byte[] LatestRowVersion = [1, 2, 3, 4, 5, 6, 7, 8];
+
+    [Fact]
+    public async Task CreateWithCoordinates_PersistsAndReturnsCoordinatesWithOneSave()
+    {
+        var fixture = CreateFixture();
+
+        var result = await fixture.Handler.Handle(
+            Command(30.044420m, 31.235712m, null),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(30.044420m, result.Value.Latitude);
+        Assert.Equal(31.235712m, result.Value.Longitude);
+        Assert.Equal(Convert.ToBase64String(LatestRowVersion), result.Value.RowVersion);
+        Assert.Equal(1, fixture.UnitOfWork.SaveCalls);
+        Assert.Same(Assert.Single(fixture.Profile.Offices), fixture.Persistence.AddedOffice);
+    }
+
+    [Fact]
+    public async Task CreateWithoutCoordinates_PreservesOptionalBehavior()
+    {
+        var fixture = CreateFixture();
+
+        var result = await fixture.Handler.Handle(
+            Command(null, null, null),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value.Latitude);
+        Assert.Null(result.Value.Longitude);
+        Assert.Equal(1, fixture.UnitOfWork.SaveCalls);
+    }
+
+    [Fact]
+    public async Task UpdateUsesConcurrencyTokenChangesCoordinatesAndPreservesOfficeIdentity()
+    {
+        var profile = CreateProfile();
+        var existing = profile.UpsertPrimaryOffice(
+            1, 10, 100, "Original office", null, 30m, 31m).Value;
+        var fixture = CreateFixture(profile);
+        var suppliedRowVersion = new byte[] { 8, 7, 6, 5, 4, 3, 2, 1 };
+
+        var result = await fixture.Handler.Handle(
+            Command(29.975300m, 31.137600m, Convert.ToBase64String(suppliedRowVersion)),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(existing.Id, result.Value.Id);
+        Assert.Equal(29.975300m, existing.Latitude);
+        Assert.Equal(31.137600m, existing.Longitude);
+        Assert.Equal(Convert.ToBase64String(LatestRowVersion), result.Value.RowVersion);
+        Assert.Equal(suppliedRowVersion, fixture.Concurrency.RowVersion);
+        Assert.Same(existing, fixture.Concurrency.Entity);
+        Assert.Null(fixture.Persistence.AddedOffice);
+        Assert.Equal(1, fixture.UnitOfWork.SaveCalls);
+    }
+
+    private static HandlerFixture CreateFixture(LawyerProfile? profile = null)
+    {
+        profile ??= CreateProfile();
+        var unitOfWork = new RecordingUnitOfWork(new ProfileWriteRepository(profile));
+        var persistence = new RecordingAggregatePersistence();
+        var concurrency = new RecordingConcurrencyTokenManager();
+        var hierarchyReader = new StubReadRepository<Area>(type =>
+            type == typeof(LocationHierarchySnapshot)
+                ? new LocationHierarchySnapshot(100, true, 10, true, 1, true)
+                : null);
+        var officeReader = new StubReadRepository<LawyerProfile>(type =>
+            type == typeof(PrimaryOfficeSnapshot)
+                ? CreateOfficeSnapshot(profile, LatestRowVersion)
+                : null);
+        var handler = new UpsertPrimaryOfficeCommandHandler(
+            new FakeCurrentUser(profile.UserAccountId),
+            unitOfWork,
+            hierarchyReader,
+            officeReader,
+            concurrency,
+            persistence,
+            new FixedClock(new DateTime(2026, 8, 18, 9, 0, 0, DateTimeKind.Utc)));
+        return new HandlerFixture(profile, handler, unitOfWork, persistence, concurrency);
+    }
+
+    private static UpsertPrimaryOfficeCommand Command(
+        decimal? latitude,
+        decimal? longitude,
+        string? rowVersion)
+        => new(1, 10, 100, "Updated office", "01012345678", latitude, longitude, rowVersion);
+
+    private static PrimaryOfficeSnapshot CreateOfficeSnapshot(LawyerProfile profile, byte[] rowVersion)
+    {
+        var office = Assert.Single(profile.Offices);
+        return new PrimaryOfficeSnapshot(
+            office.Id,
+            office.GovernorateId,
+            "القاهرة",
+            "Cairo",
+            office.CityId,
+            "مدينة",
+            "City",
+            office.AreaId,
+            "منطقة",
+            "Area",
+            office.DetailedAddress,
+            office.PublicPhoneNumber,
+            office.Latitude,
+            office.Longitude,
+            rowVersion);
+    }
+
+    private static LawyerProfile CreateProfile()
+    {
+        var account = UserAccount.CreateLawyer(
+            "office.handler",
+            "OFFICE.HANDLER",
+            "office.handler@example.test",
+            "OFFICE.HANDLER@EXAMPLE.TEST",
+            "01012345678",
+            "hash",
+            new DateTime(2026, 8, 18, 8, 0, 0, DateTimeKind.Utc)).Value;
+        return LawyerProfile.Create(account, "Office Handler Lawyer").Value;
+    }
+
+    private sealed record HandlerFixture(
+        LawyerProfile Profile,
+        UpsertPrimaryOfficeCommandHandler Handler,
+        RecordingUnitOfWork UnitOfWork,
+        RecordingAggregatePersistence Persistence,
+        RecordingConcurrencyTokenManager Concurrency);
+
+    private sealed class FakeCurrentUser(Guid userId) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public Guid? UserId => userId;
+        public string? UserName => "office.handler";
+        public string? Email => "office.handler@example.test";
+        public IReadOnlyCollection<string> Roles => ["Lawyer"];
+        public IReadOnlyCollection<string> Permissions => [];
+        public string? GetClaimValue(string claimType) => null;
+        public IReadOnlyCollection<string> GetClaimValues(string claimType) => [];
+    }
+
+    private sealed class FixedClock(DateTime utcNow) : IDateTimeProvider
+    {
+        public DateTime UtcNow => utcNow;
+    }
+
+    private sealed class RecordingConcurrencyTokenManager : IConcurrencyTokenManager
+    {
+        public object? Entity { get; private set; }
+        public byte[]? RowVersion { get; private set; }
+
+        public void SetOriginalRowVersion<TEntity>(TEntity entity, byte[] rowVersion) where TEntity : class
+        {
+            Entity = entity;
+            RowVersion = rowVersion;
+        }
+
+        public void MarkPropertyModified<TEntity, TProperty>(
+            TEntity entity,
+            Expression<Func<TEntity, TProperty>> propertyExpression)
+            where TEntity : class
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingAggregatePersistence : ILawyerAggregatePersistence
+    {
+        public LawyerOffice? AddedOffice { get; private set; }
+
+        public void Add<TEntity>(TEntity entity) where TEntity : class
+        {
+            AddedOffice = entity as LawyerOffice;
+        }
+
+        public void AddRange<TEntity>(IEnumerable<TEntity> entities) where TEntity : class
+            => throw new NotSupportedException();
+
+        public void RemoveRange<TEntity>(IEnumerable<TEntity> entities) where TEntity : class
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingUnitOfWork(ProfileWriteRepository repository)
+        : IUnitOfWork<LawyerPlatformWritePersistence>
+    {
+        public int SaveCalls { get; private set; }
+
+        public IWriteRepository<TEntity, LawyerPlatformWritePersistence> WriteRepository<TEntity>()
+            where TEntity : class, BuildingBlock.Domain.Primitive.IAggregateRoot
+            => (IWriteRepository<TEntity, LawyerPlatformWritePersistence>)(object)repository;
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCalls++;
+            return Task.FromResult(1);
+        }
+
+        public Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class ProfileWriteRepository(LawyerProfile profile)
+        : IWriteRepository<LawyerProfile, LawyerPlatformWritePersistence>
+    {
+        public Task<LawyerProfile?> GetByIdAsync<TKey>(TKey id, CancellationToken cancellationToken = default)
+            where TKey : notnull
+            => Task.FromResult<LawyerProfile?>(profile);
+
+        public Task<LawyerProfile?> GetByPropertyAsync(
+            Expression<Func<LawyerProfile, bool>> predicate,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<LawyerProfile?>(profile);
+
+        public Task<LawyerProfile?> FirstOrDefaultAsync(
+            Specification<LawyerProfile> specification,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<LawyerProfile?>(profile);
+
+        public Task AddAsync(LawyerProfile entity, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task AddRangeAsync(IEnumerable<LawyerProfile> entities, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public void Update(LawyerProfile entity) => throw new NotSupportedException();
+        public void UpdateRange(IEnumerable<LawyerProfile> entities) => throw new NotSupportedException();
+        public void Delete(LawyerProfile entity) => throw new NotSupportedException();
+        public void DeleteRange(IEnumerable<LawyerProfile> entities) => throw new NotSupportedException();
+    }
+
+    private sealed class StubReadRepository<TEntity>(Func<Type, object?> projection)
+        : IReadRepository<TEntity, LawyerPlatformReadPersistence>
+        where TEntity : class
+    {
+        public Task<TOut?> FirstOrDefaultAsync<TOut>(
+            Specification<TEntity, TOut> specification,
+            CancellationToken cancellationToken = default)
+        {
+            var value = projection(typeof(TOut));
+            return Task.FromResult(value is null ? default : (TOut)value);
+        }
+
+        public Task<TEntity?> GetByIdAsync<TKey>(TKey id, CancellationToken cancellationToken = default)
+            where TKey : notnull
+            => throw new NotSupportedException();
+        public Task<TEntity?> GetByPropertyAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<bool> AnyAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<long> LongCountAsync(Expression<Func<TEntity, bool>>? predicate = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<TEntity>> ListAsync(Specification<TEntity> specification, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<TEntity?> FirstOrDefaultAsync(Specification<TEntity> specification, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<TOut>> ListAsync<TOut>(Specification<TEntity, TOut> specification, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<(IReadOnlyList<TEntity> Items, long TotalCount)> ListWithLongCountAsync(
+            Specification<TEntity> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<(IReadOnlyList<TOut> Items, long TotalCount)> ListWithLongCountAsync<TOut>(
+            Specification<TEntity, TOut> specification,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Notifications\BilingualEmailNotificationFactoryTests.cs ==================== 
 using BuildingBlock.Application.Time;
 using LawyerPlatform.Application.Notifications.Email;
+using System.Globalization;
 
 namespace LawyerPlatform.UnitTests.Notifications;
 
@@ -54624,20 +56551,20 @@ public sealed class BilingualEmailNotificationFactoryTests
 
     public static TheoryData<EmailNotificationType, EmailNotificationModel, string, string> Templates => new()
     {
-        { EmailNotificationType.LawyerSubmittedForApproval, Lawyer(), "Lawyer Platform | طلب محامٍ جديد للمراجعة | New Lawyer Application", LawyerId.ToString() },
-        { EmailNotificationType.LawyerApproved, Lawyer(), "Lawyer Platform | تم اعتماد حسابك | Your Profile Has Been Approved", "Approved" },
-        { EmailNotificationType.LawyerChangesRequested, Lawyer("مراجعة آمنة"), "Lawyer Platform | مطلوب تعديلات على ملفك | Changes Required", "Changes Requested" },
-        { EmailNotificationType.LawyerRejected, Lawyer("سبب آمن"), "Lawyer Platform | تحديث حالة طلب الاعتماد | Lawyer Application Update", "Rejected" },
-        { EmailNotificationType.LawyerSuspended, Lawyer("سبب آمن"), "Lawyer Platform | تم تعليق حساب المحامي | Lawyer Profile Suspended", "Suspended" },
-        { EmailNotificationType.LawyerReactivated, Lawyer(), "Lawyer Platform | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated", "Welcome back" },
-        { EmailNotificationType.ConsultationRequestCreatedForLawyer, Consultation(), "Lawyer Platform | طلب استشارة جديد | New Consultation Request", "REF-2026-001" },
-        { EmailNotificationType.ConsultationRequestCreatedConfirmation, Consultation(), "Lawyer Platform | تم استلام طلب الاستشارة | Consultation Request Received", "Current status" },
-        { EmailNotificationType.ConsultationUnderReview, Consultation(), "Lawyer Platform | طلب الاستشارة قيد المراجعة | Consultation Under Review", "Under Review" },
-        { EmailNotificationType.ConsultationApproved, Consultation(), "Lawyer Platform | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", "Approved" },
-        { EmailNotificationType.ConsultationRejected, Consultation("سبب آمن"), "Lawyer Platform | تحديث طلب الاستشارة | Consultation Request Update", "Rejected" },
-        { EmailNotificationType.ConsultationCompleted, Consultation(), "Lawyer Platform | تم إكمال طلب الاستشارة | Consultation Completed", "Completed" },
-        { EmailNotificationType.ClientSuspended, Client(), "Lawyer Platform | تم تعليق حسابك | Your Account Has Been Suspended", "Suspended" },
-        { EmailNotificationType.ClientReactivated, Client(), "Lawyer Platform | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" }
+        { EmailNotificationType.LawyerSubmittedForApproval, Lawyer(), "Avokatoo | طلب محامٍ جديد للمراجعة | New Lawyer Application", LawyerId.ToString() },
+        { EmailNotificationType.LawyerApproved, Lawyer(), "Avokatoo | تم اعتماد حسابك | Your Profile Has Been Approved", "Approved" },
+        { EmailNotificationType.LawyerChangesRequested, Lawyer("مراجعة آمنة"), "Avokatoo | مطلوب تعديلات على ملفك | Changes Required", "Changes Requested" },
+        { EmailNotificationType.LawyerRejected, Lawyer("سبب آمن"), "Avokatoo | تحديث حالة طلب الاعتماد | Lawyer Application Update", "Rejected" },
+        { EmailNotificationType.LawyerSuspended, Lawyer("سبب آمن"), "Avokatoo | تم تعليق حساب المحامي | Lawyer Profile Suspended", "Suspended" },
+        { EmailNotificationType.LawyerReactivated, Lawyer(), "Avokatoo | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated", "Welcome back" },
+        { EmailNotificationType.ConsultationRequestCreatedForLawyer, Consultation(), "Avokatoo | طلب استشارة جديد | New Consultation Request", "REF-2026-001" },
+        { EmailNotificationType.ConsultationRequestCreatedConfirmation, Consultation(), "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received", "Current status" },
+        { EmailNotificationType.ConsultationUnderReview, Consultation(), "Avokatoo | طلب الاستشارة قيد المراجعة | Consultation Under Review", "Under Review" },
+        { EmailNotificationType.ConsultationApproved, Consultation(), "Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", "Approved" },
+        { EmailNotificationType.ConsultationRejected, Consultation("سبب آمن"), "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update", "Rejected" },
+        { EmailNotificationType.ConsultationCompleted, Consultation(), "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed", "Completed" },
+        { EmailNotificationType.ClientSuspended, Client(), "Avokatoo | تم تعليق حسابك | Your Account Has Been Suspended", "Suspended" },
+        { EmailNotificationType.ClientReactivated, Client(), "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" }
     };
 
     [Theory]
@@ -54659,6 +56586,9 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains(expectedField, result.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("مرحبًا", result.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("&copy; 2026", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Avokatoo", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Platform", result.Subject, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Platform", result.HtmlBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -54721,6 +56651,61 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("Preferred consultation date:", lawyerBody, StringComparison.Ordinal);
         Assert.Contains("Recorded preferred date:", approvedBody, StringComparison.Ordinal);
         Assert.Contains("2026-09-01 12:30 UTC", approvedBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationApproved_RendersSafeClickableMapLocationOnlyWhenPresent()
+    {
+        const string mapUrl =
+            "https://www.google.com/maps/search/?api=1&query=30.044420,31.235712";
+        var withMap = Consultation() with { LawyerOfficeMapUrl = mapUrl };
+
+        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, withMap);
+        var withoutMap = _factory.Create(EmailNotificationType.ConsultationApproved, Consultation());
+        var created = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            withMap);
+
+        Assert.Contains("موقع مكتب المحامي", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("عرض موقع المكتب على Google Maps", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Office Location", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("View Lawyer Office on Google Maps", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains($"href=\"{mapUrl.Replace("&", "&amp;", StringComparison.Ordinal)}\"", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", withoutMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("موقع مكتب المحامي", withoutMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(mapUrl, created.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", created.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationApproved_DoesNotRenderUntrustedMapUrl()
+    {
+        var model = Consultation() with { LawyerOfficeMapUrl = "javascript:alert('x')" };
+
+        var result = _factory.Create(EmailNotificationType.ConsultationApproved, model);
+
+        Assert.DoesNotContain("javascript:", result.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Lawyer Office Location", result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LawyerOfficeMapUrlBuilder_UsesInvariantCultureAndRequiresBothCoordinates()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+
+            Assert.Equal(
+                "https://www.google.com/maps/search/?api=1&query=30.044420,31.235712",
+                LawyerOfficeMapUrlBuilder.Create(30.044420m, 31.235712m));
+            Assert.Null(LawyerOfficeMapUrlBuilder.Create(30.044420m, null));
+            Assert.Null(LawyerOfficeMapUrlBuilder.Create(null, 31.235712m));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]
@@ -56077,7 +58062,7 @@ public sealed class EgyptianMobileNumberValidationTests
 
     private static ValidationResult ValidateOffice(string? phoneNumber)
         => new UpsertPrimaryOfficeCommandValidator().Validate(
-            new UpsertPrimaryOfficeCommand(1, 1, 1, "Office address", phoneNumber, null));
+            new UpsertPrimaryOfficeCommand(1, 1, 1, "Office address", phoneNumber, null, null, null));
 
     private static void AssertSinglePhoneError(
         ValidationResult result,

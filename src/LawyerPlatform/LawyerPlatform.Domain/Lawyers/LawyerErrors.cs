@@ -15,6 +15,9 @@ public static class LawyerErrors
     public static readonly Error RegistrationNumberAlreadyExists = Error.Conflict("Lawyer.ProfessionalRegistrationNumberAlreadyExists", "The professional registration number is already in use.");
     public static readonly Error OfficeNotFound = Error.NotFound("Lawyer.OfficeNotFound", "The primary office was not found.");
     public static readonly Error OfficeEditNotAllowed = Error.Domain("Lawyer.OfficeEditNotAllowed", "The primary office cannot be edited in the current status.");
+    public static readonly Error InvalidLatitude = Error.Validation("Lawyer.InvalidLatitude", "Latitude must be between -90 and 90.");
+    public static readonly Error InvalidLongitude = Error.Validation("Lawyer.InvalidLongitude", "Longitude must be between -180 and 180.");
+    public static readonly Error InvalidOfficeCoordinates = Error.Validation("Lawyer.InvalidOfficeCoordinates", "Latitude and longitude must both be supplied or both be null.");
     public static readonly Error DuplicateSpecialization = Error.Validation("Lawyer.DuplicateSpecialization", "Duplicate specialization identifiers are not allowed.");
     public static readonly Error DocumentNotFound = Error.NotFound("Lawyer.DocumentNotFound", "Document was not found.");
     public static readonly Error DocumentAccessDenied = Error.NotFound("Lawyer.DocumentNotFound", "Document was not found.");

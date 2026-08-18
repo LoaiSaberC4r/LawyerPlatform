@@ -92,6 +92,8 @@ internal static class OwnProfileMapper
                 snapshot.PrimaryOffice.AreaNameEn,
                 snapshot.PrimaryOffice.DetailedAddress,
                 snapshot.PrimaryOffice.PublicPhoneNumber,
+                snapshot.PrimaryOffice.Latitude,
+                snapshot.PrimaryOffice.Longitude,
                 RowVersionCodec.Encode(snapshot.PrimaryOffice.RowVersion)),
             snapshot.Specializations.Select(item => new LawyerSpecializationResponse(item.Id, item.NameAr, item.NameEn)).ToArray(),
             snapshot.DocumentCount,
@@ -133,6 +135,8 @@ internal sealed class OwnProfileSpecification : Specification<LawyerProfile, Own
                     office.Area.NameEn,
                     office.DetailedAddress,
                     office.PublicPhoneNumber,
+                    office.Latitude,
+                    office.Longitude,
                     office.RowVersion))
                 .FirstOrDefault(),
             profile.Offices.Any(office =>
@@ -186,6 +190,8 @@ internal sealed record OwnOfficeSnapshot(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     byte[] RowVersion);
 
 internal sealed record OwnSpecializationSnapshot(int Id, string NameAr, string NameEn, bool IsActive);
