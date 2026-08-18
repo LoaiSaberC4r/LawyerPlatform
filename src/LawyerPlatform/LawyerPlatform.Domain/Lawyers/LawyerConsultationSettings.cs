@@ -1,10 +1,12 @@
 using BuildingBlock.Domain.EntitiesHelper;
 using BuildingBlock.Domain.Primitive;
 using BuildingBlock.Domain.Results;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Domain.Lawyers;
 
 public sealed record LawyerAvailabilityPeriod(
+    ConsultationType ConsultationType,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime);
@@ -20,20 +22,20 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
 
     private LawyerConsultationSettings(
         Guid lawyerProfileId,
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability,
         DateTime createdOnUtc)
         : base(Guid.NewGuid())
     {
         LawyerProfileId = lawyerProfileId;
-        ConsultationPrice = consultationPrice;
+        OnlineConsultationPrice = onlineConsultationPrice;
         CreatedOnUtc = RequireUtc(createdOnUtc);
         ReplaceAvailabilityInternal(availability);
     }
 
     public Guid LawyerProfileId { get; private set; }
     public LawyerProfile LawyerProfile { get; private set; } = null!;
-    public decimal ConsultationPrice { get; private set; }
+    public decimal OnlineConsultationPrice { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
     public DateTime? ModifiedOnUtc { get; set; }
     public byte[] RowVersion { get; private set; } = [];
@@ -41,42 +43,42 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
 
     public static Result<LawyerConsultationSettings> Create(
         Guid lawyerProfileId,
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability,
         DateTime createdOnUtc)
     {
         ArgumentNullException.ThrowIfNull(availability);
 
-        var validation = Validate(lawyerProfileId, consultationPrice, availability);
+        var validation = Validate(lawyerProfileId, onlineConsultationPrice, availability);
         return validation.IsFailure
             ? Result<LawyerConsultationSettings>.Fail(validation.Errors)
             : Result<LawyerConsultationSettings>.Ok(new LawyerConsultationSettings(
                 lawyerProfileId,
-                consultationPrice,
+                onlineConsultationPrice,
                 availability,
                 createdOnUtc));
     }
 
     public Result Update(
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability)
     {
         ArgumentNullException.ThrowIfNull(availability);
 
-        var validation = Validate(LawyerProfileId, consultationPrice, availability);
+        var validation = Validate(LawyerProfileId, onlineConsultationPrice, availability);
         if (validation.IsFailure)
         {
             return validation;
         }
 
-        ConsultationPrice = consultationPrice;
+        OnlineConsultationPrice = onlineConsultationPrice;
         ReplaceAvailabilityInternal(availability);
         return Result.Ok();
     }
 
     private static Result Validate(
         Guid lawyerProfileId,
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability)
     {
         if (lawyerProfileId == Guid.Empty)
@@ -84,20 +86,25 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
             return Result.Fail(LawyerErrors.NotFound);
         }
 
-        if (consultationPrice <= 0 ||
-            consultationPrice > MaximumConsultationPrice ||
-            decimal.Round(consultationPrice, 2) != consultationPrice)
+        if (onlineConsultationPrice <= 0 ||
+            onlineConsultationPrice > MaximumConsultationPrice ||
+            decimal.Round(onlineConsultationPrice, 2) != onlineConsultationPrice)
         {
             return Result.Fail(LawyerErrors.ConsultationPriceInvalid);
         }
 
-        if (availability.Count > 7 || availability.Any(period =>
-                !Enum.IsDefined(period.DayOfWeek) || period.StartTime >= period.EndTime))
+        if (availability.Any(period =>
+                !Enum.IsDefined(period.ConsultationType) ||
+                !Enum.IsDefined(period.DayOfWeek) ||
+                period.StartTime >= period.EndTime) ||
+            availability.GroupBy(period => period.ConsultationType).Any(group => group.Count() > 7))
         {
             return Result.Fail(LawyerErrors.AvailabilityInvalid);
         }
 
-        if (availability.Select(period => period.DayOfWeek).Distinct().Count() != availability.Count)
+        if (availability
+            .GroupBy(period => new { period.ConsultationType, period.DayOfWeek })
+            .Any(group => group.Count() > 1))
         {
             return Result.Fail(LawyerErrors.DuplicateAvailabilityDay);
         }
@@ -107,16 +114,21 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
 
     private void ReplaceAvailabilityInternal(IReadOnlyCollection<LawyerAvailabilityPeriod> availability)
     {
-        var submittedDays = availability.Select(period => period.DayOfWeek).ToHashSet();
-        _availability.RemoveAll(item => !submittedDays.Contains(item.DayOfWeek));
+        var submittedPeriods = availability
+            .Select(period => (period.ConsultationType, period.DayOfWeek))
+            .ToHashSet();
+        _availability.RemoveAll(item => !submittedPeriods.Contains((item.ConsultationType, item.DayOfWeek)));
 
         foreach (var period in availability)
         {
-            var existing = _availability.SingleOrDefault(item => item.DayOfWeek == period.DayOfWeek);
+            var existing = _availability.SingleOrDefault(item =>
+                item.ConsultationType == period.ConsultationType &&
+                item.DayOfWeek == period.DayOfWeek);
             if (existing is null)
             {
                 _availability.Add(new LawyerAvailability(
                     Id,
+                    period.ConsultationType,
                     period.DayOfWeek,
                     period.StartTime,
                     period.EndTime));

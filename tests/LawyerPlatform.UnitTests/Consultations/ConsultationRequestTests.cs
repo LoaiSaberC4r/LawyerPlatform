@@ -22,10 +22,12 @@ public sealed class ConsultationRequestTests
             "01000000000",
             null,
             LawyerId,
+            ConsultationType.Online,
             null,
             "Description",
             null,
-            NowUtc);
+            NowUtc,
+            500m);
         var empty = ConsultationRequest.Create(
             "CR-EMPTY",
             null,
@@ -33,10 +35,12 @@ public sealed class ConsultationRequestTests
             null,
             null,
             LawyerId,
+            ConsultationType.Online,
             null,
             "Description",
             null,
-            NowUtc);
+            NowUtc,
+            500m);
 
         Assert.Equal(ConsultationRequestStatus.New, guest.Status);
         Assert.Null(guest.ClientProfileId);
@@ -45,6 +49,60 @@ public sealed class ConsultationRequestTests
         Assert.Null(client.GuestFullName);
         Assert.Contains(mixed.Errors, error => error.Code == "ConsultationRequest.InvalidSource");
         Assert.Contains(empty.Errors, error => error.Code == "ConsultationRequest.InvalidSource");
+    }
+
+    [Fact]
+    public void OnlineRequestRequiresAndStoresValidPriceSnapshot()
+    {
+        var request = CreateGuest();
+        var missingPrice = ConsultationRequest.CreateForGuest(
+            "CR-ONLINE-NO-PRICE",
+            "Guest Name",
+            "01000000000",
+            null,
+            LawyerId,
+            ConsultationType.Online,
+            1,
+            "Description",
+            null,
+            NowUtc,
+            null);
+
+        Assert.Equal(ConsultationType.Online, request.ConsultationType);
+        Assert.Equal(500m, request.ConsultationPrice);
+        Assert.Contains(missingPrice.Errors, error =>
+            error.Code == "ConsultationRequest.ConsultationPriceRequired");
+    }
+
+    [Fact]
+    public void OnsiteRequestRequiresNullPriceSnapshot()
+    {
+        var onsite = ConsultationRequest.CreateForClient(
+            "CR-ONSITE",
+            ClientId,
+            LawyerId,
+            ConsultationType.Onsite,
+            1,
+            "Description",
+            null,
+            NowUtc,
+            null);
+        var pricedOnsite = ConsultationRequest.CreateForClient(
+            "CR-ONSITE-PRICED",
+            ClientId,
+            LawyerId,
+            ConsultationType.Onsite,
+            1,
+            "Description",
+            null,
+            NowUtc,
+            500m);
+
+        Assert.True(onsite.IsSuccess);
+        Assert.Equal(ConsultationType.Onsite, onsite.Value.ConsultationType);
+        Assert.Null(onsite.Value.ConsultationPrice);
+        Assert.Contains(pricedOnsite.Errors, error =>
+            error.Code == "ConsultationRequest.OnsitePriceNotAllowed");
     }
 
     [Theory]
@@ -141,20 +199,24 @@ public sealed class ConsultationRequestTests
             "01000000000",
             "guest@example.test",
             LawyerId,
+            ConsultationType.Online,
             1,
             "Description",
             null,
-            NowUtc).Value;
+            NowUtc,
+            500m).Value;
 
     private static ConsultationRequest CreateClient()
         => ConsultationRequest.CreateForClient(
             $"CR-{Guid.NewGuid():N}"[..23],
             ClientId,
             LawyerId,
+            ConsultationType.Online,
             null,
             "Description",
             null,
-            NowUtc).Value;
+            NowUtc,
+            500m).Value;
 
     private static ConsultationRequest CreateInStatus(ConsultationRequestStatus status)
     {

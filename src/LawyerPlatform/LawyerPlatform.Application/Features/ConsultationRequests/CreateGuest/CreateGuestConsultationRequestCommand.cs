@@ -11,6 +11,7 @@ namespace LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
 
 public sealed record CreateGuestConsultationRequestCommand(
     Guid LawyerId,
+    ConsultationType? ConsultationType,
     int? LegalSpecializationId,
     string FullName,
     string PhoneNumber,
@@ -25,6 +26,11 @@ internal sealed class CreateGuestConsultationRequestCommandValidator
     public CreateGuestConsultationRequestCommandValidator()
     {
         RuleFor(command => command.LawyerId).NotEmpty();
+        RuleFor(command => command.ConsultationType)
+            .NotNull()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType")
+            .IsInEnum()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType");
         RuleFor(command => command.LegalSpecializationId)
             .GreaterThan(0)
             .When(command => command.LegalSpecializationId.HasValue);
@@ -50,8 +56,17 @@ internal sealed class CreateGuestConsultationRequestCommandHandler(
     public Task<Result<CreateConsultationRequestResponse>> Handle(
         CreateGuestConsultationRequestCommand command,
         CancellationToken cancellationToken)
-        => service.CreateGuestAsync(
+    {
+        if (command.ConsultationType is not { } consultationType ||
+            !Enum.IsDefined(consultationType))
+        {
+            return Task.FromResult(Result<CreateConsultationRequestResponse>.Fail(
+                ConsultationRequestErrors.InvalidConsultationType));
+        }
+
+        return service.CreateGuestAsync(
             command.LawyerId,
+            consultationType,
             command.LegalSpecializationId,
             command.FullName,
             command.PhoneNumber,
@@ -59,4 +74,5 @@ internal sealed class CreateGuestConsultationRequestCommandHandler(
             command.Description,
             command.PreferredAppointmentOnUtc,
             cancellationToken);
+    }
 }

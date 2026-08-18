@@ -24,6 +24,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string? guestPhoneNumber,
         string? guestEmail,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -37,6 +38,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         GuestPhoneNumber = Normalize(guestPhoneNumber);
         GuestEmail = Normalize(guestEmail);
         LawyerProfileId = lawyerProfileId;
+        ConsultationType = consultationType;
         LegalSpecializationId = legalSpecializationId;
         Description = description.Trim();
         PreferredAppointmentOnUtc = preferredAppointmentOnUtc is { } preferred
@@ -55,6 +57,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
     public string? GuestEmail { get; private set; }
     public Guid LawyerProfileId { get; private set; }
     public LawyerProfile LawyerProfile { get; private set; } = null!;
+    public ConsultationType ConsultationType { get; private set; }
     public int? LegalSpecializationId { get; private set; }
     public LegalSpecialization? LegalSpecialization { get; private set; }
     public string Description { get; private set; } = string.Empty;
@@ -73,6 +76,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string phoneNumber,
         string? email,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -85,6 +89,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             phoneNumber,
             email,
             lawyerProfileId,
+            consultationType,
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
@@ -95,6 +100,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string referenceNumber,
         Guid clientProfileId,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -107,6 +113,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             null,
             null,
             lawyerProfileId,
+            consultationType,
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
@@ -156,6 +163,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string? guestPhoneNumber,
         string? guestEmail,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -171,6 +179,21 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         if (hasClientSource == hasGuestSource || hasClientSource && !guestFieldsAreEmpty)
         {
             return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.InvalidSource);
+        }
+
+        if (!Enum.IsDefined(consultationType))
+        {
+            return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.InvalidConsultationType);
+        }
+
+        if (consultationType == ConsultationType.Online && !consultationPrice.HasValue)
+        {
+            return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.ConsultationPriceRequired);
+        }
+
+        if (consultationType == ConsultationType.Onsite && consultationPrice.HasValue)
+        {
+            return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.OnsitePriceNotAllowed);
         }
 
         if (string.IsNullOrWhiteSpace(referenceNumber) ||
@@ -196,6 +219,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             guestPhoneNumber,
             guestEmail,
             lawyerProfileId,
+            consultationType,
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,

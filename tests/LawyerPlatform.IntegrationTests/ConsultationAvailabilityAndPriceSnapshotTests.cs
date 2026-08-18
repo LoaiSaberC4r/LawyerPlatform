@@ -30,6 +30,7 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         var sundayAtTen = NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(10, 0));
         var sundayAtFourteen = NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(14, 0));
         var sundayAtSeventeen = NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(17, 0));
+        var mondayAtTen = NextBusinessLocalUtc(DayOfWeek.Monday, new TimeOnly(10, 0));
 
         await AssertCreatedAsync(await PostGuestAsync(client, lawyer.ProfileId, sundayAtTen, "01081111111"));
         var oldGuestResponse = await PostGuestAsync(client, lawyer.ProfileId, sundayAtFourteen, "01082222222");
@@ -46,11 +47,28 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         await AssertProblemAsync(
             await PostGuestAsync(client, lawyer.ProfileId, NextBusinessLocalUtc(DayOfWeek.Wednesday, new TimeOnly(14, 0)), "01087777777"),
             "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
+        await AssertProblemAsync(
+            await PostGuestAsync(client, lawyer.ProfileId, mondayAtTen, "01087878787"),
+            "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
+        var onsiteGuest = await AssertCreatedAsync(
+            await PostGuestAsync(client, lawyer.ProfileId, mondayAtTen, "01087979797", "Onsite"));
+        Assert.Equal("Onsite", onsiteGuest.ConsultationType);
+        Assert.Null(onsiteGuest.ConsultationPrice);
+        await AssertProblemAsync(
+            await PostGuestAsync(client, lawyer.ProfileId, sundayAtFourteen, "01087676767", "Onsite"),
+            "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
 
         var clientToken = await RegisterAndLoginClientAsync(client);
         SetToken(client, clientToken);
         var oldClient = await AssertCreatedAsync(
             await PostClientAsync(client, lawyer.ProfileId, sundayAtFourteen));
+        var onsiteClient = await AssertCreatedAsync(
+            await PostClientAsync(client, lawyer.ProfileId, mondayAtTen, "Onsite"));
+        Assert.Equal("Onsite", onsiteClient.ConsultationType);
+        Assert.Null(onsiteClient.ConsultationPrice);
+        await AssertProblemAsync(
+            await PostClientAsync(client, lawyer.ProfileId, sundayAtFourteen, "Onsite"),
+            "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
         await AssertProblemAsync(
             await PostClientAsync(client, lawyer.ProfileId, NextBusinessLocalUtc(DayOfWeek.Wednesday, new TimeOnly(14, 0))),
             "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
@@ -62,10 +80,20 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         var settings = await GetJsonAsync(client, "/api/v1/lawyer/consultation-settings");
         var priceUpdate = await client.PutAsJsonAsync("/api/v1/lawyer/consultation-settings", new
         {
-            consultationPrice = 700m,
-            availability = new[]
+            online = new
             {
-                new { dayOfWeek = "Sunday", startTime = "10:00:00", endTime = "17:00:00" }
+                price = 700m,
+                availability = new[]
+                {
+                    new { dayOfWeek = "Sunday", startTime = "10:00:00", endTime = "17:00:00" }
+                }
+            },
+            onsite = new
+            {
+                availability = new[]
+                {
+                    new { dayOfWeek = "Monday", startTime = "09:00:00", endTime = "15:00:00" }
+                }
             },
             rowVersion = settings.GetProperty("rowVersion").GetString()
         }, TestContext.Current.CancellationToken);
@@ -82,13 +110,21 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         {
             var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
             var prices = await context.ConsultationRequests.AsNoTracking()
-                .Where(request => new[] { oldGuest.Id, oldClient.Id, newGuest.Id, newClient.Id }.Contains(request.Id))
-                .ToDictionaryAsync(request => request.Id, request => request.ConsultationPrice,
+                .Where(request => new[] { oldGuest.Id, oldClient.Id, onsiteGuest.Id, onsiteClient.Id, newGuest.Id, newClient.Id }.Contains(request.Id))
+                .ToDictionaryAsync(request => request.Id, request => new
+                    {
+                        request.ConsultationType,
+                        request.ConsultationPrice
+                    },
                     TestContext.Current.CancellationToken);
-            Assert.Equal(500m, prices[oldGuest.Id]);
-            Assert.Equal(500m, prices[oldClient.Id]);
-            Assert.Equal(700m, prices[newGuest.Id]);
-            Assert.Equal(700m, prices[newClient.Id]);
+            Assert.Equal(500m, prices[oldGuest.Id].ConsultationPrice);
+            Assert.Equal(500m, prices[oldClient.Id].ConsultationPrice);
+            Assert.Equal(ConsultationType.Onsite, prices[onsiteGuest.Id].ConsultationType);
+            Assert.Null(prices[onsiteGuest.Id].ConsultationPrice);
+            Assert.Equal(ConsultationType.Onsite, prices[onsiteClient.Id].ConsultationType);
+            Assert.Null(prices[onsiteClient.Id].ConsultationPrice);
+            Assert.Equal(700m, prices[newGuest.Id].ConsultationPrice);
+            Assert.Equal(700m, prices[newClient.Id].ConsultationPrice);
         }
 
         SetToken(client, null);
@@ -97,11 +133,14 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
             referenceNumber = oldGuest.ReferenceNumber,
             phoneNumber = "01082222222"
         }, TestContext.Current.CancellationToken);
-        Assert.Equal(500m, (await ReadJsonAsync(tracking)).GetProperty("consultationPrice").GetDecimal());
+        var trackingBody = await ReadJsonAsync(tracking);
+        Assert.Equal("Online", trackingBody.GetProperty("consultationType").GetString());
+        Assert.Equal(500m, trackingBody.GetProperty("consultationPrice").GetDecimal());
 
         SetToken(client, clientToken);
-        Assert.Equal(500m, (await GetJsonAsync(client, $"/api/v1/client/consultation-requests/{oldClient.Id}"))
-            .GetProperty("consultationPrice").GetDecimal());
+        var clientDetails = await GetJsonAsync(client, $"/api/v1/client/consultation-requests/{oldClient.Id}");
+        Assert.Equal("Online", clientDetails.GetProperty("consultationType").GetString());
+        Assert.Equal(500m, clientDetails.GetProperty("consultationPrice").GetDecimal());
         SetToken(client, lawyer.Token);
         Assert.Equal(500m, (await GetJsonAsync(client, $"/api/v1/lawyer/consultation-requests/{oldGuest.Id}"))
             .GetProperty("consultationPrice").GetDecimal());
@@ -119,6 +158,16 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         Assert.Equal(700m, publicDetails.GetProperty("consultationPrice").GetDecimal());
         Assert.Equal("Sunday", publicDetails.GetProperty("availability")[0].GetProperty("dayOfWeek").GetString());
         Assert.False(publicDetails.TryGetProperty("rowVersion", out _));
+        var publicSettings = await GetJsonAsync(
+            client,
+            $"/api/v1/public/lawyers/{lawyer.ProfileId}/consultation-settings");
+        Assert.Equal(700m, publicSettings.GetProperty("online").GetProperty("price").GetDecimal());
+        Assert.Equal("Sunday", publicSettings.GetProperty("online").GetProperty("availability")[0]
+            .GetProperty("dayOfWeek").GetString());
+        Assert.Equal("Monday", publicSettings.GetProperty("onsite").GetProperty("availability")[0]
+            .GetProperty("dayOfWeek").GetString());
+        Assert.False(publicSettings.TryGetProperty("rowVersion", out _));
+        Assert.DoesNotContain("lawyerProfileId", publicSettings.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -135,13 +184,14 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
 
         SetToken(client, null);
         var contact = await AssertCreatedAsync(
-            await PostGuestAsync(client, lawyer.ProfileId, null, "01089999999"));
+            await PostGuestAsync(client, lawyer.ProfileId, null, "01089999999", "Onsite"));
         await AssertProblemAsync(
             await PostGuestAsync(
                 client,
                 lawyer.ProfileId,
                 NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(14, 0)),
-                "01080000000"),
+                "01080000000",
+                "Onsite"),
             "ConsultationRequest.LawyerAvailabilityNotConfigured");
 
         await using var scope = factory.Services.CreateAsyncScope();
@@ -207,7 +257,10 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
             context.LawyerConsultationSettings.Add(LawyerConsultationSettings.Create(
                 profileId,
                 500m,
-                [new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0))],
+                [
+                    new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
+                    new LawyerAvailabilityPeriod(ConsultationType.Onsite, DayOfWeek.Monday, new TimeOnly(9, 0), new TimeOnly(15, 0))
+                ],
                 nowUtc).Value);
         }
 
@@ -227,12 +280,14 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         HttpClient client,
         Guid lawyerId,
         DateTime? appointmentOnUtc,
-        string phoneNumber)
+        string phoneNumber,
+        string consultationType = "Online")
     {
         SetToken(client, null);
         return client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType,
             legalSpecializationId = 1,
             fullName = "Availability Guest",
             phoneNumber,
@@ -245,10 +300,12 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
     private static Task<HttpResponseMessage> PostClientAsync(
         HttpClient client,
         Guid lawyerId,
-        DateTime appointmentOnUtc)
+        DateTime appointmentOnUtc,
+        string consultationType = "Online")
         => client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType,
             legalSpecializationId = 1,
             description = "Client availability validation request",
             preferredAppointmentOnUtc = appointmentOnUtc
@@ -260,7 +317,11 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         var body = await ReadJsonAsync(response);
         return new CreatedRequest(
             body.GetProperty("id").GetGuid(),
-            body.GetProperty("referenceNumber").GetString()!);
+            body.GetProperty("referenceNumber").GetString()!,
+            body.GetProperty("consultationType").GetString()!,
+            body.GetProperty("consultationPrice").ValueKind == JsonValueKind.Null
+                ? null
+                : body.GetProperty("consultationPrice").GetDecimal());
     }
 
     private static async Task AssertProblemAsync(HttpResponseMessage response, string code)
@@ -356,5 +417,9 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         });
 
     private sealed record ApprovedLawyer(Guid ProfileId, string Token);
-    private sealed record CreatedRequest(Guid Id, string ReferenceNumber);
+    private sealed record CreatedRequest(
+        Guid Id,
+        string ReferenceNumber,
+        string ConsultationType,
+        decimal? ConsultationPrice);
 }

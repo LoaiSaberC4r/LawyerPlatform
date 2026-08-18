@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using BuildingBlock.Api;
 using LawyerPlatform.Application.Features.PublicLawyers.GetLawyerDetails;
+using LawyerPlatform.Application.Features.PublicLawyers.GetConsultationSettings;
 using LawyerPlatform.Application.Features.PublicLawyers.GetLawyerProfileImage;
 using LawyerPlatform.Application.Features.PublicLawyers.SearchLawyers;
 using MediatR;
@@ -37,6 +38,14 @@ public sealed class PublicLawyersController(ISender sender) : ControllerBase
     [HttpGet("{lawyerId:guid}")]
     public async Task<IActionResult> GetById(Guid lawyerId, CancellationToken cancellationToken)
         => (await sender.Send(new GetPublicLawyerDetailsQuery(lawyerId), cancellationToken)).ToIActionResult(cancellationToken);
+
+    [HttpGet("{lawyerId:guid}/consultation-settings")]
+    public async Task<IActionResult> GetConsultationSettings(
+        Guid lawyerId,
+        CancellationToken cancellationToken)
+        => (await sender.Send(
+            new GetPublicLawyerConsultationSettingsQuery(lawyerId),
+            cancellationToken)).ToIActionResult(cancellationToken);
 
     [HttpGet("{lawyerId:guid}/profile-image")]
     public async Task<IActionResult> GetProfileImage(Guid lawyerId, CancellationToken cancellationToken)

@@ -23,6 +23,7 @@ public sealed record AdminConsultationDetailsResponse(
     ConsultationLawyerSummaryResponse Lawyer,
     ConsultationSpecializationResponse? LegalSpecialization,
     string Description,
+    string ConsultationType,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
     string Status,
@@ -58,7 +59,8 @@ internal sealed record AdminConsultationDetailsSnapshot(
     string RequesterPhoneNumber, string? RequesterEmail,
     Guid LawyerId, string LawyerFullName, string? LawyerProfessionalTitle,
     int? SpecializationId, string? SpecializationNameAr, string? SpecializationNameEn,
-    string Description, DateTime? PreferredAppointmentOnUtc, decimal? ConsultationPrice, ConsultationRequestStatus Status,
+    string Description, ConsultationType ConsultationType, DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice, ConsultationRequestStatus Status,
     string? RejectionReason, DateTime CreatedOnUtc, DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc, IReadOnlyList<AdminConsultationHistorySnapshot> History, byte[] RowVersion)
 {
@@ -69,7 +71,8 @@ internal sealed record AdminConsultationDetailsSnapshot(
         SpecializationId.HasValue
             ? new ConsultationSpecializationResponse(SpecializationId.Value, SpecializationNameAr!, SpecializationNameEn!)
             : null,
-        Description, PreferredAppointmentOnUtc, ConsultationPrice, Status.ToString(), RejectionReason,
+        Description, ConsultationType.ToString(), PreferredAppointmentOnUtc,
+        ConsultationPrice, Status.ToString(), RejectionReason,
         CreatedOnUtc, ModifiedOnUtc, CompletedOnUtc,
         History.Select(item => new ConsultationStatusHistoryResponse(
             item.Id, item.OldStatus.ToString(), item.NewStatus.ToString(),
@@ -94,7 +97,8 @@ internal sealed class AdminConsultationRequestDetailsSpecification
             request.LegalSpecializationId,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
-            request.Description, request.PreferredAppointmentOnUtc, request.ConsultationPrice, request.Status,
+            request.Description, request.ConsultationType, request.PreferredAppointmentOnUtc,
+            request.ConsultationPrice, request.Status,
             request.StatusHistory.Where(history => history.NewStatus == ConsultationRequestStatus.Rejected)
                 .OrderByDescending(history => history.ChangedOnUtc).Select(history => history.Reason).FirstOrDefault(),
             request.CreatedOnUtc, request.ModifiedOnUtc, request.CompletedOnUtc,

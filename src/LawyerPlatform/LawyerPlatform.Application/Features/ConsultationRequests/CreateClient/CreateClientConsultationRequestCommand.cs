@@ -14,6 +14,7 @@ namespace LawyerPlatform.Application.Features.ConsultationRequests.CreateClient;
 
 public sealed record CreateClientConsultationRequestCommand(
     Guid LawyerId,
+    ConsultationType? ConsultationType,
     int? LegalSpecializationId,
     string Description,
     DateTime? PreferredAppointmentOnUtc)
@@ -25,6 +26,11 @@ internal sealed class CreateClientConsultationRequestCommandValidator
     public CreateClientConsultationRequestCommandValidator()
     {
         RuleFor(command => command.LawyerId).NotEmpty();
+        RuleFor(command => command.ConsultationType)
+            .NotNull()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType")
+            .IsInEnum()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType");
         RuleFor(command => command.LegalSpecializationId)
             .GreaterThan(0)
             .When(command => command.LegalSpecializationId.HasValue);
@@ -44,6 +50,13 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
         CreateClientConsultationRequestCommand command,
         CancellationToken cancellationToken)
     {
+        if (command.ConsultationType is not { } consultationType ||
+            !Enum.IsDefined(consultationType))
+        {
+            return Result<CreateConsultationRequestResponse>.Fail(
+                ConsultationRequestErrors.InvalidConsultationType);
+        }
+
         if (currentUser.UserId is not { } userId)
         {
             return Result<CreateConsultationRequestResponse>.Fail(
@@ -62,6 +75,7 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
         return await service.CreateClientAsync(
             client.Id,
             command.LawyerId,
+            consultationType,
             command.LegalSpecializationId,
             client.FullName,
             client.Email,

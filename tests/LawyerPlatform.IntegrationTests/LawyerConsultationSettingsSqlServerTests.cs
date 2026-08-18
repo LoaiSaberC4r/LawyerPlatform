@@ -79,11 +79,11 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             var tokenManager = new ConcurrencyTokenManager(updateContext);
             tokenManager.SetOriginalRowVersion(tracked, rowVersions[^1]);
             Assert.True(tracked.Update(updates[index].Price, updates[index].Availability).IsSuccess);
-            tokenManager.MarkPropertyModified(tracked, item => item.ConsultationPrice);
+            tokenManager.MarkPropertyModified(tracked, item => item.OnlineConsultationPrice);
             updateContext.ChangeTracker.DetectChanges();
 
             Assert.Equal(rowVersions[^1], updateContext.Entry(tracked).Property(item => item.RowVersion).OriginalValue);
-            Assert.True(updateContext.Entry(tracked).Property(item => item.ConsultationPrice).IsModified);
+            Assert.True(updateContext.Entry(tracked).Property(item => item.OnlineConsultationPrice).IsModified);
             if (index == 0)
             {
                 Assert.Equal(
@@ -110,7 +110,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         var staleTokenManager = new ConcurrencyTokenManager(staleContext);
         staleTokenManager.SetOriginalRowVersion(staleCopy, rowVersions[^3]);
         Assert.True(staleCopy.Update(999m, []).IsSuccess);
-        staleTokenManager.MarkPropertyModified(staleCopy, item => item.ConsultationPrice);
+        staleTokenManager.MarkPropertyModified(staleCopy, item => item.OnlineConsultationPrice);
 
         var exception = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
             staleContext.SaveChangesAsync(TestContext.Current.CancellationToken));
@@ -125,7 +125,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             650m,
             (await verificationContext.LawyerConsultationSettings.AsNoTracking()
                 .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken))
-            .ConsultationPrice);
+            .OnlineConsultationPrice);
     }
 
     [Fact]
@@ -146,7 +146,10 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         var settings = LawyerConsultationSettings.Create(
             profile.Id,
             500.25m,
-            [new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))],
+            [
+                new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45)),
+                new LawyerAvailabilityPeriod(ConsultationType.Onsite, DayOfWeek.Sunday, new TimeOnly(9, 0), new TimeOnly(14, 0))
+            ],
             nowUtc).Value;
         var historicalRequest = ConsultationRequest.CreateForGuest(
             $"CR-{suffix[..20]}",
@@ -154,6 +157,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             "01012345678",
             null,
             profile.Id,
+            ConsultationType.Onsite,
             null,
             "Historical nullable price request",
             null,
@@ -172,9 +176,13 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             var stored = await readContext.LawyerConsultationSettings.AsNoTracking()
                 .Include(item => item.Availability)
                 .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
-            Assert.Equal(500.25m, stored.ConsultationPrice);
-            Assert.Equal(new TimeOnly(10, 15), stored.Availability.Single().StartTime);
-            Assert.Equal(new TimeOnly(17, 45), stored.Availability.Single().EndTime);
+            Assert.Equal(500.25m, stored.OnlineConsultationPrice);
+            var online = stored.Availability.Single(item => item.ConsultationType == ConsultationType.Online);
+            var onsite = stored.Availability.Single(item => item.ConsultationType == ConsultationType.Onsite);
+            Assert.Equal(new TimeOnly(10, 15), online.StartTime);
+            Assert.Equal(new TimeOnly(17, 45), online.EndTime);
+            Assert.Equal(new TimeOnly(9, 0), onsite.StartTime);
+            Assert.Equal(new TimeOnly(14, 0), onsite.EndTime);
             Assert.NotEmpty(stored.RowVersion);
             Assert.Null((await readContext.ConsultationRequests.AsNoTracking().SingleAsync(
                 item => item.Id == historicalRequest.Id,
@@ -196,7 +204,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         {
             await Assert.ThrowsAsync<SqlException>(() =>
                 duplicateAvailabilityContext.Database.ExecuteSqlInterpolatedAsync(
-                    $"INSERT INTO LawyerAvailabilities (Id, LawyerConsultationSettingsId, DayOfWeek, StartTime, EndTime) VALUES ({Guid.NewGuid()}, {settings.Id}, {(int)DayOfWeek.Sunday}, {new TimeOnly(12, 0)}, {new TimeOnly(16, 0)})",
+                    $"INSERT INTO LawyerAvailabilities (Id, LawyerConsultationSettingsId, ConsultationType, DayOfWeek, StartTime, EndTime) VALUES ({Guid.NewGuid()}, {settings.Id}, {(int)ConsultationType.Online}, {(int)DayOfWeek.Sunday}, {new TimeOnly(12, 0)}, {new TimeOnly(16, 0)})",
                     TestContext.Current.CancellationToken));
         }
 
@@ -209,10 +217,10 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             .Include(item => item.Availability)
             .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
         Assert.True(firstCopy.Update(700m, [
-            new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
+            new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
         await firstContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         Assert.True(secondCopy.Update(800m, [
-            new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
+            new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
             secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
@@ -227,7 +235,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
     }
 
     private static LawyerAvailabilityPeriod Period(DayOfWeek day, int startHour, int endHour)
-        => new(day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
+        => new(ConsultationType.Online, day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 
     private sealed record SettingsUpdate(
         decimal Price,

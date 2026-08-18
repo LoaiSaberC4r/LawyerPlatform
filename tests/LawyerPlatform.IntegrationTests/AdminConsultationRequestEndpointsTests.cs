@@ -52,6 +52,8 @@ public sealed class AdminConsultationRequestEndpointsTests
             TestContext.Current.CancellationToken);
         Assert.Equal(1, byReference.GetProperty("totalItems").GetInt64());
         Assert.Equal(first.Id, byReference.GetProperty("items")[0].GetProperty("id").GetGuid());
+        Assert.Equal("Onsite", byReference.GetProperty("items")[0].GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, byReference.GetProperty("items")[0].GetProperty("consultationPrice").ValueKind);
 
         var byRequester = await client.GetFromJsonAsync<JsonElement>(
             "/api/v1/admin/consultation-requests?searchText=Admin%20Search%20Guest",
@@ -68,6 +70,8 @@ public sealed class AdminConsultationRequestEndpointsTests
         Assert.Equal("01088111111", details.GetProperty("requesterPhoneNumber").GetString());
         Assert.Equal("Administrative Lawyer", details.GetProperty("lawyer").GetProperty("fullName").GetString());
         Assert.Equal("Admin request details", details.GetProperty("description").GetString());
+        Assert.Equal("Onsite", details.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, details.GetProperty("consultationPrice").ValueKind);
         Assert.Equal(0, details.GetProperty("statusHistory").GetArrayLength());
 
         var originalRowVersion = details.GetProperty("rowVersion").GetString()!;
@@ -222,6 +226,7 @@ public sealed class AdminConsultationRequestEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             fullName,
             phoneNumber,

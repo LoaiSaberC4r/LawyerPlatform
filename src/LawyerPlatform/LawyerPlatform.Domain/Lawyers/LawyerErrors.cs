@@ -31,13 +31,13 @@ public static class LawyerErrors
     public static readonly Error ConcurrencyConflict = Error.Conflict("Lawyer.ConcurrencyConflict", "The lawyer record was changed by another request.");
     public static readonly Error ConsultationPriceInvalid = Error.Validation(
         "Lawyer.ConsultationPriceInvalid",
-        "Consultation price must be greater than zero and contain at most two decimal places.");
+        "Online consultation price must be greater than zero, within the supported maximum, and contain at most two decimal places.");
     public static readonly Error AvailabilityInvalid = Error.Validation(
         "Lawyer.AvailabilityInvalid",
         "Availability must contain at most one valid working period per day and start before end.");
     public static readonly Error DuplicateAvailabilityDay = Error.Validation(
         "Lawyer.DuplicateAvailabilityDay",
-        "Availability cannot contain duplicate days.");
+        "Availability cannot contain duplicate days within the same consultation type.");
     public static readonly Error ConsultationSettingsInvalidRowVersion = Error.Validation(
         "Lawyer.ConsultationSettingsInvalidRowVersion",
         "Consultation settings RowVersion must be a valid Base64 value.");

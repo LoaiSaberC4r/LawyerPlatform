@@ -127,7 +127,7 @@ public sealed class LawyerConsultationSettingsEndpointsTests
         Assert.NotEqual(firstRowVersion, secondRowVersion);
         Assert.Equal(
             ["Sunday", "Wednesday"],
-            updated.GetProperty("availability").EnumerateArray()
+            updated.GetProperty("online").GetProperty("availability").EnumerateArray()
                 .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
 
         var nextResponse = await PutSettingsAsync(client, 550m, secondRowVersion,
@@ -203,10 +203,10 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             await updateResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var updated = await ReadJsonAsync(updateResponse);
 
-        Assert.Equal(expectedPrice, updated.GetProperty("consultationPrice").GetDecimal());
+        Assert.Equal(expectedPrice, updated.GetProperty("online").GetProperty("price").GetDecimal());
         Assert.Equal(
             replacement.Select(item => item.DayOfWeek).OrderBy(DayIndex).ToArray(),
-            updated.GetProperty("availability").EnumerateArray()
+            updated.GetProperty("online").GetProperty("availability").EnumerateArray()
                 .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
         Assert.NotEqual(firstRowVersion, updated.GetProperty("rowVersion").GetString());
     }
@@ -226,8 +226,9 @@ public sealed class LawyerConsultationSettingsEndpointsTests
 
         SetToken(client, lawyerToken);
         var unconfigured = await GetJsonAsync(client, "/api/v1/lawyer/consultation-settings");
-        Assert.Equal(JsonValueKind.Null, unconfigured.GetProperty("consultationPrice").ValueKind);
-        Assert.Empty(unconfigured.GetProperty("availability").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, unconfigured.GetProperty("online").GetProperty("price").ValueKind);
+        Assert.Empty(unconfigured.GetProperty("online").GetProperty("availability").EnumerateArray());
+        Assert.Empty(unconfigured.GetProperty("onsite").GetProperty("availability").EnumerateArray());
         Assert.Equal(JsonValueKind.Null, unconfigured.GetProperty("rowVersion").ValueKind);
 
         var createdResponse = await PutSettingsAsync(client, 500m, null,
@@ -237,10 +238,10 @@ public sealed class LawyerConsultationSettingsEndpointsTests
         Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
         var created = await ReadJsonAsync(createdResponse);
         var firstRowVersion = created.GetProperty("rowVersion").GetString()!;
-        Assert.Equal(500m, created.GetProperty("consultationPrice").GetDecimal());
+        Assert.Equal(500m, created.GetProperty("online").GetProperty("price").GetDecimal());
         Assert.Equal(
             ["Sunday", "Monday", "Tuesday"],
-            created.GetProperty("availability").EnumerateArray()
+            created.GetProperty("online").GetProperty("availability").EnumerateArray()
                 .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
 
         var duplicate = await PutSettingsAsync(client, 500m, firstRowVersion,
@@ -267,7 +268,7 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             await updatedResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var updated = await ReadJsonAsync(updatedResponse);
         Assert.NotEqual(firstRowVersion, updated.GetProperty("rowVersion").GetString());
-        Assert.Equal(["Sunday", "Monday"], updated.GetProperty("availability").EnumerateArray()
+        Assert.Equal(["Sunday", "Monday"], updated.GetProperty("online").GetProperty("availability").EnumerateArray()
             .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
 
         var stale = await PutSettingsAsync(client, 900m, firstRowVersion,
@@ -282,20 +283,91 @@ public sealed class LawyerConsultationSettingsEndpointsTests
                 TestContext.Current.CancellationToken)).StatusCode);
     }
 
+    [Fact]
+    public async Task LawyerCanRoundTripAndReplaceIndependentOnlineAndOnsiteAvailability()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.types",
+            "01077777777"));
+
+        var createdResponse = await PutGroupedSettingsAsync(
+            client,
+            500m,
+            null,
+            [new AvailabilityJson("Sunday", "10:00:00", "17:00:00")],
+            [new AvailabilityJson("Sunday", "09:00:00", "14:00:00")]);
+        Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
+        var created = await ReadJsonAsync(createdResponse);
+        Assert.Equal(500m, created.GetProperty("online").GetProperty("price").GetDecimal());
+        Assert.Equal("10:00:00", created.GetProperty("online").GetProperty("availability")[0]
+            .GetProperty("startTime").GetString());
+        Assert.Equal("09:00:00", created.GetProperty("onsite").GetProperty("availability")[0]
+            .GetProperty("startTime").GetString());
+
+        var updatedResponse = await PutGroupedSettingsAsync(
+            client,
+            700m,
+            created.GetProperty("rowVersion").GetString(),
+            [
+                new AvailabilityJson("Sunday", "08:00:00", "18:00:00"),
+                new AvailabilityJson("Friday", "10:00:00", "16:00:00")
+            ],
+            [
+                new AvailabilityJson("Sunday", "08:30:00", "15:00:00"),
+                new AvailabilityJson("Thursday", "09:00:00", "14:00:00")
+            ]);
+        Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
+        var updated = await ReadJsonAsync(updatedResponse);
+        Assert.NotEqual(
+            created.GetProperty("rowVersion").GetString(),
+            updated.GetProperty("rowVersion").GetString());
+        Assert.Equal(
+            ["Sunday", "Friday"],
+            updated.GetProperty("online").GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+        Assert.Equal(
+            ["Sunday", "Thursday"],
+            updated.GetProperty("onsite").GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+    }
+
     private static Task<HttpResponseMessage> PutSettingsAsync(
         HttpClient client,
         decimal price,
         string? rowVersion,
         params AvailabilityJson[] availability)
+        => PutGroupedSettingsAsync(client, price, rowVersion, availability, []);
+
+    private static Task<HttpResponseMessage> PutGroupedSettingsAsync(
+        HttpClient client,
+        decimal price,
+        string? rowVersion,
+        AvailabilityJson[] onlineAvailability,
+        AvailabilityJson[] onsiteAvailability)
         => client.PutAsJsonAsync("/api/v1/lawyer/consultation-settings", new
         {
-            consultationPrice = price,
-            availability = availability.Select(item => new
+            online = new
             {
-                dayOfWeek = item.DayOfWeek,
-                startTime = item.StartTime,
-                endTime = item.EndTime
-            }),
+                price,
+                availability = onlineAvailability.Select(item => new
+                {
+                    dayOfWeek = item.DayOfWeek,
+                    startTime = item.StartTime,
+                    endTime = item.EndTime
+                })
+            },
+            onsite = new
+            {
+                availability = onsiteAvailability.Select(item => new
+                {
+                    dayOfWeek = item.DayOfWeek,
+                    startTime = item.StartTime,
+                    endTime = item.EndTime
+                })
+            },
             rowVersion
         }, TestContext.Current.CancellationToken);
 

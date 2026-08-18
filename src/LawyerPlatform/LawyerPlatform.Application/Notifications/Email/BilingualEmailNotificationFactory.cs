@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using BuildingBlock.Application.Time;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Application.Notifications.Email;
 
@@ -184,12 +185,17 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         english.Add(Lines("Please sign in to your account to review the request details and take the appropriate action."));
         english.Add(Lines("To protect the requester's privacy, consultation descriptions and sensitive information are not included in email notifications."));
         english.Add(Lines("Regards,", "Avokatoo"));
-        return Build("Avokatoo | طلب استشارة جديد | New Consultation Request", arabic, english);
+        return BuildConsultation(
+            "Avokatoo | طلب استشارة جديد | New Consultation Request",
+            model,
+            arabic,
+            english);
     }
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
@@ -214,8 +220,9 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             ]);
 
     private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | طلب الاستشارة قيد المراجعة | Consultation Under Review",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("هناك تحديث جديد على طلب الاستشارة الخاص بك."),
@@ -263,12 +270,17 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         arabic.Add(Lines("مع تحيات،", "Avokatoo"));
         english.Add(Lines("You can continue tracking your request through Avokatoo."));
         english.Add(Lines("Regards,", "Avokatoo"));
-        return Build("Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
+        return BuildConsultation(
+            "Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved",
+            model,
+            arabic,
+            english);
     }
 
     private EmailNotificationContent ConsultationRejected(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("نود إبلاغك بوجود تحديث على طلب الاستشارة الخاص بك."),
@@ -291,8 +303,9 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             ]);
 
     private EmailNotificationContent ConsultationCompleted(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("تم تحديث طلب الاستشارة الخاص بك إلى مكتمل."),
@@ -372,6 +385,32 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             .Append(clock.UtcNow.Year)
             .Append("</footer></div></body></html>");
         return new EmailNotificationContent(subject, body.ToString());
+    }
+
+    private EmailNotificationContent BuildConsultation(
+        string subject,
+        ConsultationEmailNotificationModel model,
+        IEnumerable<string> arabicParagraphs,
+        IEnumerable<string> englishParagraphs)
+    {
+        var arabic = arabicParagraphs.ToList();
+        var english = englishParagraphs.ToList();
+        var insertAt = Math.Min(1, arabic.Count);
+        arabic.Insert(insertAt, Lines(
+            "نوع الاستشارة:",
+            model.ConsultationType == ConsultationType.Online ? "عن بُعد" : "في المكتب"));
+        english.Insert(Math.Min(1, english.Count), Lines(
+            "Consultation type:",
+            model.ConsultationType.ToString()));
+
+        if (model.ConsultationType == ConsultationType.Online && model.ConsultationPrice.HasValue)
+        {
+            var price = model.ConsultationPrice.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            arabic.Insert(Math.Min(2, arabic.Count), Lines("سعر الاستشارة:", $"{price} EGP"));
+            english.Insert(Math.Min(2, english.Count), Lines("Consultation price:", $"{price} EGP"));
+        }
+
+        return Build(subject, arabic, english);
     }
 
     private static string Lines(params string[] values)

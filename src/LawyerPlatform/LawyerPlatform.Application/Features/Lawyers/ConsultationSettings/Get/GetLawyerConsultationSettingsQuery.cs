@@ -38,6 +38,9 @@ internal sealed class GetLawyerConsultationSettingsQueryHandler(
             new LawyerConsultationSettingsByLawyerIdSpecification(lawyer.Id),
             cancellationToken);
         return Result<LawyerConsultationSettingsResponse>.Ok(
-            settings?.ToResponse() ?? new LawyerConsultationSettingsResponse(null, [], null));
+            settings?.ToResponse() ?? new LawyerConsultationSettingsResponse(
+                new LawyerOnlineConsultationSettingsResponse(null, []),
+                new LawyerOnsiteConsultationSettingsResponse([]),
+                null));
     }
 }

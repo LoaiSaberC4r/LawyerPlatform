@@ -5,6 +5,7 @@ using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
 using LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
 using LawyerPlatform.Application.Features.ConsultationRequests.Guest.TrackRequest;
 using LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.UnitTests.Validation;
 
@@ -140,6 +141,7 @@ public sealed class EgyptianMobileNumberValidationTests
         => new CreateGuestConsultationRequestCommandValidator().Validate(
             new CreateGuestConsultationRequestCommand(
                 Guid.NewGuid(),
+                ConsultationType.Online,
                 1,
                 "Guest One",
                 phoneNumber,

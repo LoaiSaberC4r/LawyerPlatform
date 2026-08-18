@@ -1,5 +1,6 @@
 using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Features.Lawyers.Common;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Common;
@@ -9,9 +10,16 @@ public sealed record LawyerAvailabilityResponse(
     TimeOnly StartTime,
     TimeOnly EndTime);
 
+public sealed record LawyerOnlineConsultationSettingsResponse(
+    decimal? Price,
+    IReadOnlyList<LawyerAvailabilityResponse> Availability);
+
+public sealed record LawyerOnsiteConsultationSettingsResponse(
+    IReadOnlyList<LawyerAvailabilityResponse> Availability);
+
 public sealed record LawyerConsultationSettingsResponse(
-    decimal? ConsultationPrice,
-    IReadOnlyList<LawyerAvailabilityResponse> Availability,
+    LawyerOnlineConsultationSettingsResponse Online,
+    LawyerOnsiteConsultationSettingsResponse Onsite,
     string? RowVersion);
 
 internal sealed record CurrentLawyerIdSnapshot(Guid Id);
@@ -28,26 +36,34 @@ internal sealed class CurrentLawyerIdSpecification
 }
 
 internal sealed record LawyerAvailabilitySnapshot(
+    ConsultationType ConsultationType,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime);
 
 internal sealed record LawyerConsultationSettingsSnapshot(
-    decimal ConsultationPrice,
+    decimal OnlineConsultationPrice,
     IReadOnlyList<LawyerAvailabilitySnapshot> Availability,
     byte[] RowVersion)
 {
     public LawyerConsultationSettingsResponse ToResponse()
         => new(
-            ConsultationPrice,
-            Availability
+            new LawyerOnlineConsultationSettingsResponse(
+                OnlineConsultationPrice,
+                MapAvailability(ConsultationType.Online)),
+            new LawyerOnsiteConsultationSettingsResponse(
+                MapAvailability(ConsultationType.Onsite)),
+            RowVersionCodec.Encode(RowVersion));
+
+    private LawyerAvailabilityResponse[] MapAvailability(ConsultationType consultationType)
+        => Availability
+                .Where(item => item.ConsultationType == consultationType)
                 .OrderBy(item => item.DayOfWeek)
                 .Select(item => new LawyerAvailabilityResponse(
                     item.DayOfWeek.ToString(),
                     item.StartTime,
                     item.EndTime))
-                .ToArray(),
-            RowVersionCodec.Encode(RowVersion));
+                .ToArray();
 }
 
 internal sealed class LawyerConsultationSettingsByLawyerIdSpecification
@@ -58,10 +74,11 @@ internal sealed class LawyerConsultationSettingsByLawyerIdSpecification
         AddCriteria(settings => settings.LawyerProfileId == lawyerProfileId);
         UseNoTracking();
         Select(settings => new LawyerConsultationSettingsSnapshot(
-            settings.ConsultationPrice,
+            settings.OnlineConsultationPrice,
             settings.Availability
                 .OrderBy(availability => availability.DayOfWeek)
                 .Select(availability => new LawyerAvailabilitySnapshot(
+                    availability.ConsultationType,
                     availability.DayOfWeek,
                     availability.StartTime,
                     availability.EndTime))
@@ -85,13 +102,22 @@ internal static class LawyerConsultationSettingsMapper
 {
     public static LawyerConsultationSettingsResponse Map(LawyerConsultationSettings settings)
         => new(
-            settings.ConsultationPrice,
-            settings.Availability
+            new LawyerOnlineConsultationSettingsResponse(
+                settings.OnlineConsultationPrice,
+                MapAvailability(settings, ConsultationType.Online)),
+            new LawyerOnsiteConsultationSettingsResponse(
+                MapAvailability(settings, ConsultationType.Onsite)),
+            RowVersionCodec.Encode(settings.RowVersion));
+
+    private static LawyerAvailabilityResponse[] MapAvailability(
+        LawyerConsultationSettings settings,
+        ConsultationType consultationType)
+        => settings.Availability
+                .Where(item => item.ConsultationType == consultationType)
                 .OrderBy(item => item.DayOfWeek)
                 .Select(item => new LawyerAvailabilityResponse(
                     item.DayOfWeek.ToString(),
                     item.StartTime,
                     item.EndTime))
-                .ToArray(),
-            RowVersionCodec.Encode(settings.RowVersion));
+                .ToArray();
 }
