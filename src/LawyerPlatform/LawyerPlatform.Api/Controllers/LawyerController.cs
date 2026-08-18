@@ -96,6 +96,8 @@ public sealed class LawyerController(ISender sender) : ControllerBase
             request.AreaId,
             request.DetailedAddress,
             request.PublicPhoneNumber,
+            request.Latitude,
+            request.Longitude,
             request.RowVersion), cancellationToken)).ToIActionResult(cancellationToken);
 
     [HttpPut("specializations")]

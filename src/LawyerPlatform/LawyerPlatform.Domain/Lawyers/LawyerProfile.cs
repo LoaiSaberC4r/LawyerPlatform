@@ -132,7 +132,9 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
         int cityId,
         int areaId,
         string detailedAddress,
-        string? publicPhoneNumber)
+        string? publicPhoneNumber,
+        decimal? latitude = null,
+        decimal? longitude = null)
     {
         var editCheck = EnsureEditable(LawyerErrors.OfficeEditNotAllowed);
         if (editCheck.IsFailure)
@@ -147,15 +149,30 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
             return Result<LawyerOffice>.Fail(Error.Validation("Lawyer.InvalidOffice", "The primary office is invalid."));
         }
 
+        if (latitude.HasValue != longitude.HasValue)
+        {
+            return Result<LawyerOffice>.Fail(LawyerErrors.InvalidOfficeCoordinates);
+        }
+
+        if (latitude is < -90m or > 90m)
+        {
+            return Result<LawyerOffice>.Fail(LawyerErrors.InvalidLatitude);
+        }
+
+        if (longitude is < -180m or > 180m)
+        {
+            return Result<LawyerOffice>.Fail(LawyerErrors.InvalidLongitude);
+        }
+
         var office = _offices.SingleOrDefault(item => item.IsPrimary && item.IsActive);
         if (office is null)
         {
-            office = new LawyerOffice(Id, governorateId, cityId, areaId, detailedAddress, publicPhoneNumber);
+            office = new LawyerOffice(Id, governorateId, cityId, areaId, detailedAddress, publicPhoneNumber, latitude, longitude);
             _offices.Add(office);
         }
         else
         {
-            office.Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber);
+            office.Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber, latitude, longitude);
         }
 
         return Result<LawyerOffice>.Ok(office);

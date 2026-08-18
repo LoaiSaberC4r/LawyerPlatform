@@ -21,6 +21,8 @@ public sealed record UpsertPrimaryOfficeCommand(
     int AreaId,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string? RowVersion)
     : ICommand<LawyerOfficeResponse>, ITransactionalCommand<LawyerPlatformWritePersistence>;
 
@@ -36,6 +38,18 @@ internal sealed class UpsertPrimaryOfficeCommandValidator : AbstractValidator<Up
             .EgyptianMobileNumber()
             .WithErrorCode("Lawyer.InvalidPublicPhoneNumber")
             .When(command => !string.IsNullOrWhiteSpace(command.PublicPhoneNumber));
+        RuleFor(command => command.Latitude)
+            .InclusiveBetween(-90m, 90m)
+            .WithErrorCode("Lawyer.InvalidLatitude")
+            .When(command => command.Latitude.HasValue);
+        RuleFor(command => command.Longitude)
+            .InclusiveBetween(-180m, 180m)
+            .WithErrorCode("Lawyer.InvalidLongitude")
+            .When(command => command.Longitude.HasValue);
+        RuleFor(command => command.Latitude)
+            .Must((command, _) => command.Latitude.HasValue == command.Longitude.HasValue)
+            .WithErrorCode("Lawyer.InvalidOfficeCoordinates")
+            .WithMessage("Latitude and longitude must both be supplied or both be null.");
         RuleFor(command => command.RowVersion)
             .Must(value => value is null || RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode("Lawyer.InvalidRowVersion");
@@ -99,7 +113,9 @@ internal sealed class UpsertPrimaryOfficeCommandHandler(
             command.CityId,
             command.AreaId,
             command.DetailedAddress,
-            command.PublicPhoneNumber);
+            command.PublicPhoneNumber,
+            command.Latitude,
+            command.Longitude);
         if (upsert.IsFailure)
         {
             return Result<LawyerOfficeResponse>.Fail(upsert.Errors);
@@ -141,6 +157,8 @@ internal sealed class OwnPrimaryOfficeSpecification : Specification<LawyerProfil
                 office.Area.NameEn,
                 office.DetailedAddress,
                 office.PublicPhoneNumber,
+                office.Latitude,
+                office.Longitude,
                 office.RowVersion))
             .Single());
     }
@@ -159,6 +177,8 @@ internal sealed record PrimaryOfficeSnapshot(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     byte[] RowVersion)
 {
     public LawyerOfficeResponse ToResponse() => new(
@@ -174,5 +194,7 @@ internal sealed record PrimaryOfficeSnapshot(
         AreaNameEn,
         DetailedAddress,
         PublicPhoneNumber,
+        Latitude,
+        Longitude,
         RowVersionCodec.Encode(RowVersion));
 }

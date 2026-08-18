@@ -7,6 +7,8 @@ namespace LawyerPlatform.Application.Notifications.Email;
 internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
     : IEmailNotificationFactory
 {
+    private const string GoogleMapsUrlPrefix = "https://www.google.com/maps/search/?api=1&query=";
+
     public EmailNotificationContent Create(
         EmailNotificationType notificationType,
         EmailNotificationModel model)
@@ -35,14 +37,14 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
 
     private EmailNotificationContent LawyerSubmitted(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | طلب محامٍ جديد للمراجعة | New Lawyer Application",
+            "Avokatoo | طلب محامٍ جديد للمراجعة | New Lawyer Application",
             [
                 Lines("مرحبًا،"),
                 Lines($"قام المحامي {model.LawyerName} بإرسال ملفه للمراجعة والاعتماد."),
                 Lines("حالة الملف الحالية:", "قيد المراجعة"),
                 Lines("يرجى الدخول إلى لوحة الإدارة لمراجعة بيانات المحامي والمستندات واتخاذ الإجراء المناسب."),
                 Lines("رقم المحامي:", model.LawyerId.ToString()),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines("Hello,"),
@@ -50,111 +52,111 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("Current status:", "Pending Approval"),
                 Lines("Please sign in to the administration dashboard to review the lawyer's information and documents and take the appropriate action."),
                 Lines("Lawyer ID:", model.LawyerId.ToString()),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerApproved(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم اعتماد حسابك | Your Profile Has Been Approved",
+            "Avokatoo | تم اعتماد حسابك | Your Profile Has Been Approved",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("يسعدنا إبلاغك بأنه تم اعتماد ملفك بنجاح على Lawyer Platform."),
+                Lines("يسعدنا إبلاغك بأنه تم اعتماد ملفك بنجاح على Avokatoo."),
                 Lines("حالة الملف:", "معتمد"),
                 Lines("أصبح ملفك مؤهلًا للظهور للعملاء على المنصة وفقًا لقواعد ظهور المحامين المعتمدة."),
                 Lines("يمكنك الآن تسجيل الدخول ومتابعة حسابك وطلبات الاستشارات الواردة إليك."),
-                Lines("مع تمنياتنا لك بالتوفيق،", "Lawyer Platform")
+                Lines("مع تمنياتنا لك بالتوفيق،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("We are pleased to inform you that your profile has been successfully approved on Lawyer Platform."),
+                Lines("We are pleased to inform you that your profile has been successfully approved on Avokatoo."),
                 Lines("Profile status:", "Approved"),
                 Lines("Your profile is now eligible to appear to clients on the platform, subject to the platform's lawyer visibility rules."),
                 Lines("You can now sign in and manage your account and incoming consultation requests."),
-                Lines("Best regards,", "Lawyer Platform")
+                Lines("Best regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerChangesRequested(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | مطلوب تعديلات على ملفك | Changes Required",
+            "Avokatoo | مطلوب تعديلات على ملفك | Changes Required",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("تمت مراجعة ملفك بواسطة إدارة Lawyer Platform، وهناك بعض التعديلات المطلوبة قبل استكمال عملية الاعتماد."),
+                Lines("تمت مراجعة ملفك بواسطة إدارة Avokatoo، وهناك بعض التعديلات المطلوبة قبل استكمال عملية الاعتماد."),
                 Lines("حالة الملف:", "مطلوب تعديلات"),
                 Lines("ملاحظات المراجعة:", RequireReason(model)),
                 Lines("يرجى تسجيل الدخول إلى حسابك، مراجعة الملاحظات، وتحديث البيانات المطلوبة."),
                 Lines("بعد الانتهاء يمكنك إرسال الملف للمراجعة مرة أخرى."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("Your profile has been reviewed by the Lawyer Platform administration, and some changes are required before the approval process can continue."),
+                Lines("Your profile has been reviewed by the Avokatoo administration, and some changes are required before the approval process can continue."),
                 Lines("Profile status:", "Changes Requested"),
                 Lines("Review notes:", RequireReason(model)),
                 Lines("Please sign in to your account, review the notes, and update the required information."),
                 Lines("Once completed, you can submit your profile for review again."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerRejected(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تحديث حالة طلب الاعتماد | Lawyer Application Update",
+            "Avokatoo | تحديث حالة طلب الاعتماد | Lawyer Application Update",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
                 Lines("نود إبلاغك بأنه بعد مراجعة ملفك، لم تتم الموافقة على طلب الاعتماد."),
                 Lines("حالة الملف:", "مرفوض"),
                 Lines("سبب الرفض:", RequireReason(model)),
-                Lines("إذا كنت بحاجة إلى معلومات إضافية، يرجى التواصل مع إدارة Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("إذا كنت بحاجة إلى معلومات إضافية، يرجى التواصل مع إدارة Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
                 Lines("We would like to inform you that after reviewing your profile, your approval application has not been approved."),
                 Lines("Profile status:", "Rejected"),
                 Lines("Reason:", RequireReason(model)),
-                Lines("If you require additional information, please contact the Lawyer Platform administration."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("If you require additional information, please contact the Avokatoo administration."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerSuspended(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم تعليق حساب المحامي | Lawyer Profile Suspended",
+            "Avokatoo | تم تعليق حساب المحامي | Lawyer Profile Suspended",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("نود إبلاغك بأنه تم تعليق ملفك على Lawyer Platform."),
+                Lines("نود إبلاغك بأنه تم تعليق ملفك على Avokatoo."),
                 Lines("حالة الملف:", "معلق"),
                 Lines("سبب التعليق:", RequireReason(model)),
                 Lines("أثناء فترة التعليق لن يكون ملفك متاحًا للعملاء على المنصة."),
-                Lines("للاستفسار عن القرار أو الخطوات المطلوبة، يرجى التواصل مع إدارة Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("للاستفسار عن القرار أو الخطوات المطلوبة، يرجى التواصل مع إدارة Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("We would like to inform you that your lawyer profile on Lawyer Platform has been suspended."),
+                Lines("We would like to inform you that your lawyer profile on Avokatoo has been suspended."),
                 Lines("Profile status:", "Suspended"),
                 Lines("Reason:", RequireReason(model)),
                 Lines("While your profile is suspended, it will not be available to clients on the platform."),
-                Lines("For further information about this decision or any required actions, please contact the Lawyer Platform administration."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("For further information about this decision or any required actions, please contact the Avokatoo administration."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent LawyerReactivated(LawyerEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated",
+            "Avokatoo | تمت إعادة تفعيل ملفك | Your Lawyer Profile Has Been Reactivated",
             [
                 Lines($"مرحبًا {model.LawyerName}،"),
-                Lines("تمت إعادة تفعيل ملفك بنجاح على Lawyer Platform."),
+                Lines("تمت إعادة تفعيل ملفك بنجاح على Avokatoo."),
                 Lines("حالة الملف:", "معتمد"),
                 Lines("أصبح ملفك مؤهلًا مرة أخرى للظهور للعملاء واستقبال طلبات الاستشارات وفقًا لقواعد المنصة."),
                 Lines("مرحبًا بعودتك."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.LawyerName},"),
-                Lines("Your lawyer profile has been successfully reactivated on Lawyer Platform."),
+                Lines("Your lawyer profile has been successfully reactivated on Avokatoo."),
                 Lines("Profile status:", "Approved"),
                 Lines("Your profile is once again eligible to appear to clients and receive consultation requests according to the platform rules."),
                 Lines("Welcome back."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationCreatedForLawyer(ConsultationEmailNotificationModel model)
@@ -162,7 +164,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         var arabic = new List<string>
         {
             Lines($"مرحبًا {model.LawyerName}،"),
-            Lines("لديك طلب استشارة قانونية جديد على Lawyer Platform."),
+            Lines("لديك طلب استشارة قانونية جديد على Avokatoo."),
             Lines("رقم الطلب:", model.ReferenceNumber),
             Lines("التخصص:", model.SpecializationNameAr),
             Lines("مقدم الطلب:", model.RequesterName)
@@ -170,7 +172,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         var english = new List<string>
         {
             Lines($"Hello {model.LawyerName},"),
-            Lines("You have received a new legal consultation request on Lawyer Platform."),
+            Lines("You have received a new legal consultation request on Avokatoo."),
             Lines("Request Reference:", model.ReferenceNumber),
             Lines("Specialization:", model.SpecializationNameEn),
             Lines("Requested by:", model.RequesterName)
@@ -178,42 +180,42 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         AddPreferredAppointment(model, arabic, english, "التاريخ المفضل للاستشارة:", "Preferred consultation date:");
         arabic.Add(Lines("يرجى تسجيل الدخول إلى حسابك لمراجعة تفاصيل الطلب واتخاذ الإجراء المناسب."));
         arabic.Add(Lines("للحفاظ على خصوصية مقدم الطلب، لا يتم إرسال وصف الاستشارة أو البيانات الحساسة عبر البريد الإلكتروني."));
-        arabic.Add(Lines("مع تحيات،", "Lawyer Platform"));
+        arabic.Add(Lines("مع تحيات،", "Avokatoo"));
         english.Add(Lines("Please sign in to your account to review the request details and take the appropriate action."));
         english.Add(Lines("To protect the requester's privacy, consultation descriptions and sensitive information are not included in email notifications."));
-        english.Add(Lines("Regards,", "Lawyer Platform"));
-        return Build("Lawyer Platform | طلب استشارة جديد | New Consultation Request", arabic, english);
+        english.Add(Lines("Regards,", "Avokatoo"));
+        return Build("Avokatoo | طلب استشارة جديد | New Consultation Request", arabic, english);
     }
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم استلام طلب الاستشارة | Consultation Request Received",
+            "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
-                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Lawyer Platform."),
+                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
                 Lines("رقم متابعة الطلب:", model.ReferenceNumber),
                 Lines("المحامي:", model.LawyerName),
                 Lines("التخصص:", model.SpecializationNameAr),
                 Lines("حالة الطلب:", "جديد"),
                 Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."),
                 Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
-                Lines("Your consultation request has been successfully received by Lawyer Platform."),
+                Lines("Your consultation request has been successfully received by Avokatoo."),
                 Lines("Request Reference:", model.ReferenceNumber),
                 Lines("Lawyer:", model.LawyerName),
                 Lines("Specialization:", model.SpecializationNameEn),
                 Lines("Current status:", "New"),
                 Lines("Please keep your request reference as you may need it to track your request."),
                 Lines("We will notify you when important updates are made to your request status."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | طلب الاستشارة قيد المراجعة | Consultation Under Review",
+            "Avokatoo | طلب الاستشارة قيد المراجعة | Consultation Under Review",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("هناك تحديث جديد على طلب الاستشارة الخاص بك."),
@@ -222,7 +224,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("الحالة الجديدة:", "قيد المراجعة"),
                 Lines("بدأ المحامي في مراجعة طلب الاستشارة الخاص بك."),
                 Lines("سنقوم بإبلاغك عند حدوث تحديث جديد على الطلب."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
@@ -232,7 +234,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("New status:", "Under Review"),
                 Lines("The lawyer has started reviewing your consultation request."),
                 Lines("We will notify you when there is another important update."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationApproved(ConsultationEmailNotificationModel model)
@@ -256,16 +258,17 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             Lines("Status:", "Approved")
         };
         AddPreferredAppointment(model, arabic, english, "التاريخ المفضل المسجل:", "Recorded preferred date:");
-        arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Lawyer Platform."));
-        arabic.Add(Lines("مع تحيات،", "Lawyer Platform"));
-        english.Add(Lines("You can continue tracking your request through Lawyer Platform."));
-        english.Add(Lines("Regards,", "Lawyer Platform"));
-        return Build("Lawyer Platform | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
+        AddLawyerOfficeMapLocation(model, arabic, english);
+        arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Avokatoo."));
+        arabic.Add(Lines("مع تحيات،", "Avokatoo"));
+        english.Add(Lines("You can continue tracking your request through Avokatoo."));
+        english.Add(Lines("Regards,", "Avokatoo"));
+        return Build("Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
     }
 
     private EmailNotificationContent ConsultationRejected(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تحديث طلب الاستشارة | Consultation Request Update",
+            "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("نود إبلاغك بوجود تحديث على طلب الاستشارة الخاص بك."),
@@ -273,8 +276,8 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("المحامي:", model.LawyerName),
                 Lines("الحالة:", "مرفوض"),
                 Lines("سبب الرفض:", RequireReason(model)),
-                Lines("يمكنك الرجوع إلى Lawyer Platform للبحث عن محامٍ آخر مناسب إذا رغبت."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("يمكنك الرجوع إلى Avokatoo للبحث عن محامٍ آخر مناسب إذا رغبت."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
@@ -283,21 +286,21 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("Lawyer:", model.LawyerName),
                 Lines("Status:", "Rejected"),
                 Lines("Reason:", RequireReason(model)),
-                Lines("You may return to Lawyer Platform to find another suitable lawyer if needed."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("You may return to Avokatoo to find another suitable lawyer if needed."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ConsultationCompleted(ConsultationEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم إكمال طلب الاستشارة | Consultation Completed",
+            "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed",
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("تم تحديث طلب الاستشارة الخاص بك إلى مكتمل."),
                 Lines("رقم الطلب:", model.ReferenceNumber),
                 Lines("المحامي:", model.LawyerName),
                 Lines("الحالة:", "مكتمل"),
-                Lines("نشكرك على استخدام Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("نشكرك على استخدام Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.RequesterName},"),
@@ -305,48 +308,48 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
                 Lines("Request Reference:", model.ReferenceNumber),
                 Lines("Lawyer:", model.LawyerName),
                 Lines("Status:", "Completed"),
-                Lines("Thank you for using Lawyer Platform."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Thank you for using Avokatoo."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ClientSuspended(ClientEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تم تعليق حسابك | Your Account Has Been Suspended",
+            "Avokatoo | تم تعليق حسابك | Your Account Has Been Suspended",
             [
                 Lines($"مرحبًا {model.ClientName}،"),
-                Lines("نود إبلاغك بأنه تم تعليق حسابك على Lawyer Platform."),
+                Lines("نود إبلاغك بأنه تم تعليق حسابك على Avokatoo."),
                 Lines("حالة الحساب:", "معلق"),
                 Lines("لن تتمكن من استخدام الوظائف التي تتطلب حسابًا نشطًا أثناء فترة التعليق."),
-                Lines("للحصول على معلومات إضافية، يرجى التواصل مع إدارة Lawyer Platform."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("للحصول على معلومات إضافية، يرجى التواصل مع إدارة Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.ClientName},"),
-                Lines("We would like to inform you that your Lawyer Platform account has been suspended."),
+                Lines("We would like to inform you that your Avokatoo account has been suspended."),
                 Lines("Account status:", "Suspended"),
                 Lines("While your account is suspended, features requiring an active account will not be available."),
-                Lines("For additional information, please contact the Lawyer Platform administration."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("For additional information, please contact the Avokatoo administration."),
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent ClientReactivated(ClientEmailNotificationModel model)
         => Build(
-            "Lawyer Platform | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated",
+            "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated",
             [
                 Lines($"مرحبًا {model.ClientName}،"),
-                Lines("تمت إعادة تفعيل حسابك بنجاح على Lawyer Platform."),
+                Lines("تمت إعادة تفعيل حسابك بنجاح على Avokatoo."),
                 Lines("حالة الحساب:", "نشط"),
                 Lines("يمكنك الآن تسجيل الدخول واستخدام خدمات حسابك مرة أخرى."),
                 Lines("مرحبًا بعودتك."),
-                Lines("مع تحيات،", "Lawyer Platform")
+                Lines("مع تحيات،", "Avokatoo")
             ],
             [
                 Lines($"Hello {model.ClientName},"),
-                Lines("Your Lawyer Platform account has been successfully reactivated."),
+                Lines("Your Avokatoo account has been successfully reactivated."),
                 Lines("Account status:", "Active"),
                 Lines("You can now sign in and use your account services again."),
                 Lines("Welcome back."),
-                Lines("Regards,", "Lawyer Platform")
+                Lines("Regards,", "Avokatoo")
             ]);
 
     private EmailNotificationContent Build(
@@ -358,14 +361,14 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         body.Append("<!doctype html><html><head><meta charset=\"utf-8\"></head>")
             .Append("<body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.6\">")
             .Append("<div style=\"max-width:680px;margin:0 auto\">")
-            .Append("<h2 style=\"margin-bottom:24px\">Lawyer Platform</h2>")
+            .Append("<h2 style=\"margin-bottom:24px\">Avokatoo</h2>")
             .Append("<section dir=\"rtl\" lang=\"ar\" style=\"text-align:right\">")
             .AppendJoin(string.Empty, arabicParagraphs)
             .Append("</section><hr style=\"border:0;border-top:1px solid #bbb;margin:28px 0\">")
             .Append("<section dir=\"ltr\" lang=\"en\" style=\"text-align:left\">")
             .AppendJoin(string.Empty, englishParagraphs)
             .Append("</section><footer style=\"margin-top:28px;color:#666\">")
-            .Append("Lawyer Platform<br>&copy; ")
+            .Append("Avokatoo<br>&copy; ")
             .Append(clock.UtcNow.Year)
             .Append("</footer></div></body></html>");
         return new EmailNotificationContent(subject, body.ToString());
@@ -391,6 +394,44 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         arabic.Add(Lines(arabicLabel, formatted));
         english.Add(Lines(englishLabel, formatted));
     }
+
+    private static void AddLawyerOfficeMapLocation(
+        ConsultationEmailNotificationModel model,
+        List<string> arabic,
+        List<string> english)
+    {
+        var safeUrl = GetSafeGoogleMapsUrl(model.LawyerOfficeMapUrl);
+        if (safeUrl is null)
+        {
+            return;
+        }
+
+        arabic.Add(Lines(
+            "موقع مكتب المحامي",
+            "يمكنك الوصول إلى موقع مكتب المحامي من خلال Google Maps:"));
+        arabic.Add(Link(safeUrl, "عرض موقع المكتب على Google Maps"));
+        english.Add(Lines(
+            "Lawyer Office Location",
+            "You can view the lawyer's office location on Google Maps:"));
+        english.Add(Link(safeUrl, "View Lawyer Office on Google Maps"));
+    }
+
+    private static string? GetSafeGoogleMapsUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !value.StartsWith(GoogleMapsUrlPrefix, StringComparison.Ordinal) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.Equals(uri.Host, "www.google.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    private static string Link(string url, string text)
+        => $"<p><a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(text)}</a></p>";
 
     private static LawyerEmailNotificationModel RequireLawyer(EmailNotificationModel model)
         => model as LawyerEmailNotificationModel

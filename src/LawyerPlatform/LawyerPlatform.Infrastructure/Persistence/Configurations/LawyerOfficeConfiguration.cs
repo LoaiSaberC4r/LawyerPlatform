@@ -13,6 +13,8 @@ internal sealed class LawyerOfficeConfiguration : IWriteEntityConfiguration<Lawy
         builder.HasKey(office => office.Id);
         builder.Property(office => office.DetailedAddress).HasMaxLength(500).IsRequired();
         builder.Property(office => office.PublicPhoneNumber).HasMaxLength(30);
+        builder.Property(office => office.Latitude).HasPrecision(9, 6);
+        builder.Property(office => office.Longitude).HasPrecision(9, 6);
         builder.Property(office => office.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasOne(office => office.LawyerProfile).WithMany(profile => profile.Offices)
             .HasForeignKey(office => office.LawyerProfileId).OnDelete(DeleteBehavior.Restrict);

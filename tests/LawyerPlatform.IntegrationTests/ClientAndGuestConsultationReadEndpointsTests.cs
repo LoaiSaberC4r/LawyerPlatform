@@ -35,6 +35,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        AssertNoPrivateLocationFields(list.GetRawText());
         Assert.Equal(1, list.GetProperty("totalItems").GetInt64());
         Assert.Equal(firstRequest.Id, list.GetProperty("items")[0].GetProperty("id").GetGuid());
 
@@ -43,6 +44,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             TestContext.Current.CancellationToken);
         Assert.Equal("First private description", ownDetails.GetProperty("description").GetString());
         Assert.Equal("Private client rejection", ownDetails.GetProperty("rejectionReason").GetString());
+        AssertNoPrivateLocationFields(ownDetails.GetRawText());
 
         await RegisterAndLoginClientAsync(
             client,
@@ -58,6 +60,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             "/api/v1/client/consultation-requests",
             TestContext.Current.CancellationToken);
         Assert.Equal(0, secondList.GetProperty("totalItems").GetInt64());
+        AssertNoPrivateLocationFields(secondList.GetRawText());
 
         client.DefaultRequestHeaders.Authorization = null;
         var guest = await CreateGuestRequestAsync(client, lawyerId);
@@ -77,6 +80,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         Assert.DoesNotContain("Never expose this guest reason", trackedText, StringComparison.Ordinal);
         Assert.DoesNotContain("01087333333", trackedText, StringComparison.Ordinal);
         Assert.DoesNotContain(firstClient.ToString(), trackedText, StringComparison.OrdinalIgnoreCase);
+        AssertNoPrivateLocationFields(trackedText);
 
         var wrongReference = await client.PostAsJsonAsync(
             "/api/v1/public/consultation-requests/track",
@@ -169,6 +173,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        AssertNoPrivateLocationFields(body.GetRawText());
         return (body.GetProperty("id").GetGuid(), body.GetProperty("referenceNumber").GetString()!);
     }
 
@@ -187,6 +192,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        AssertNoPrivateLocationFields(body.GetRawText());
         return (body.GetProperty("id").GetGuid(), body.GetProperty("referenceNumber").GetString()!);
     }
 
@@ -246,5 +252,13 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
             body.GetProperty("errors").EnumerateArray(),
             error => error.GetProperty("code").GetString() ==
                      "ConsultationRequest.ReferenceVerificationFailed");
+    }
+
+    private static void AssertNoPrivateLocationFields(string json)
+    {
+        Assert.DoesNotContain("latitude", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("longitude", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lawyerOfficeMapUrl", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("googleMapsUrl", json, StringComparison.OrdinalIgnoreCase);
     }
 }

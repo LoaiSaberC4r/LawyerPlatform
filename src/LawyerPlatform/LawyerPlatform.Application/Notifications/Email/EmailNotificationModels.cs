@@ -14,7 +14,8 @@ public sealed record ConsultationEmailNotificationModel(
     string SpecializationNameAr,
     string SpecializationNameEn,
     DateTime? PreferredAppointmentOnUtc = null,
-    string? Reason = null) : EmailNotificationModel;
+    string? Reason = null,
+    string? LawyerOfficeMapUrl = null) : EmailNotificationModel;
 
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;

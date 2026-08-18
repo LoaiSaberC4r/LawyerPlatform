@@ -79,9 +79,43 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             areaId = OfficeArea.Id,
             detailedAddress = "Court Street, Building 5",
             publicPhoneNumber = "01012345678",
+            latitude = 30.044420m,
+            longitude = 31.235712m,
             rowVersion = (string?)null
         }, cancellationToken);
         Assert.True(office.StatusCode == HttpStatusCode.OK, await office.Content.ReadAsStringAsync(cancellationToken));
+        var officeBody = await office.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.Equal(30.044420m, officeBody.GetProperty("latitude").GetDecimal());
+        Assert.Equal(31.235712m, officeBody.GetProperty("longitude").GetDecimal());
+
+        foreach (var invalidCoordinates in new[]
+                 {
+                     new { Latitude = (decimal?)90.000001m, Longitude = (decimal?)31.235712m },
+                     new { Latitude = (decimal?)30.044420m, Longitude = (decimal?)180.000001m },
+                     new { Latitude = (decimal?)30.044420m, Longitude = (decimal?)null }
+                 })
+        {
+            var invalidOffice = await client.PutAsJsonAsync("/api/v1/lawyer/office", new
+            {
+                governorateId = OfficeCity.GovernorateId,
+                cityId = OfficeCity.Id,
+                areaId = OfficeArea.Id,
+                detailedAddress = "Invalid coordinate update",
+                publicPhoneNumber = "01012345678",
+                latitude = invalidCoordinates.Latitude,
+                longitude = invalidCoordinates.Longitude,
+                rowVersion = officeBody.GetProperty("rowVersion").GetString()
+            }, cancellationToken);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidOffice.StatusCode);
+        }
+
+        var ownProfileWithCoordinates = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
+        Assert.Equal(
+            30.044420m,
+            ownProfileWithCoordinates.GetProperty("primaryOffice").GetProperty("latitude").GetDecimal());
+        Assert.Equal(
+            31.235712m,
+            ownProfileWithCoordinates.GetProperty("primaryOffice").GetProperty("longitude").GetDecimal());
 
         var staleUpdate = await client.PutAsJsonAsync("/api/v1/lawyer/profile", new
         {
@@ -182,6 +216,8 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain("storageKey", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("passwordHash", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("fileBytes", adminJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(30.044420m, adminDetails.GetProperty("primaryOffice").GetProperty("latitude").GetDecimal());
+        Assert.Equal(31.235712m, adminDetails.GetProperty("primaryOffice").GetProperty("longitude").GetDecimal());
         Assert.True(adminDetails.GetProperty("statusHistory").GetArrayLength() >= 4);
 
         client.DefaultRequestHeaders.Authorization = null;
@@ -192,6 +228,18 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain("storageKey", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("professionalRegistrationNumber", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("userAccountId", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("latitude", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("longitude", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lawyerOfficeMapUrl", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("googleMapsUrl", publicJson, StringComparison.OrdinalIgnoreCase);
+        var publicListJson = (await GetJsonAsync(
+            client,
+            "/api/v1/public/lawyers?pageNumber=1&pageSize=100",
+            cancellationToken)).GetRawText();
+        Assert.DoesNotContain("latitude", publicListJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("longitude", publicListJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lawyerOfficeMapUrl", publicListJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("googleMapsUrl", publicListJson, StringComparison.OrdinalIgnoreCase);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", lawyerToken);
         using (var protectedDeleteRequest = new HttpRequestMessage(

@@ -22,6 +22,8 @@ public sealed record LawyerOfficeResponse(
     string AreaNameEn,
     string DetailedAddress,
     string? PublicPhoneNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string RowVersion);
 
 public sealed record LawyerSpecializationResponse(

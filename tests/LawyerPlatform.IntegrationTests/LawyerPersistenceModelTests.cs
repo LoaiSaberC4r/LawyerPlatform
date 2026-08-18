@@ -51,6 +51,14 @@ public sealed class LawyerPersistenceModelTests(CustomWebApplicationFactory fact
         Assert.True(profile.FindProperty(nameof(LawyerProfile.RowVersion))!.IsConcurrencyToken);
         Assert.True(office.FindProperty(nameof(LawyerOffice.RowVersion))!.IsConcurrencyToken);
         Assert.True(document.FindProperty(nameof(LawyerDocument.RowVersion))!.IsConcurrencyToken);
+        var latitude = office.FindProperty(nameof(LawyerOffice.Latitude))!;
+        var longitude = office.FindProperty(nameof(LawyerOffice.Longitude))!;
+        Assert.True(latitude.IsNullable);
+        Assert.Equal(9, latitude.GetPrecision());
+        Assert.Equal(6, latitude.GetScale());
+        Assert.True(longitude.IsNullable);
+        Assert.Equal(9, longitude.GetPrecision());
+        Assert.Equal(6, longitude.GetScale());
         Assert.All(
             new[] { office, document, specialization, history }.SelectMany(entity => entity.GetForeignKeys()),
             foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));

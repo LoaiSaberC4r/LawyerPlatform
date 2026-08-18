@@ -24,8 +24,10 @@ public sealed class LawyerConsultationRequestEndpointsTests
         {
             BaseAddress = new Uri("https://localhost")
         });
-        var firstLawyer = await RegisterApproveAndLoginLawyerAsync(factory, client, "request.lawyer.one", "01086111111");
-        var secondLawyer = await RegisterApproveAndLoginLawyerAsync(factory, client, "request.lawyer.two", "01086222222");
+        var firstLawyer = await RegisterApproveAndLoginLawyerAsync(
+            factory, client, "request.lawyer.one", "01086111111", includeCoordinates: true);
+        var secondLawyer = await RegisterApproveAndLoginLawyerAsync(
+            factory, client, "request.lawyer.two", "01086222222", includeCoordinates: false);
 
         client.DefaultRequestHeaders.Authorization = null;
         var firstGuest = await CreateGuestRequestAsync(client, firstLawyer.ProfileId, "First Guest", "01011112222");
@@ -158,6 +160,14 @@ public sealed class LawyerConsultationRequestEndpointsTests
             (await client.GetAsync(
                 $"/api/v1/lawyer/consultation-requests/{firstGuest.Id}",
                 TestContext.Current.CancellationToken)).StatusCode);
+        var otherLawyerDetails = await GetDetailsAsync(client, otherLawyerRequest.Id);
+        var otherApproved = await UpdateStatusAsync(
+            client,
+            otherLawyerRequest.Id,
+            ConsultationRequestStatus.Approved,
+            null,
+            otherLawyerDetails.GetProperty("rowVersion").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, otherApproved.StatusCode);
 
         await using var notificationScope = factory.Services.CreateAsyncScope();
         var notificationContext = notificationScope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
@@ -179,13 +189,40 @@ public sealed class LawyerConsultationRequestEndpointsTests
         Assert.Equal(4, completedTypes.Count);
         Assert.Contains(EmailNotificationType.ConsultationApproved, completedTypes);
         Assert.Contains(EmailNotificationType.ConsultationCompleted, completedTypes);
+        var approvedWithMap = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == completedCandidate.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
+        var approvedWithoutMap = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == otherLawyerRequest.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
+        var createdConfirmation = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == completedCandidate.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
+            approvedWithMap.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains("Lawyer Office Location", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", approvedWithoutMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", approvedWithoutMap.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("google.com/maps", createdConfirmation.HtmlBody, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<(Guid ProfileId, Guid UserAccountId, string Token)> RegisterApproveAndLoginLawyerAsync(
         CustomWebApplicationFactory factory,
         HttpClient client,
         string userName,
-        string phoneNumber)
+        string phoneNumber,
+        bool includeCoordinates)
     {
         const string password = "LawyerPassword1";
         client.DefaultRequestHeaders.Authorization = null;
@@ -211,7 +248,14 @@ public sealed class LawyerConsultationRequestEndpointsTests
             profile.UpdateProfessionalProfile(profile.FullName, "Attorney", "Biography", 7, $"REG-{userName}");
             var area = EgyptLocationSeedCatalog.Areas[0];
             var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
-            profile.UpsertPrimaryOffice(city.GovernorateId, city.Id, area.Id, "Complete address", null);
+            profile.UpsertPrimaryOffice(
+                city.GovernorateId,
+                city.Id,
+                area.Id,
+                "Complete address",
+                null,
+                includeCoordinates ? 30.044420m : null,
+                includeCoordinates ? 31.235712m : null);
             profile.ReplaceSpecializations([1]);
             profile.AddDocument("IdentityVerification", $"docs/{userName}-id.pdf", "id.pdf", "application/pdf", 100, nowUtc);
             profile.AddDocument("ProfessionalMembership", $"docs/{userName}-member.pdf", "member.pdf", "application/pdf", 100, nowUtc);

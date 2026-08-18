@@ -159,6 +159,16 @@ public sealed class AdminConsultationRequestEndpointsTests
         Assert.Equal(4, secondTypes.Count);
         Assert.Contains(EmailNotificationType.ConsultationApproved, secondTypes);
         Assert.Contains(EmailNotificationType.ConsultationCompleted, secondTypes);
+        var adminApprovedMessage = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == second.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
+            adminApprovedMessage.HtmlBody,
+            StringComparison.Ordinal);
 
         var processor = new EmailOutboxProcessor(
             notificationContext,
@@ -277,7 +287,14 @@ public sealed class AdminConsultationRequestEndpointsTests
         profile.UpdateProfessionalProfile("Administrative Lawyer", "Attorney", "Biography", 9, "REG-ADMIN");
         var area = EgyptLocationSeedCatalog.Areas[0];
         var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
-        profile.UpsertPrimaryOffice(city.GovernorateId, city.Id, area.Id, "Complete address", null);
+        profile.UpsertPrimaryOffice(
+            city.GovernorateId,
+            city.Id,
+            area.Id,
+            "Complete address",
+            null,
+            30.044420m,
+            31.235712m);
         profile.ReplaceSpecializations([1]);
         profile.AddDocument("IdentityVerification", "docs/admin-id.pdf", "id.pdf", "application/pdf", 100, nowUtc);
         profile.AddDocument("ProfessionalMembership", "docs/admin-member.pdf", "member.pdf", "application/pdf", 100, nowUtc);

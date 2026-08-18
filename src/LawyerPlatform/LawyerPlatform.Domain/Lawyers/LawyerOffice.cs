@@ -16,11 +16,13 @@ public sealed class LawyerOffice : Entity<Guid>, IAuditableEntity
         int cityId,
         int areaId,
         string detailedAddress,
-        string? publicPhoneNumber)
+        string? publicPhoneNumber,
+        decimal? latitude,
+        decimal? longitude)
         : base(Guid.NewGuid())
     {
         LawyerProfileId = lawyerProfileId;
-        Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber);
+        Update(governorateId, cityId, areaId, detailedAddress, publicPhoneNumber, latitude, longitude);
         IsPrimary = true;
         IsActive = true;
     }
@@ -35,6 +37,8 @@ public sealed class LawyerOffice : Entity<Guid>, IAuditableEntity
     public Area Area { get; private set; } = null!;
     public string DetailedAddress { get; private set; } = string.Empty;
     public string? PublicPhoneNumber { get; private set; }
+    public decimal? Latitude { get; private set; }
+    public decimal? Longitude { get; private set; }
     public bool IsPrimary { get; private set; }
     public bool IsActive { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
@@ -46,13 +50,17 @@ public sealed class LawyerOffice : Entity<Guid>, IAuditableEntity
         int cityId,
         int areaId,
         string detailedAddress,
-        string? publicPhoneNumber)
+        string? publicPhoneNumber,
+        decimal? latitude,
+        decimal? longitude)
     {
         GovernorateId = governorateId;
         CityId = cityId;
         AreaId = areaId;
         DetailedAddress = detailedAddress.Trim();
         PublicPhoneNumber = string.IsNullOrWhiteSpace(publicPhoneNumber) ? null : publicPhoneNumber.Trim();
+        Latitude = latitude;
+        Longitude = longitude;
         IsPrimary = true;
         IsActive = true;
     }

@@ -1,5 +1,6 @@
 using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Specification;
+using System.Globalization;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Consultations;
@@ -155,7 +156,12 @@ internal sealed class EmailNotificationCoordinator(
             snapshot.SpecializationNameAr,
             snapshot.SpecializationNameEn,
             snapshot.PreferredAppointmentOnUtc,
-            history.Reason);
+            history.Reason,
+            notificationType == EmailNotificationType.ConsultationApproved
+                ? LawyerOfficeMapUrlBuilder.Create(
+                    snapshot.PrimaryOffice?.Latitude,
+                    snapshot.PrimaryOffice?.Longitude)
+                : null);
         await QueueAsync(
             notificationType.Value,
             request.Id,
@@ -239,7 +245,12 @@ internal sealed record ConsultationEmailSnapshot(
     string LawyerName,
     string SpecializationNameAr,
     string SpecializationNameEn,
-    DateTime? PreferredAppointmentOnUtc);
+    DateTime? PreferredAppointmentOnUtc,
+    ConsultationOfficeCoordinatesSnapshot? PrimaryOffice);
+
+internal sealed record ConsultationOfficeCoordinatesSnapshot(
+    decimal? Latitude,
+    decimal? Longitude);
 
 internal sealed class ConsultationEmailSnapshotByIdSpecification
     : Specification<ConsultationRequest, ConsultationEmailSnapshot>
@@ -258,6 +269,29 @@ internal sealed class ConsultationEmailSnapshotByIdSpecification
             request.LawyerProfile.FullName,
             request.LegalSpecialization == null ? "غير محدد" : request.LegalSpecialization.NameAr,
             request.LegalSpecialization == null ? "Not specified" : request.LegalSpecialization.NameEn,
-            request.PreferredAppointmentOnUtc));
+            request.PreferredAppointmentOnUtc,
+            request.LawyerProfile.Offices
+                .Where(office => office.IsPrimary && office.IsActive)
+                .Select(office => new ConsultationOfficeCoordinatesSnapshot(
+                    office.Latitude,
+                    office.Longitude))
+                .FirstOrDefault()));
+    }
+}
+
+internal static class LawyerOfficeMapUrlBuilder
+{
+    public static string? Create(decimal? latitude, decimal? longitude)
+    {
+        if (latitude is null || longitude is null)
+        {
+            return null;
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "https://www.google.com/maps/search/?api=1&query={0:0.000000},{1:0.000000}",
+            latitude.Value,
+            longitude.Value);
     }
 }

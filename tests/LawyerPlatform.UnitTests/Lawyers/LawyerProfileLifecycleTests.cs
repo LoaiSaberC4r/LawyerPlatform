@@ -9,6 +9,20 @@ public sealed class LawyerProfileLifecycleTests
     private static readonly Guid LawyerUserId = Guid.Parse("11111111-1111-1111-1111-111111111112");
     private static readonly Guid AdminUserId = Guid.Parse("11111111-1111-1111-1111-111111111113");
 
+    public static TheoryData<decimal, decimal, string> InvalidCoordinateRanges => new()
+    {
+        { -90.000001m, 31.235712m, "Lawyer.InvalidLatitude" },
+        { 90.000001m, 31.235712m, "Lawyer.InvalidLatitude" },
+        { 30.044420m, -180.000001m, "Lawyer.InvalidLongitude" },
+        { 30.044420m, 180.000001m, "Lawyer.InvalidLongitude" }
+    };
+
+    public static TheoryData<decimal?, decimal?> PartialCoordinatePairs => new()
+    {
+        { 30.044420m, null },
+        { null, 31.235712m }
+    };
+
     [Fact]
     public void NewLawyerProfile_StartsDraftAndEmpty()
     {
@@ -137,6 +151,66 @@ public sealed class LawyerProfileLifecycleTests
         Assert.False(profile.CanAppearPublicly(true, false));
         profile.IsDeleted = true;
         Assert.False(profile.CanAppearPublicly(true, true));
+    }
+
+    [Fact]
+    public void PrimaryOffice_AcceptsValidAndNullCoordinatePairs()
+    {
+        var withCoordinates = CreateProfile();
+        var coordinatesResult = withCoordinates.UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, 30.044420m, 31.235712m);
+        var withoutCoordinates = CreateProfile();
+        var nullResult = withoutCoordinates.UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, null, null);
+
+        Assert.True(coordinatesResult.IsSuccess);
+        Assert.Equal(30.044420m, coordinatesResult.Value.Latitude);
+        Assert.Equal(31.235712m, coordinatesResult.Value.Longitude);
+        Assert.True(nullResult.IsSuccess);
+        Assert.Null(nullResult.Value.Latitude);
+        Assert.Null(nullResult.Value.Longitude);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCoordinateRanges))]
+    public void PrimaryOffice_RejectsCoordinatesOutsideValidRanges(
+        decimal latitude,
+        decimal longitude,
+        string expectedErrorCode)
+    {
+        var result = CreateProfile().UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, latitude, longitude);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == expectedErrorCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(PartialCoordinatePairs))]
+    public void PrimaryOffice_RejectsPartialCoordinatePairs(decimal? latitude, decimal? longitude)
+    {
+        var result = CreateProfile().UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, latitude, longitude);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "Lawyer.InvalidOfficeCoordinates");
+    }
+
+    [Fact]
+    public void PrimaryOffice_UpdateChangesCoordinatesAndPreservesIdentity()
+    {
+        var profile = CreateProfile();
+        var created = profile.UpsertPrimaryOffice(
+            1, 10, 100, "Detailed address", null, 30.044420m, 31.235712m).Value;
+
+        var updated = profile.UpsertPrimaryOffice(
+            1, 10, 100, "Updated address", null, 29.975300m, 31.137600m);
+
+        Assert.True(updated.IsSuccess);
+        Assert.Equal(created.Id, updated.Value.Id);
+        Assert.Equal(29.975300m, updated.Value.Latitude);
+        Assert.Equal(31.137600m, updated.Value.Longitude);
+        Assert.Single(profile.Offices);
     }
 
     private static LawyerProfile CreateApprovedProfile()
