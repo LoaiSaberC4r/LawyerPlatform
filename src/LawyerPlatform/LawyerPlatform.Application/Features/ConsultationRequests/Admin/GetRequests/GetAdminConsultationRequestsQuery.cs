@@ -27,6 +27,8 @@ public sealed record AdminConsultationListItemResponse(
     string RequesterFullName,
     Guid LawyerId,
     string LawyerFullName,
+    string ConsultationType,
+    decimal? ConsultationPrice,
     string Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -75,6 +77,8 @@ internal sealed record AdminConsultationListSnapshot(
     string RequesterFullName,
     Guid LawyerId,
     string LawyerFullName,
+    ConsultationType ConsultationType,
+    decimal? ConsultationPrice,
     ConsultationRequestStatus Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -83,7 +87,8 @@ internal sealed record AdminConsultationListSnapshot(
 {
     public AdminConsultationListItemResponse ToResponse() => new(
         Id, ReferenceNumber, IsClient ? "Client" : "Guest", RequesterFullName,
-        LawyerId, LawyerFullName, Status.ToString(), PreferredAppointmentOnUtc,
+        LawyerId, LawyerFullName, ConsultationType.ToString(), ConsultationPrice,
+        Status.ToString(), PreferredAppointmentOnUtc,
         CreatedOnUtc, ModifiedOnUtc, Convert.ToBase64String(RowVersion));
 }
 
@@ -120,6 +125,8 @@ internal sealed class AdminConsultationRequestsSpecification
             request.ClientProfileId != null ? request.ClientProfile!.FullName : request.GuestFullName!,
             request.LawyerProfileId,
             request.LawyerProfile.FullName,
+            request.ConsultationType,
+            request.ConsultationPrice,
             request.Status,
             request.PreferredAppointmentOnUtc,
             request.CreatedOnUtc,

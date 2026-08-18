@@ -22064,7 +22064,10 @@ builder.Services
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
-    options.OperationFilter<ParameterDescriptionOperationFilter>());
+{
+    options.OperationFilter<ParameterDescriptionOperationFilter>();
+    options.SchemaFilter<ConsultationTypeSchemaFilter>();
+});
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
@@ -22535,6 +22538,7 @@ namespace LawyerPlatform.Api.Contracts.Consultations;
 
 public sealed record CreateGuestConsultationRequest(
     Guid LawyerId,
+    string? ConsultationType,
     int? LegalSpecializationId,
     string FullName,
     string PhoneNumber,
@@ -22544,9 +22548,21 @@ public sealed record CreateGuestConsultationRequest(
 
 public sealed record CreateClientConsultationRequest(
     Guid LawyerId,
+    string? ConsultationType,
     int? LegalSpecializationId,
     string Description,
     DateTime? PreferredAppointmentOnUtc);
+
+internal static class ConsultationTypeContract
+{
+    public static LawyerPlatform.Domain.Consultations.ConsultationType? Parse(string? value)
+        => Enum.TryParse<LawyerPlatform.Domain.Consultations.ConsultationType>(
+               value,
+               ignoreCase: true,
+               out var consultationType) && Enum.IsDefined(consultationType)
+            ? consultationType
+            : null;
+}
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Api\Contracts\Consultations\GuestTrackingRequest.cs ==================== 
 namespace LawyerPlatform.Api.Contracts.Consultations;
@@ -22597,9 +22613,16 @@ public sealed record ReplaceLawyerSpecializationsRequest(
     string RowVersion);
 
 public sealed record UpdateLawyerConsultationSettingsRequest(
-    decimal ConsultationPrice,
-    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability,
+    UpdateLawyerOnlineConsultationSettingsRequest? Online,
+    UpdateLawyerOnsiteConsultationSettingsRequest? Onsite,
     string? RowVersion);
+
+public sealed record UpdateLawyerOnlineConsultationSettingsRequest(
+    decimal Price,
+    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability);
+
+public sealed record UpdateLawyerOnsiteConsultationSettingsRequest(
+    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability);
 
 public sealed record UpdateLawyerAvailabilityRequest(
     string DayOfWeek,
@@ -23257,6 +23280,7 @@ public sealed class ClientConsultationRequestsController(ISender sender) : Contr
     {
         var result = await sender.Send(new CreateClientConsultationRequestCommand(
             request.LawyerId,
+            ConsultationTypeContract.Parse(request.ConsultationType),
             request.LegalSpecializationId,
             request.Description,
             request.PreferredAppointmentOnUtc), cancellationToken);
@@ -23407,12 +23431,23 @@ public sealed class LawyerController(ISender sender) : ControllerBase
         UpdateLawyerConsultationSettingsRequest request,
         CancellationToken cancellationToken)
         => (await sender.Send(new UpdateLawyerConsultationSettingsCommand(
-            request.ConsultationPrice,
-            request.Availability?.Select(item => new UpdateLawyerAvailabilityItem(
-                item.DayOfWeek,
-                item.StartTime,
-                item.EndTime)).ToArray(),
+            request.Online is null
+                ? null
+                : new UpdateLawyerOnlineConsultationSettings(
+                    request.Online.Price,
+                    MapAvailability(request.Online.Availability)),
+            request.Onsite is null
+                ? null
+                : new UpdateLawyerOnsiteConsultationSettings(
+                    MapAvailability(request.Onsite.Availability)),
             request.RowVersion), cancellationToken)).ToIActionResult(cancellationToken);
+
+    private static UpdateLawyerAvailabilityItem[]? MapAvailability(
+        IReadOnlyList<UpdateLawyerAvailabilityRequest>? availability)
+        => availability?.Select(item => new UpdateLawyerAvailabilityItem(
+            item.DayOfWeek,
+            item.StartTime,
+            item.EndTime)).ToArray();
 
     [HttpPut("profile")]
     public async Task<IActionResult> UpdateProfile(UpdateLawyerProfileRequest request, CancellationToken cancellationToken)
@@ -23542,6 +23577,7 @@ public sealed class PublicConsultationRequestsController(ISender sender) : Contr
     {
         var result = await sender.Send(new CreateGuestConsultationRequestCommand(
             request.LawyerId,
+            ConsultationTypeContract.Parse(request.ConsultationType),
             request.LegalSpecializationId,
             request.FullName,
             request.PhoneNumber,
@@ -23567,6 +23603,7 @@ public sealed class PublicConsultationRequestsController(ISender sender) : Contr
 using Asp.Versioning;
 using BuildingBlock.Api;
 using LawyerPlatform.Application.Features.PublicLawyers.GetLawyerDetails;
+using LawyerPlatform.Application.Features.PublicLawyers.GetConsultationSettings;
 using LawyerPlatform.Application.Features.PublicLawyers.GetLawyerProfileImage;
 using LawyerPlatform.Application.Features.PublicLawyers.SearchLawyers;
 using MediatR;
@@ -23603,6 +23640,14 @@ public sealed class PublicLawyersController(ISender sender) : ControllerBase
     [HttpGet("{lawyerId:guid}")]
     public async Task<IActionResult> GetById(Guid lawyerId, CancellationToken cancellationToken)
         => (await sender.Send(new GetPublicLawyerDetailsQuery(lawyerId), cancellationToken)).ToIActionResult(cancellationToken);
+
+    [HttpGet("{lawyerId:guid}/consultation-settings")]
+    public async Task<IActionResult> GetConsultationSettings(
+        Guid lawyerId,
+        CancellationToken cancellationToken)
+        => (await sender.Send(
+            new GetPublicLawyerConsultationSettingsQuery(lawyerId),
+            cancellationToken)).ToIActionResult(cancellationToken);
 
     [HttpGet("{lawyerId:guid}/profile-image")]
     public async Task<IActionResult> GetProfileImage(Guid lawyerId, CancellationToken cancellationToken)
@@ -23675,6 +23720,45 @@ internal sealed class PasswordChangeRequiredMiddleware(RequestDelegate next)
         }
 
         await next(context);
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Api\OpenApi\ConsultationTypeSchemaFilter.cs ==================== 
+using System.Text.Json.Nodes;
+using Microsoft.OpenApi;
+using Swashbuckle.AspNetCore.SwaggerGen;
+
+namespace LawyerPlatform.Api.OpenApi;
+
+internal sealed class ConsultationTypeSchemaFilter : ISchemaFilter
+{
+    private static readonly JsonNode?[] AllowedValues =
+        [JsonValue.Create("Online"), JsonValue.Create("Onsite")];
+
+    public void Apply(IOpenApiSchema schema, SchemaFilterContext context)
+    {
+        if (schema.Properties is null)
+        {
+            return;
+        }
+
+        var consultationType = schema.Properties.SingleOrDefault(property =>
+            string.Equals(property.Key, "consultationType", StringComparison.OrdinalIgnoreCase)).Value;
+        if (consultationType is not OpenApiSchema mutableSchema)
+        {
+            return;
+        }
+
+        mutableSchema.Enum ??= [];
+        mutableSchema.Enum.Clear();
+        foreach (var allowedValue in AllowedValues)
+        {
+            if (allowedValue is not null)
+            {
+                mutableSchema.Enum.Add(allowedValue);
+            }
+        }
+        mutableSchema.Description = "Required consultation type: Online or Onsite.";
     }
 }
  
@@ -27402,6 +27486,7 @@ public sealed record AdminConsultationDetailsResponse(
     ConsultationLawyerSummaryResponse Lawyer,
     ConsultationSpecializationResponse? LegalSpecialization,
     string Description,
+    string ConsultationType,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
     string Status,
@@ -27437,7 +27522,8 @@ internal sealed record AdminConsultationDetailsSnapshot(
     string RequesterPhoneNumber, string? RequesterEmail,
     Guid LawyerId, string LawyerFullName, string? LawyerProfessionalTitle,
     int? SpecializationId, string? SpecializationNameAr, string? SpecializationNameEn,
-    string Description, DateTime? PreferredAppointmentOnUtc, decimal? ConsultationPrice, ConsultationRequestStatus Status,
+    string Description, ConsultationType ConsultationType, DateTime? PreferredAppointmentOnUtc,
+    decimal? ConsultationPrice, ConsultationRequestStatus Status,
     string? RejectionReason, DateTime CreatedOnUtc, DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc, IReadOnlyList<AdminConsultationHistorySnapshot> History, byte[] RowVersion)
 {
@@ -27448,7 +27534,8 @@ internal sealed record AdminConsultationDetailsSnapshot(
         SpecializationId.HasValue
             ? new ConsultationSpecializationResponse(SpecializationId.Value, SpecializationNameAr!, SpecializationNameEn!)
             : null,
-        Description, PreferredAppointmentOnUtc, ConsultationPrice, Status.ToString(), RejectionReason,
+        Description, ConsultationType.ToString(), PreferredAppointmentOnUtc,
+        ConsultationPrice, Status.ToString(), RejectionReason,
         CreatedOnUtc, ModifiedOnUtc, CompletedOnUtc,
         History.Select(item => new ConsultationStatusHistoryResponse(
             item.Id, item.OldStatus.ToString(), item.NewStatus.ToString(),
@@ -27473,7 +27560,8 @@ internal sealed class AdminConsultationRequestDetailsSpecification
             request.LegalSpecializationId,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
-            request.Description, request.PreferredAppointmentOnUtc, request.ConsultationPrice, request.Status,
+            request.Description, request.ConsultationType, request.PreferredAppointmentOnUtc,
+            request.ConsultationPrice, request.Status,
             request.StatusHistory.Where(history => history.NewStatus == ConsultationRequestStatus.Rejected)
                 .OrderByDescending(history => history.ChangedOnUtc).Select(history => history.Reason).FirstOrDefault(),
             request.CreatedOnUtc, request.ModifiedOnUtc, request.CompletedOnUtc,
@@ -27515,6 +27603,8 @@ public sealed record AdminConsultationListItemResponse(
     string RequesterFullName,
     Guid LawyerId,
     string LawyerFullName,
+    string ConsultationType,
+    decimal? ConsultationPrice,
     string Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -27563,6 +27653,8 @@ internal sealed record AdminConsultationListSnapshot(
     string RequesterFullName,
     Guid LawyerId,
     string LawyerFullName,
+    ConsultationType ConsultationType,
+    decimal? ConsultationPrice,
     ConsultationRequestStatus Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -27571,7 +27663,8 @@ internal sealed record AdminConsultationListSnapshot(
 {
     public AdminConsultationListItemResponse ToResponse() => new(
         Id, ReferenceNumber, IsClient ? "Client" : "Guest", RequesterFullName,
-        LawyerId, LawyerFullName, Status.ToString(), PreferredAppointmentOnUtc,
+        LawyerId, LawyerFullName, ConsultationType.ToString(), ConsultationPrice,
+        Status.ToString(), PreferredAppointmentOnUtc,
         CreatedOnUtc, ModifiedOnUtc, Convert.ToBase64String(RowVersion));
 }
 
@@ -27608,6 +27701,8 @@ internal sealed class AdminConsultationRequestsSpecification
             request.ClientProfileId != null ? request.ClientProfile!.FullName : request.GuestFullName!,
             request.LawyerProfileId,
             request.LawyerProfile.FullName,
+            request.ConsultationType,
+            request.ConsultationPrice,
             request.Status,
             request.PreferredAppointmentOnUtc,
             request.CreatedOnUtc,
@@ -27722,6 +27817,7 @@ public sealed record ClientConsultationDetailsResponse(
     ConsultationLawyerSummaryResponse Lawyer,
     ConsultationReferenceSummaryResponse? LegalSpecialization,
     string Description,
+    string ConsultationType,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
     string Status,
@@ -27777,6 +27873,7 @@ internal sealed class ClientConsultationRequestDetailsSpecification
                     request.LegalSpecialization.NameAr,
                     request.LegalSpecialization.NameEn),
             request.Description,
+            request.ConsultationType.ToString(),
             request.PreferredAppointmentOnUtc,
             request.ConsultationPrice,
             request.Status.ToString(),
@@ -27818,6 +27915,8 @@ public sealed record ClientConsultationListItemResponse(
     string ReferenceNumber,
     ConsultationLawyerSummaryResponse Lawyer,
     ConsultationReferenceSummaryResponse? LegalSpecialization,
+    string ConsultationType,
+    decimal? ConsultationPrice,
     string Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -27892,6 +27991,8 @@ internal sealed class ClientConsultationRequestsSpecification
                     request.LegalSpecialization.Id,
                     request.LegalSpecialization.NameAr,
                     request.LegalSpecialization.NameEn),
+            request.ConsultationType.ToString(),
+            request.ConsultationPrice,
             request.Status.ToString(),
             request.PreferredAppointmentOnUtc,
             request.CreatedOnUtc,
@@ -27931,6 +28032,8 @@ namespace LawyerPlatform.Application.Features.ConsultationRequests.Create;
 public sealed record CreateConsultationRequestResponse(
     Guid Id,
     string ReferenceNumber,
+    string ConsultationType,
+    decimal? ConsultationPrice,
     string Status,
     DateTime CreatedOnUtc);
 
@@ -27947,6 +28050,7 @@ internal sealed class ConsultationRequestCreationService(
 {
     public async Task<Result<CreateConsultationRequestResponse>> CreateGuestAsync(
         Guid lawyerId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string fullName,
         string phoneNumber,
@@ -27957,6 +28061,7 @@ internal sealed class ConsultationRequestCreationService(
         => await CreateAsync(
             null,
             lawyerId,
+            consultationType,
             legalSpecializationId,
             fullName,
             phoneNumber,
@@ -27971,6 +28076,7 @@ internal sealed class ConsultationRequestCreationService(
     public async Task<Result<CreateConsultationRequestResponse>> CreateClientAsync(
         Guid clientProfileId,
         Guid lawyerId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string requesterName,
         string requesterEmail,
@@ -27980,6 +28086,7 @@ internal sealed class ConsultationRequestCreationService(
         => await CreateAsync(
             clientProfileId,
             lawyerId,
+            consultationType,
             legalSpecializationId,
             null,
             null,
@@ -27994,6 +28101,7 @@ internal sealed class ConsultationRequestCreationService(
     private async Task<Result<CreateConsultationRequestResponse>> CreateAsync(
         Guid? clientProfileId,
         Guid lawyerId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string? guestFullName,
         string? guestPhoneNumber,
@@ -28050,9 +28158,16 @@ internal sealed class ConsultationRequestCreationService(
                 ConsultationRequestErrors.PreferredAppointmentMustBeFuture);
         }
 
+        if (consultationType == ConsultationType.Online && !lawyer.HasConsultationSettings)
+        {
+            return Result<CreateConsultationRequestResponse>.Fail(
+                ConsultationRequestErrors.LawyerAvailabilityNotConfigured);
+        }
+
         if (preferredAppointmentOnUtc is { } appointmentOnUtc)
         {
-            if (!lawyer.HasConsultationSettings)
+            if (!lawyer.HasConsultationSettings ||
+                !lawyer.Availability.Any(period => period.ConsultationType == consultationType))
             {
                 return Result<CreateConsultationRequestResponse>.Fail(
                     ConsultationRequestErrors.LawyerAvailabilityNotConfigured);
@@ -28060,7 +28175,8 @@ internal sealed class ConsultationRequestCreationService(
 
             var localAppointment = schedulingTimeZone.ConvertUtcToBusinessLocal(appointmentOnUtc);
             var availability = lawyer.Availability.SingleOrDefault(
-                period => period.DayOfWeek == localAppointment.DayOfWeek);
+                period => period.ConsultationType == consultationType &&
+                          period.DayOfWeek == localAppointment.DayOfWeek);
             if (availability is null)
             {
                 return Result<CreateConsultationRequestResponse>.Fail(
@@ -28087,22 +28203,28 @@ internal sealed class ConsultationRequestCreationService(
                 referenceNumber,
                 clientId,
                 lawyerId,
+                consultationType,
                 legalSpecializationId,
                 description,
                 preferredAppointmentOnUtc,
                 nowUtc,
-                lawyer.ConsultationPrice)
+                consultationType == ConsultationType.Online
+                    ? lawyer.OnlineConsultationPrice
+                    : null)
             : ConsultationRequest.CreateForGuest(
                 referenceNumber,
                 guestFullName!,
                 guestPhoneNumber!,
                 guestEmail,
                 lawyerId,
+                consultationType,
                 legalSpecializationId,
                 description,
                 preferredAppointmentOnUtc,
                 nowUtc,
-                lawyer.ConsultationPrice);
+                consultationType == ConsultationType.Online
+                    ? lawyer.OnlineConsultationPrice
+                    : null);
         if (creation.IsFailure)
         {
             return Result<CreateConsultationRequestResponse>.Fail(creation.Errors);
@@ -28126,6 +28248,8 @@ internal sealed class ConsultationRequestCreationService(
         return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
             request.Id,
             request.ReferenceNumber,
+            request.ConsultationType.ToString(),
+            request.ConsultationPrice,
             request.Status.ToString(),
             request.CreatedOnUtc));
     }
@@ -28154,10 +28278,11 @@ internal sealed record EligibleConsultationLawyerSnapshot(
     string Email,
     IReadOnlyList<int> ActiveSpecializationIds,
     bool HasConsultationSettings,
-    decimal? ConsultationPrice,
+    decimal? OnlineConsultationPrice,
     IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability);
 
 internal sealed record EligibleLawyerAvailabilitySnapshot(
+    ConsultationType ConsultationType,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime);
@@ -28182,11 +28307,12 @@ internal sealed class EligibleLawyerForConsultationSpecification
             profile.ConsultationSettings != null,
             profile.ConsultationSettings == null
                 ? null
-                : profile.ConsultationSettings.ConsultationPrice,
+                : profile.ConsultationSettings.OnlineConsultationPrice,
             profile.ConsultationSettings == null
                 ? Array.Empty<EligibleLawyerAvailabilitySnapshot>()
                 : profile.ConsultationSettings.Availability
                     .Select(item => new EligibleLawyerAvailabilitySnapshot(
+                        item.ConsultationType,
                         item.DayOfWeek,
                         item.StartTime,
                         item.EndTime))
@@ -28232,6 +28358,7 @@ namespace LawyerPlatform.Application.Features.ConsultationRequests.CreateClient;
 
 public sealed record CreateClientConsultationRequestCommand(
     Guid LawyerId,
+    ConsultationType? ConsultationType,
     int? LegalSpecializationId,
     string Description,
     DateTime? PreferredAppointmentOnUtc)
@@ -28243,6 +28370,11 @@ internal sealed class CreateClientConsultationRequestCommandValidator
     public CreateClientConsultationRequestCommandValidator()
     {
         RuleFor(command => command.LawyerId).NotEmpty();
+        RuleFor(command => command.ConsultationType)
+            .NotNull()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType")
+            .IsInEnum()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType");
         RuleFor(command => command.LegalSpecializationId)
             .GreaterThan(0)
             .When(command => command.LegalSpecializationId.HasValue);
@@ -28262,6 +28394,13 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
         CreateClientConsultationRequestCommand command,
         CancellationToken cancellationToken)
     {
+        if (command.ConsultationType is not { } consultationType ||
+            !Enum.IsDefined(consultationType))
+        {
+            return Result<CreateConsultationRequestResponse>.Fail(
+                ConsultationRequestErrors.InvalidConsultationType);
+        }
+
         if (currentUser.UserId is not { } userId)
         {
             return Result<CreateConsultationRequestResponse>.Fail(
@@ -28280,6 +28419,7 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
         return await service.CreateClientAsync(
             client.Id,
             command.LawyerId,
+            consultationType,
             command.LegalSpecializationId,
             client.FullName,
             client.Email,
@@ -28324,6 +28464,7 @@ namespace LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
 
 public sealed record CreateGuestConsultationRequestCommand(
     Guid LawyerId,
+    ConsultationType? ConsultationType,
     int? LegalSpecializationId,
     string FullName,
     string PhoneNumber,
@@ -28338,6 +28479,11 @@ internal sealed class CreateGuestConsultationRequestCommandValidator
     public CreateGuestConsultationRequestCommandValidator()
     {
         RuleFor(command => command.LawyerId).NotEmpty();
+        RuleFor(command => command.ConsultationType)
+            .NotNull()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType")
+            .IsInEnum()
+            .WithErrorCode("ConsultationRequest.InvalidConsultationType");
         RuleFor(command => command.LegalSpecializationId)
             .GreaterThan(0)
             .When(command => command.LegalSpecializationId.HasValue);
@@ -28363,8 +28509,17 @@ internal sealed class CreateGuestConsultationRequestCommandHandler(
     public Task<Result<CreateConsultationRequestResponse>> Handle(
         CreateGuestConsultationRequestCommand command,
         CancellationToken cancellationToken)
-        => service.CreateGuestAsync(
+    {
+        if (command.ConsultationType is not { } consultationType ||
+            !Enum.IsDefined(consultationType))
+        {
+            return Task.FromResult(Result<CreateConsultationRequestResponse>.Fail(
+                ConsultationRequestErrors.InvalidConsultationType));
+        }
+
+        return service.CreateGuestAsync(
             command.LawyerId,
+            consultationType,
             command.LegalSpecializationId,
             command.FullName,
             command.PhoneNumber,
@@ -28372,6 +28527,7 @@ internal sealed class CreateGuestConsultationRequestCommandHandler(
             command.Description,
             command.PreferredAppointmentOnUtc,
             cancellationToken);
+    }
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\ConsultationRequests\Guest\TrackRequest\TrackGuestConsultationRequestQuery.cs ==================== 
@@ -28394,6 +28550,7 @@ public sealed record GuestConsultationTrackingResponse(
     string ReferenceNumber,
     ConsultationLawyerSummaryResponse Lawyer,
     ConsultationReferenceSummaryResponse? LegalSpecialization,
+    string ConsultationType,
     string Status,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
@@ -28442,6 +28599,7 @@ internal sealed record GuestConsultationTrackingSnapshot(
     int? SpecializationId,
     string? SpecializationNameAr,
     string? SpecializationNameEn,
+    ConsultationType ConsultationType,
     ConsultationRequestStatus Status,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
@@ -28459,6 +28617,7 @@ internal sealed record GuestConsultationTrackingSnapshot(
                     SpecializationNameAr!,
                     SpecializationNameEn!)
                 : null,
+            ConsultationType.ToString(),
             Status.ToString(),
             PreferredAppointmentOnUtc,
             ConsultationPrice,
@@ -28485,6 +28644,7 @@ internal sealed class GuestConsultationTrackingSpecification
             request.LegalSpecializationId,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
+            request.ConsultationType,
             request.Status,
             request.PreferredAppointmentOnUtc,
             request.ConsultationPrice,
@@ -28513,6 +28673,8 @@ public sealed record LawyerConsultationListItemResponse(
     string RequesterType,
     string RequesterFullName,
     ConsultationSpecializationResponse? LegalSpecialization,
+    string ConsultationType,
+    decimal? ConsultationPrice,
     string Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -28528,6 +28690,7 @@ public sealed record LawyerConsultationDetailsResponse(
     string? RequesterEmail,
     ConsultationSpecializationResponse? LegalSpecialization,
     string Description,
+    string ConsultationType,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
     string Status,
@@ -28596,6 +28759,7 @@ internal sealed record LawyerConsultationDetailsSnapshot(
     string? SpecializationNameAr,
     string? SpecializationNameEn,
     string Description,
+    ConsultationType ConsultationType,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
     ConsultationRequestStatus Status,
@@ -28621,6 +28785,7 @@ internal sealed record LawyerConsultationDetailsSnapshot(
                     SpecializationNameEn!)
                 : null,
             Description,
+            ConsultationType.ToString(),
             PreferredAppointmentOnUtc,
             ConsultationPrice,
             Status.ToString(),
@@ -28658,6 +28823,7 @@ internal sealed class LawyerConsultationRequestDetailsSpecification
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
             request.Description,
+            request.ConsultationType,
             request.PreferredAppointmentOnUtc,
             request.ConsultationPrice,
             request.Status,
@@ -28751,6 +28917,8 @@ internal sealed record LawyerConsultationListSnapshot(
     int? SpecializationId,
     string? SpecializationNameAr,
     string? SpecializationNameEn,
+    ConsultationType ConsultationType,
+    decimal? ConsultationPrice,
     ConsultationRequestStatus Status,
     DateTime? PreferredAppointmentOnUtc,
     DateTime CreatedOnUtc,
@@ -28769,6 +28937,8 @@ internal sealed record LawyerConsultationListSnapshot(
                     SpecializationNameAr!,
                     SpecializationNameEn!)
                 : null,
+            ConsultationType.ToString(),
+            ConsultationPrice,
             Status.ToString(),
             PreferredAppointmentOnUtc,
             CreatedOnUtc,
@@ -28801,6 +28971,8 @@ internal sealed class LawyerConsultationRequestsSpecification
             request.LegalSpecializationId,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
+            request.ConsultationType,
+            request.ConsultationPrice,
             request.Status,
             request.PreferredAppointmentOnUtc,
             request.CreatedOnUtc,
@@ -29230,6 +29402,7 @@ internal static class RowVersionCodec
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Lawyers\ConsultationSettings\Common\LawyerConsultationSettingsModels.cs ==================== 
 using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Features.Lawyers.Common;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Common;
@@ -29239,9 +29412,16 @@ public sealed record LawyerAvailabilityResponse(
     TimeOnly StartTime,
     TimeOnly EndTime);
 
+public sealed record LawyerOnlineConsultationSettingsResponse(
+    decimal? Price,
+    IReadOnlyList<LawyerAvailabilityResponse> Availability);
+
+public sealed record LawyerOnsiteConsultationSettingsResponse(
+    IReadOnlyList<LawyerAvailabilityResponse> Availability);
+
 public sealed record LawyerConsultationSettingsResponse(
-    decimal? ConsultationPrice,
-    IReadOnlyList<LawyerAvailabilityResponse> Availability,
+    LawyerOnlineConsultationSettingsResponse Online,
+    LawyerOnsiteConsultationSettingsResponse Onsite,
     string? RowVersion);
 
 internal sealed record CurrentLawyerIdSnapshot(Guid Id);
@@ -29258,26 +29438,34 @@ internal sealed class CurrentLawyerIdSpecification
 }
 
 internal sealed record LawyerAvailabilitySnapshot(
+    ConsultationType ConsultationType,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime);
 
 internal sealed record LawyerConsultationSettingsSnapshot(
-    decimal ConsultationPrice,
+    decimal OnlineConsultationPrice,
     IReadOnlyList<LawyerAvailabilitySnapshot> Availability,
     byte[] RowVersion)
 {
     public LawyerConsultationSettingsResponse ToResponse()
         => new(
-            ConsultationPrice,
-            Availability
+            new LawyerOnlineConsultationSettingsResponse(
+                OnlineConsultationPrice,
+                MapAvailability(ConsultationType.Online)),
+            new LawyerOnsiteConsultationSettingsResponse(
+                MapAvailability(ConsultationType.Onsite)),
+            RowVersionCodec.Encode(RowVersion));
+
+    private LawyerAvailabilityResponse[] MapAvailability(ConsultationType consultationType)
+        => Availability
+                .Where(item => item.ConsultationType == consultationType)
                 .OrderBy(item => item.DayOfWeek)
                 .Select(item => new LawyerAvailabilityResponse(
                     item.DayOfWeek.ToString(),
                     item.StartTime,
                     item.EndTime))
-                .ToArray(),
-            RowVersionCodec.Encode(RowVersion));
+                .ToArray();
 }
 
 internal sealed class LawyerConsultationSettingsByLawyerIdSpecification
@@ -29288,10 +29476,11 @@ internal sealed class LawyerConsultationSettingsByLawyerIdSpecification
         AddCriteria(settings => settings.LawyerProfileId == lawyerProfileId);
         UseNoTracking();
         Select(settings => new LawyerConsultationSettingsSnapshot(
-            settings.ConsultationPrice,
+            settings.OnlineConsultationPrice,
             settings.Availability
                 .OrderBy(availability => availability.DayOfWeek)
                 .Select(availability => new LawyerAvailabilitySnapshot(
+                    availability.ConsultationType,
                     availability.DayOfWeek,
                     availability.StartTime,
                     availability.EndTime))
@@ -29315,15 +29504,24 @@ internal static class LawyerConsultationSettingsMapper
 {
     public static LawyerConsultationSettingsResponse Map(LawyerConsultationSettings settings)
         => new(
-            settings.ConsultationPrice,
-            settings.Availability
+            new LawyerOnlineConsultationSettingsResponse(
+                settings.OnlineConsultationPrice,
+                MapAvailability(settings, ConsultationType.Online)),
+            new LawyerOnsiteConsultationSettingsResponse(
+                MapAvailability(settings, ConsultationType.Onsite)),
+            RowVersionCodec.Encode(settings.RowVersion));
+
+    private static LawyerAvailabilityResponse[] MapAvailability(
+        LawyerConsultationSettings settings,
+        ConsultationType consultationType)
+        => settings.Availability
+                .Where(item => item.ConsultationType == consultationType)
                 .OrderBy(item => item.DayOfWeek)
                 .Select(item => new LawyerAvailabilityResponse(
                     item.DayOfWeek.ToString(),
                     item.StartTime,
                     item.EndTime))
-                .ToArray(),
-            RowVersionCodec.Encode(settings.RowVersion));
+                .ToArray();
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Lawyers\ConsultationSettings\Get\GetLawyerConsultationSettingsQuery.cs ==================== 
@@ -29367,7 +29565,10 @@ internal sealed class GetLawyerConsultationSettingsQueryHandler(
             new LawyerConsultationSettingsByLawyerIdSpecification(lawyer.Id),
             cancellationToken);
         return Result<LawyerConsultationSettingsResponse>.Ok(
-            settings?.ToResponse() ?? new LawyerConsultationSettingsResponse(null, [], null));
+            settings?.ToResponse() ?? new LawyerConsultationSettingsResponse(
+                new LawyerOnlineConsultationSettingsResponse(null, []),
+                new LawyerOnsiteConsultationSettingsResponse([]),
+                null));
     }
 }
  
@@ -29378,10 +29579,12 @@ using BuildingBlock.Application.Abstraction.Security;
 using BuildingBlock.Application.Repositories;
 using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
+using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Common;
 using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Update;
@@ -29391,12 +29594,50 @@ public sealed record UpdateLawyerAvailabilityItem(
     TimeOnly? StartTime,
     TimeOnly? EndTime);
 
+public sealed record UpdateLawyerOnlineConsultationSettings(
+    decimal Price,
+    IReadOnlyList<UpdateLawyerAvailabilityItem>? Availability);
+
+public sealed record UpdateLawyerOnsiteConsultationSettings(
+    IReadOnlyList<UpdateLawyerAvailabilityItem>? Availability);
+
 public sealed record UpdateLawyerConsultationSettingsCommand(
-    decimal ConsultationPrice,
-    IReadOnlyList<UpdateLawyerAvailabilityItem>? Availability,
+    UpdateLawyerOnlineConsultationSettings? Online,
+    UpdateLawyerOnsiteConsultationSettings? Onsite,
     string? RowVersion)
     : ICommand<LawyerConsultationSettingsResponse>,
       ITransactionalCommand<LawyerPlatformWritePersistence>;
+
+internal sealed class UpdateLawyerConsultationSettingsCommandValidator
+    : AbstractValidator<UpdateLawyerConsultationSettingsCommand>
+{
+    public UpdateLawyerConsultationSettingsCommandValidator()
+    {
+        RuleFor(command => command.Online)
+            .NotNull()
+            .WithErrorCode("Lawyer.OnlineConsultationSettingsRequired");
+        RuleFor(command => command.Onsite)
+            .NotNull()
+            .WithErrorCode("Lawyer.OnsiteConsultationSettingsRequired");
+        When(command => command.Online is not null, () =>
+        {
+            RuleFor(command => command.Online!.Price)
+                .GreaterThan(0)
+                .WithErrorCode("Lawyer.ConsultationPriceInvalid")
+                .LessThanOrEqualTo(LawyerConsultationSettings.MaximumConsultationPrice)
+                .WithErrorCode("Lawyer.ConsultationPriceInvalid")
+                .Must(price => decimal.Round(price, 2) == price)
+                .WithErrorCode("Lawyer.ConsultationPriceInvalid");
+            RuleFor(command => command.Online!.Availability)
+                .NotNull()
+                .WithErrorCode("Lawyer.AvailabilityInvalid");
+        });
+        When(command => command.Onsite is not null, () =>
+            RuleFor(command => command.Onsite!.Availability)
+                .NotNull()
+                .WithErrorCode("Lawyer.AvailabilityInvalid"));
+    }
+}
 
 internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
     ICurrentUser currentUser,
@@ -29423,7 +29664,12 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
             return Result<LawyerConsultationSettingsResponse>.Fail(LawyerErrors.NotFound);
         }
 
-        var periodsResult = CreatePeriods(command.Availability);
+        if (command.Online is null || command.Onsite is null)
+        {
+            return Result<LawyerConsultationSettingsResponse>.Fail(LawyerErrors.AvailabilityInvalid);
+        }
+
+        var periodsResult = CreatePeriods(command.Online.Availability, command.Onsite.Availability);
         if (periodsResult.IsFailure)
         {
             return Result<LawyerConsultationSettingsResponse>.Fail(periodsResult.Errors);
@@ -29444,7 +29690,7 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
 
             var creation = LawyerConsultationSettings.Create(
                 lawyer.Id,
-                command.ConsultationPrice,
+                command.Online.Price,
                 periodsResult.Value,
                 clock.UtcNow);
             if (creation.IsFailure)
@@ -29464,7 +29710,7 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
             }
 
             concurrencyTokenManager.SetOriginalRowVersion(settings, rowVersion);
-            var update = settings.Update(command.ConsultationPrice, periodsResult.Value);
+            var update = settings.Update(command.Online.Price, periodsResult.Value);
             if (update.IsFailure)
             {
                 return Result<LawyerConsultationSettingsResponse>.Fail(update.Errors);
@@ -29474,7 +29720,7 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
             // the independent settings RowVersion without changing child entity states.
             concurrencyTokenManager.MarkPropertyModified(
                 settings,
-                item => item.ConsultationPrice);
+                item => item.OnlineConsultationPrice);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -29483,29 +29729,48 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
     }
 
     private static Result<IReadOnlyCollection<LawyerAvailabilityPeriod>> CreatePeriods(
-        IReadOnlyList<UpdateLawyerAvailabilityItem>? items)
+        IReadOnlyList<UpdateLawyerAvailabilityItem>? onlineItems,
+        IReadOnlyList<UpdateLawyerAvailabilityItem>? onsiteItems)
     {
-        if (items is null)
+        if (onlineItems is null || onsiteItems is null)
         {
             return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Fail(
                 LawyerErrors.AvailabilityInvalid);
         }
 
-        var periods = new List<LawyerAvailabilityPeriod>(items.Count);
+        var periods = new List<LawyerAvailabilityPeriod>(onlineItems.Count + onsiteItems.Count);
+        if (!AddPeriods(onlineItems, ConsultationType.Online, periods) ||
+            !AddPeriods(onsiteItems, ConsultationType.Onsite, periods))
+        {
+            return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Fail(
+                LawyerErrors.AvailabilityInvalid);
+        }
+
+        return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Ok(periods);
+    }
+
+    private static bool AddPeriods(
+        IReadOnlyList<UpdateLawyerAvailabilityItem> items,
+        ConsultationType consultationType,
+        List<LawyerAvailabilityPeriod> periods)
+    {
         foreach (var item in items)
         {
             if (!TryParseDay(item.DayOfWeek, out var day) ||
                 !item.StartTime.HasValue ||
                 !item.EndTime.HasValue)
             {
-                return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Fail(
-                    LawyerErrors.AvailabilityInvalid);
+                return false;
             }
 
-            periods.Add(new LawyerAvailabilityPeriod(day, item.StartTime.Value, item.EndTime.Value));
+            periods.Add(new LawyerAvailabilityPeriod(
+                consultationType,
+                day,
+                item.StartTime.Value,
+                item.EndTime.Value));
         }
 
-        return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Ok(periods);
+        return true;
     }
 
     private static bool TryParseDay(string? value, out DayOfWeek dayOfWeek)
@@ -30944,6 +31209,7 @@ using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using System.Text.Json.Serialization;
 
@@ -31112,7 +31378,7 @@ internal static class PublicLawyerProjection
                     office.PublicPhoneNumber)).Single(),
             profile.ConsultationSettings == null
                 ? null
-                : profile.ConsultationSettings.ConsultationPrice);
+                : profile.ConsultationSettings.OnlineConsultationPrice);
 
     public static System.Linq.Expressions.Expression<Func<LawyerProfile, PublicLawyerDetailsSnapshot>> CreateDetails()
         => profile => new PublicLawyerDetailsSnapshot(
@@ -31145,16 +31411,121 @@ internal static class PublicLawyerProjection
                         office.PublicPhoneNumber)).Single(),
                 profile.ConsultationSettings == null
                     ? null
-                    : profile.ConsultationSettings.ConsultationPrice),
+                    : profile.ConsultationSettings.OnlineConsultationPrice),
             profile.ConsultationSettings == null
                 ? Array.Empty<PublicAvailabilitySnapshot>()
                 : profile.ConsultationSettings.Availability
+                    .Where(item => item.ConsultationType == ConsultationType.Online)
                     .OrderBy(item => item.DayOfWeek)
                     .Select(item => new PublicAvailabilitySnapshot(
                         item.DayOfWeek,
                         item.StartTime,
                         item.EndTime))
                     .ToArray());
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\PublicLawyers\GetConsultationSettings\GetPublicLawyerConsultationSettingsQuery.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Domain.Results;
+using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Features.PublicLawyers.Common;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Domain.Lawyers;
+
+namespace LawyerPlatform.Application.Features.PublicLawyers.GetConsultationSettings;
+
+public sealed record GetPublicLawyerConsultationSettingsQuery(Guid LawyerId)
+    : IQuery<PublicLawyerConsultationSettingsResponse>;
+
+public sealed record PublicLawyerAvailabilityResponse(
+    string DayOfWeek,
+    TimeOnly StartTime,
+    TimeOnly EndTime);
+
+public sealed record PublicOnlineConsultationSettingsResponse(
+    decimal? Price,
+    IReadOnlyList<PublicLawyerAvailabilityResponse> Availability);
+
+public sealed record PublicOnsiteConsultationSettingsResponse(
+    IReadOnlyList<PublicLawyerAvailabilityResponse> Availability);
+
+public sealed record PublicLawyerConsultationSettingsResponse(
+    PublicOnlineConsultationSettingsResponse Online,
+    PublicOnsiteConsultationSettingsResponse Onsite);
+
+internal sealed class GetPublicLawyerConsultationSettingsQueryHandler(
+    IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
+    ILawyerDocumentPolicy documentPolicy)
+    : IQueryHandler<GetPublicLawyerConsultationSettingsQuery, PublicLawyerConsultationSettingsResponse>
+{
+    public async Task<Result<PublicLawyerConsultationSettingsResponse>> Handle(
+        GetPublicLawyerConsultationSettingsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var settings = await repository.FirstOrDefaultAsync(
+            new PublicLawyerConsultationSettingsSpecification(query.LawyerId, documentPolicy),
+            cancellationToken);
+        return settings is null
+            ? Result<PublicLawyerConsultationSettingsResponse>.Fail(LawyerErrors.NotEligibleForPublicDisplay)
+            : Result<PublicLawyerConsultationSettingsResponse>.Ok(settings.ToResponse());
+    }
+}
+
+internal sealed record PublicConsultationAvailabilitySnapshot(
+    ConsultationType ConsultationType,
+    DayOfWeek DayOfWeek,
+    TimeOnly StartTime,
+    TimeOnly EndTime);
+
+internal sealed record PublicLawyerConsultationSettingsSnapshot(
+    decimal? OnlinePrice,
+    IReadOnlyList<PublicConsultationAvailabilitySnapshot> Availability)
+{
+    public PublicLawyerConsultationSettingsResponse ToResponse()
+        => new(
+            new PublicOnlineConsultationSettingsResponse(
+                OnlinePrice,
+                MapAvailability(ConsultationType.Online)),
+            new PublicOnsiteConsultationSettingsResponse(
+                MapAvailability(ConsultationType.Onsite)));
+
+    private PublicLawyerAvailabilityResponse[] MapAvailability(ConsultationType consultationType)
+        => Availability
+            .Where(item => item.ConsultationType == consultationType)
+            .OrderBy(item => item.DayOfWeek)
+            .Select(item => new PublicLawyerAvailabilityResponse(
+                item.DayOfWeek.ToString(),
+                item.StartTime,
+                item.EndTime))
+            .ToArray();
+}
+
+internal sealed class PublicLawyerConsultationSettingsSpecification
+    : PublicLawyerSpecification<PublicLawyerConsultationSettingsSnapshot>
+{
+    public PublicLawyerConsultationSettingsSpecification(
+        Guid lawyerId,
+        ILawyerDocumentPolicy documentPolicy)
+    {
+        AddCriteria(profile => profile.Id == lawyerId);
+        ApplyPublicEligibility(documentPolicy);
+        UseNoTracking();
+        Select(profile => new PublicLawyerConsultationSettingsSnapshot(
+            profile.ConsultationSettings == null
+                ? null
+                : profile.ConsultationSettings.OnlineConsultationPrice,
+            profile.ConsultationSettings == null
+                ? Array.Empty<PublicConsultationAvailabilitySnapshot>()
+                : profile.ConsultationSettings.Availability
+                    .Select(item => new PublicConsultationAvailabilitySnapshot(
+                        item.ConsultationType,
+                        item.DayOfWeek,
+                        item.StartTime,
+                        item.EndTime))
+                    .ToArray()));
+    }
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\PublicLawyers\GetLawyerDetails\GetPublicLawyerDetailsQuery.cs ==================== 
@@ -31594,6 +31965,7 @@ internal sealed class GetLegalSpecializationsQueryHandler(
 using System.Net;
 using System.Text;
 using BuildingBlock.Application.Time;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Application.Notifications.Email;
 
@@ -31777,12 +32149,17 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         english.Add(Lines("Please sign in to your account to review the request details and take the appropriate action."));
         english.Add(Lines("To protect the requester's privacy, consultation descriptions and sensitive information are not included in email notifications."));
         english.Add(Lines("Regards,", "Avokatoo"));
-        return Build("Avokatoo | طلب استشارة جديد | New Consultation Request", arabic, english);
+        return BuildConsultation(
+            "Avokatoo | طلب استشارة جديد | New Consultation Request",
+            model,
+            arabic,
+            english);
     }
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
@@ -31807,8 +32184,9 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             ]);
 
     private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | طلب الاستشارة قيد المراجعة | Consultation Under Review",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("هناك تحديث جديد على طلب الاستشارة الخاص بك."),
@@ -31856,12 +32234,17 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         arabic.Add(Lines("مع تحيات،", "Avokatoo"));
         english.Add(Lines("You can continue tracking your request through Avokatoo."));
         english.Add(Lines("Regards,", "Avokatoo"));
-        return Build("Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved", arabic, english);
+        return BuildConsultation(
+            "Avokatoo | تمت الموافقة على طلب الاستشارة | Consultation Request Approved",
+            model,
+            arabic,
+            english);
     }
 
     private EmailNotificationContent ConsultationRejected(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("نود إبلاغك بوجود تحديث على طلب الاستشارة الخاص بك."),
@@ -31884,8 +32267,9 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             ]);
 
     private EmailNotificationContent ConsultationCompleted(ConsultationEmailNotificationModel model)
-        => Build(
+        => BuildConsultation(
             "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed",
+            model,
             [
                 Lines($"مرحبًا {model.RequesterName}،"),
                 Lines("تم تحديث طلب الاستشارة الخاص بك إلى مكتمل."),
@@ -31965,6 +32349,32 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             .Append(clock.UtcNow.Year)
             .Append("</footer></div></body></html>");
         return new EmailNotificationContent(subject, body.ToString());
+    }
+
+    private EmailNotificationContent BuildConsultation(
+        string subject,
+        ConsultationEmailNotificationModel model,
+        IEnumerable<string> arabicParagraphs,
+        IEnumerable<string> englishParagraphs)
+    {
+        var arabic = arabicParagraphs.ToList();
+        var english = englishParagraphs.ToList();
+        var insertAt = Math.Min(1, arabic.Count);
+        arabic.Insert(insertAt, Lines(
+            "نوع الاستشارة:",
+            model.ConsultationType == ConsultationType.Online ? "عن بُعد" : "في المكتب"));
+        english.Insert(Math.Min(1, english.Count), Lines(
+            "Consultation type:",
+            model.ConsultationType.ToString()));
+
+        if (model.ConsultationType == ConsultationType.Online && model.ConsultationPrice.HasValue)
+        {
+            var price = model.ConsultationPrice.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            arabic.Insert(Math.Min(2, arabic.Count), Lines("سعر الاستشارة:", $"{price} EGP"));
+            english.Insert(Math.Min(2, english.Count), Lines("Consultation price:", $"{price} EGP"));
+        }
+
+        return Build(subject, arabic, english);
     }
 
     private static string Lines(params string[] values)
@@ -32147,7 +32557,9 @@ internal sealed class EmailNotificationCoordinator(
             request.ReferenceNumber,
             context.SpecializationNameAr,
             context.SpecializationNameEn,
-            request.PreferredAppointmentOnUtc);
+            request.PreferredAppointmentOnUtc,
+            ConsultationType: request.ConsultationType,
+            ConsultationPrice: request.ConsultationPrice);
         var eventId = request.Id.ToString("N");
 
         await QueueAsync(
@@ -32213,7 +32625,9 @@ internal sealed class EmailNotificationCoordinator(
                 ? LawyerOfficeMapUrlBuilder.Create(
                     snapshot.PrimaryOffice?.Latitude,
                     snapshot.PrimaryOffice?.Longitude)
-                : null);
+                : null,
+            snapshot.ConsultationType,
+            snapshot.ConsultationPrice);
         await QueueAsync(
             notificationType.Value,
             request.Id,
@@ -32297,6 +32711,8 @@ internal sealed record ConsultationEmailSnapshot(
     string LawyerName,
     string SpecializationNameAr,
     string SpecializationNameEn,
+    ConsultationType ConsultationType,
+    decimal? ConsultationPrice,
     DateTime? PreferredAppointmentOnUtc,
     ConsultationOfficeCoordinatesSnapshot? PrimaryOffice);
 
@@ -32321,6 +32737,8 @@ internal sealed class ConsultationEmailSnapshotByIdSpecification
             request.LawyerProfile.FullName,
             request.LegalSpecialization == null ? "غير محدد" : request.LegalSpecialization.NameAr,
             request.LegalSpecialization == null ? "Not specified" : request.LegalSpecialization.NameEn,
+            request.ConsultationType,
+            request.ConsultationPrice,
             request.PreferredAppointmentOnUtc,
             request.LawyerProfile.Offices
                 .Where(office => office.IsPrimary && office.IsActive)
@@ -32351,6 +32769,8 @@ internal static class LawyerOfficeMapUrlBuilder
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\EmailNotificationModels.cs ==================== 
 namespace LawyerPlatform.Application.Notifications.Email;
 
+using LawyerPlatform.Domain.Consultations;
+
 public abstract record EmailNotificationModel;
 
 public sealed record LawyerEmailNotificationModel(
@@ -32366,7 +32786,9 @@ public sealed record ConsultationEmailNotificationModel(
     string SpecializationNameEn,
     DateTime? PreferredAppointmentOnUtc = null,
     string? Reason = null,
-    string? LawyerOfficeMapUrl = null) : EmailNotificationModel;
+    string? LawyerOfficeMapUrl = null,
+    ConsultationType ConsultationType = ConsultationType.Online,
+    decimal? ConsultationPrice = null) : EmailNotificationModel;
 
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;
@@ -32793,6 +33215,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string? guestPhoneNumber,
         string? guestEmail,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -32806,6 +33229,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         GuestPhoneNumber = Normalize(guestPhoneNumber);
         GuestEmail = Normalize(guestEmail);
         LawyerProfileId = lawyerProfileId;
+        ConsultationType = consultationType;
         LegalSpecializationId = legalSpecializationId;
         Description = description.Trim();
         PreferredAppointmentOnUtc = preferredAppointmentOnUtc is { } preferred
@@ -32824,6 +33248,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
     public string? GuestEmail { get; private set; }
     public Guid LawyerProfileId { get; private set; }
     public LawyerProfile LawyerProfile { get; private set; } = null!;
+    public ConsultationType ConsultationType { get; private set; }
     public int? LegalSpecializationId { get; private set; }
     public LegalSpecialization? LegalSpecialization { get; private set; }
     public string Description { get; private set; } = string.Empty;
@@ -32842,6 +33267,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string phoneNumber,
         string? email,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -32854,6 +33280,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             phoneNumber,
             email,
             lawyerProfileId,
+            consultationType,
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
@@ -32864,6 +33291,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string referenceNumber,
         Guid clientProfileId,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -32876,6 +33304,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             null,
             null,
             lawyerProfileId,
+            consultationType,
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
@@ -32925,6 +33354,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         string? guestPhoneNumber,
         string? guestEmail,
         Guid lawyerProfileId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string description,
         DateTime? preferredAppointmentOnUtc,
@@ -32940,6 +33370,21 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
         if (hasClientSource == hasGuestSource || hasClientSource && !guestFieldsAreEmpty)
         {
             return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.InvalidSource);
+        }
+
+        if (!Enum.IsDefined(consultationType))
+        {
+            return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.InvalidConsultationType);
+        }
+
+        if (consultationType == ConsultationType.Online && !consultationPrice.HasValue)
+        {
+            return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.ConsultationPriceRequired);
+        }
+
+        if (consultationType == ConsultationType.Onsite && consultationPrice.HasValue)
+        {
+            return Result<ConsultationRequest>.Fail(ConsultationRequestErrors.OnsitePriceNotAllowed);
         }
 
         if (string.IsNullOrWhiteSpace(referenceNumber) ||
@@ -32965,6 +33410,7 @@ public sealed class ConsultationRequest : AggregateRoot<Guid>, IAuditableEntity
             guestPhoneNumber,
             guestEmail,
             lawyerProfileId,
+            consultationType,
             legalSpecializationId,
             description,
             preferredAppointmentOnUtc,
@@ -33000,6 +33446,18 @@ public static class ConsultationRequestErrors
     public static readonly Error Invalid = Error.Validation(
         "ConsultationRequest.Invalid",
         "The consultation request is invalid.");
+
+    public static readonly Error InvalidConsultationType = Error.Validation(
+        "ConsultationRequest.InvalidConsultationType",
+        "Consultation type must be Online or Onsite.");
+
+    public static readonly Error ConsultationPriceRequired = Error.Validation(
+        "ConsultationRequest.ConsultationPriceRequired",
+        "An Online consultation requires a valid price snapshot.");
+
+    public static readonly Error OnsitePriceNotAllowed = Error.Validation(
+        "ConsultationRequest.OnsitePriceNotAllowed",
+        "An Onsite consultation cannot contain a price snapshot.");
 
     public static readonly Error InvalidSource = Error.Domain(
         "ConsultationRequest.InvalidSource",
@@ -33107,6 +33565,15 @@ public sealed class ConsultationRequestStatusHistory : Entity<Guid>
     public DateTime ChangedOnUtc { get; private set; }
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Consultations\ConsultationType.cs ==================== 
+namespace LawyerPlatform.Domain.Consultations;
+
+public enum ConsultationType
+{
+    Online = 1,
+    Onsite = 2
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Lawyers\LawyerApprovalStatus.cs ==================== 
 namespace LawyerPlatform.Domain.Lawyers;
 
@@ -33159,6 +33626,7 @@ public sealed class LawyerApprovalStatusHistory : Entity<Guid>
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Lawyers\LawyerAvailability.cs ==================== 
 using BuildingBlock.Domain.EntitiesHelper;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Domain.Lawyers;
 
@@ -33170,12 +33638,14 @@ public sealed class LawyerAvailability : Entity<Guid>
 
     internal LawyerAvailability(
         Guid lawyerConsultationSettingsId,
+        ConsultationType consultationType,
         DayOfWeek dayOfWeek,
         TimeOnly startTime,
         TimeOnly endTime)
         : base(Guid.NewGuid())
     {
         LawyerConsultationSettingsId = lawyerConsultationSettingsId;
+        ConsultationType = consultationType;
         DayOfWeek = dayOfWeek;
         StartTime = startTime;
         EndTime = endTime;
@@ -33183,6 +33653,7 @@ public sealed class LawyerAvailability : Entity<Guid>
 
     public Guid LawyerConsultationSettingsId { get; private set; }
     public LawyerConsultationSettings LawyerConsultationSettings { get; private set; } = null!;
+    public ConsultationType ConsultationType { get; private set; }
     public DayOfWeek DayOfWeek { get; private set; }
     public TimeOnly StartTime { get; private set; }
     public TimeOnly EndTime { get; private set; }
@@ -33198,10 +33669,12 @@ public sealed class LawyerAvailability : Entity<Guid>
 using BuildingBlock.Domain.EntitiesHelper;
 using BuildingBlock.Domain.Primitive;
 using BuildingBlock.Domain.Results;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Domain.Lawyers;
 
 public sealed record LawyerAvailabilityPeriod(
+    ConsultationType ConsultationType,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime);
@@ -33217,20 +33690,20 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
 
     private LawyerConsultationSettings(
         Guid lawyerProfileId,
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability,
         DateTime createdOnUtc)
         : base(Guid.NewGuid())
     {
         LawyerProfileId = lawyerProfileId;
-        ConsultationPrice = consultationPrice;
+        OnlineConsultationPrice = onlineConsultationPrice;
         CreatedOnUtc = RequireUtc(createdOnUtc);
         ReplaceAvailabilityInternal(availability);
     }
 
     public Guid LawyerProfileId { get; private set; }
     public LawyerProfile LawyerProfile { get; private set; } = null!;
-    public decimal ConsultationPrice { get; private set; }
+    public decimal OnlineConsultationPrice { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
     public DateTime? ModifiedOnUtc { get; set; }
     public byte[] RowVersion { get; private set; } = [];
@@ -33238,42 +33711,42 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
 
     public static Result<LawyerConsultationSettings> Create(
         Guid lawyerProfileId,
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability,
         DateTime createdOnUtc)
     {
         ArgumentNullException.ThrowIfNull(availability);
 
-        var validation = Validate(lawyerProfileId, consultationPrice, availability);
+        var validation = Validate(lawyerProfileId, onlineConsultationPrice, availability);
         return validation.IsFailure
             ? Result<LawyerConsultationSettings>.Fail(validation.Errors)
             : Result<LawyerConsultationSettings>.Ok(new LawyerConsultationSettings(
                 lawyerProfileId,
-                consultationPrice,
+                onlineConsultationPrice,
                 availability,
                 createdOnUtc));
     }
 
     public Result Update(
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability)
     {
         ArgumentNullException.ThrowIfNull(availability);
 
-        var validation = Validate(LawyerProfileId, consultationPrice, availability);
+        var validation = Validate(LawyerProfileId, onlineConsultationPrice, availability);
         if (validation.IsFailure)
         {
             return validation;
         }
 
-        ConsultationPrice = consultationPrice;
+        OnlineConsultationPrice = onlineConsultationPrice;
         ReplaceAvailabilityInternal(availability);
         return Result.Ok();
     }
 
     private static Result Validate(
         Guid lawyerProfileId,
-        decimal consultationPrice,
+        decimal onlineConsultationPrice,
         IReadOnlyCollection<LawyerAvailabilityPeriod> availability)
     {
         if (lawyerProfileId == Guid.Empty)
@@ -33281,20 +33754,25 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
             return Result.Fail(LawyerErrors.NotFound);
         }
 
-        if (consultationPrice <= 0 ||
-            consultationPrice > MaximumConsultationPrice ||
-            decimal.Round(consultationPrice, 2) != consultationPrice)
+        if (onlineConsultationPrice <= 0 ||
+            onlineConsultationPrice > MaximumConsultationPrice ||
+            decimal.Round(onlineConsultationPrice, 2) != onlineConsultationPrice)
         {
             return Result.Fail(LawyerErrors.ConsultationPriceInvalid);
         }
 
-        if (availability.Count > 7 || availability.Any(period =>
-                !Enum.IsDefined(period.DayOfWeek) || period.StartTime >= period.EndTime))
+        if (availability.Any(period =>
+                !Enum.IsDefined(period.ConsultationType) ||
+                !Enum.IsDefined(period.DayOfWeek) ||
+                period.StartTime >= period.EndTime) ||
+            availability.GroupBy(period => period.ConsultationType).Any(group => group.Count() > 7))
         {
             return Result.Fail(LawyerErrors.AvailabilityInvalid);
         }
 
-        if (availability.Select(period => period.DayOfWeek).Distinct().Count() != availability.Count)
+        if (availability
+            .GroupBy(period => new { period.ConsultationType, period.DayOfWeek })
+            .Any(group => group.Count() > 1))
         {
             return Result.Fail(LawyerErrors.DuplicateAvailabilityDay);
         }
@@ -33304,16 +33782,21 @@ public sealed class LawyerConsultationSettings : AggregateRoot<Guid>, IAuditable
 
     private void ReplaceAvailabilityInternal(IReadOnlyCollection<LawyerAvailabilityPeriod> availability)
     {
-        var submittedDays = availability.Select(period => period.DayOfWeek).ToHashSet();
-        _availability.RemoveAll(item => !submittedDays.Contains(item.DayOfWeek));
+        var submittedPeriods = availability
+            .Select(period => (period.ConsultationType, period.DayOfWeek))
+            .ToHashSet();
+        _availability.RemoveAll(item => !submittedPeriods.Contains((item.ConsultationType, item.DayOfWeek)));
 
         foreach (var period in availability)
         {
-            var existing = _availability.SingleOrDefault(item => item.DayOfWeek == period.DayOfWeek);
+            var existing = _availability.SingleOrDefault(item =>
+                item.ConsultationType == period.ConsultationType &&
+                item.DayOfWeek == period.DayOfWeek);
             if (existing is null)
             {
                 _availability.Add(new LawyerAvailability(
                     Id,
+                    period.ConsultationType,
                     period.DayOfWeek,
                     period.StartTime,
                     period.EndTime));
@@ -33418,13 +33901,13 @@ public static class LawyerErrors
     public static readonly Error ConcurrencyConflict = Error.Conflict("Lawyer.ConcurrencyConflict", "The lawyer record was changed by another request.");
     public static readonly Error ConsultationPriceInvalid = Error.Validation(
         "Lawyer.ConsultationPriceInvalid",
-        "Consultation price must be greater than zero and contain at most two decimal places.");
+        "Online consultation price must be greater than zero, within the supported maximum, and contain at most two decimal places.");
     public static readonly Error AvailabilityInvalid = Error.Validation(
         "Lawyer.AvailabilityInvalid",
         "Availability must contain at most one valid working period per day and start before end.");
     public static readonly Error DuplicateAvailabilityDay = Error.Validation(
         "Lawyer.DuplicateAvailabilityDay",
-        "Availability cannot contain duplicate days.");
+        "Availability cannot contain duplicate days within the same consultation type.");
     public static readonly Error ConsultationSettingsInvalidRowVersion = Error.Validation(
         "Lawyer.ConsultationSettingsInvalidRowVersion",
         "Consultation settings RowVersion must be a valid Base64 value.");
@@ -36155,6 +36638,7 @@ internal sealed class ConsultationRequestConfiguration : IWriteEntityConfigurati
             .HasMaxLength(ConsultationRequest.MaximumDescriptionLength)
             .IsRequired();
         builder.Property(request => request.Status).HasConversion<int>().IsRequired();
+        builder.Property(request => request.ConsultationType).HasConversion<int>().IsRequired();
         builder.Property(request => request.ConsultationPrice).HasPrecision(18, 2);
         builder.Property(request => request.RowVersion).IsRowVersion().IsConcurrencyToken();
 
@@ -36317,6 +36801,9 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
         builder.Property(availability => availability.DayOfWeek)
             .HasConversion<int>()
             .IsRequired();
+        builder.Property(availability => availability.ConsultationType)
+            .HasConversion<int>()
+            .IsRequired();
         builder.Property(availability => availability.StartTime)
             .HasColumnType("time")
             .IsRequired();
@@ -36330,10 +36817,11 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
         builder.HasIndex(availability => new
             {
                 availability.LawyerConsultationSettingsId,
+                availability.ConsultationType,
                 availability.DayOfWeek
             })
             .IsUnique()
-            .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_DayOfWeek");
+            .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek");
     }
 }
  
@@ -36352,7 +36840,8 @@ internal sealed class LawyerConsultationSettingsConfiguration
     {
         builder.ToTable("LawyerConsultationSettings");
         builder.HasKey(settings => settings.Id);
-        builder.Property(settings => settings.ConsultationPrice)
+        builder.Property(settings => settings.OnlineConsultationPrice)
+            .HasColumnName("ConsultationPrice")
             .HasPrecision(18, 2)
             .IsRequired();
         builder.Property(settings => settings.RowVersion)
@@ -45739,6 +46228,1178 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
     }
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260818102643_AddOnlineAndOnsiteConsultationTypes.cs ==================== 
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddOnlineAndOnsiteConsultationTypes : Migration
+    {
+        private static readonly string[] AvailabilityIndexColumns =
+            ["LawyerConsultationSettingsId", "ConsultationType", "DayOfWeek"];
+        private static readonly string[] LegacyAvailabilityIndexColumns =
+            ["LawyerConsultationSettingsId", "DayOfWeek"];
+
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropIndex(
+                name: "UX_LawyerAvailabilities_SettingsId_DayOfWeek",
+                table: "LawyerAvailabilities");
+
+            migrationBuilder.AddColumn<int>(
+                name: "ConsultationType",
+                table: "LawyerAvailabilities",
+                type: "int",
+                nullable: false,
+                defaultValue: 1);
+
+            migrationBuilder.AddColumn<int>(
+                name: "ConsultationType",
+                table: "ConsultationRequests",
+                type: "int",
+                nullable: false,
+                defaultValue: 1);
+
+            migrationBuilder.CreateIndex(
+                name: "UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek",
+                table: "LawyerAvailabilities",
+                columns: AvailabilityIndexColumns,
+                unique: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.Sql(
+                "DELETE FROM [LawyerAvailabilities] WHERE [ConsultationType] = 2;");
+
+            migrationBuilder.DropIndex(
+                name: "UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek",
+                table: "LawyerAvailabilities");
+
+            migrationBuilder.DropColumn(
+                name: "ConsultationType",
+                table: "LawyerAvailabilities");
+
+            migrationBuilder.DropColumn(
+                name: "ConsultationType",
+                table: "ConsultationRequests");
+
+            migrationBuilder.CreateIndex(
+                name: "UX_LawyerAvailabilities_SettingsId_DayOfWeek",
+                table: "LawyerAvailabilities",
+                columns: LegacyAvailabilityIndexColumns,
+                unique: true);
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260818102643_AddOnlineAndOnsiteConsultationTypes.Designer.cs ==================== 
+﻿// <auto-generated />
+using System;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    [DbContext(typeof(LawyerPlatformDbContext))]
+    [Migration("20260818102643_AddOnlineAndOnsiteConsultationTypes")]
+    partial class AddOnlineAndOnsiteConsultationTypes
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.UserAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsFirstLogin")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedUserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("PasswordChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedEmail");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedUserName");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_PhoneNumber");
+
+                    b.HasIndex("Role", "Status")
+                        .HasDatabaseName("IX_UserAccounts_Role_Status");
+
+                    b.ToTable("UserAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ClientProfiles_UserAccountId");
+
+                    b.ToTable("ClientProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("ConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ConsultationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("GuestEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("GuestFullName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("GuestPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PreferredAppointmentOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LegalSpecializationId");
+
+                    b.HasIndex("ReferenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ConsultationRequests_ReferenceNumber");
+
+                    b.HasIndex("ClientProfileId", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_ClientProfileId_CreatedOnUtc");
+
+                    b.HasIndex("LawyerProfileId", "Status", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_LawyerProfileId_Status_CreatedOnUtc");
+
+                    b.ToTable("ConsultationRequests", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ConsultationRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("ConsultationRequestId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequestStatusHistory_ConsultationRequestId_ChangedOnUtc");
+
+                    b.ToTable("ConsultationRequestStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc");
+
+                    b.ToTable("LawyerApprovalStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ConsultationType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time");
+
+                    b.Property<Guid>("LawyerConsultationSettingsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerConsultationSettingsId", "ConsultationType", "DayOfWeek")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek");
+
+                    b.ToTable("LawyerAvailabilities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("OnlineConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("ConsultationPrice");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerConsultationSettings_LawyerProfileId");
+
+                    b.ToTable("LawyerConsultationSettings", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "DocumentType", "IsDeleted")
+                        .HasDatabaseName("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted");
+
+                    b.ToTable("LawyerDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AreaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DetailedAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublicPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AreaId");
+
+                    b.HasIndex("CityId");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerOffices_LawyerProfileId_Primary")
+                        .HasFilter("[IsPrimary] = 1");
+
+                    b.HasIndex("GovernorateId", "CityId", "AreaId")
+                        .HasDatabaseName("IX_LawyerOffices_GovernorateId_CityId_AreaId");
+
+                    b.ToTable("LawyerOffices", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ApprovalStatus")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ApprovedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ApprovedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Biography")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProfessionalRegistrationNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ProfessionalTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProfileImageStorageKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("SubmittedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SuspendedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("YearsOfExperience")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessionalRegistrationNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_ProfessionalRegistrationNumber")
+                        .HasFilter("[ProfessionalRegistrationNumber] IS NOT NULL");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_UserAccountId");
+
+                    b.HasIndex("ApprovalStatus", "SubmittedOnUtc")
+                        .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc");
+
+                    b.ToTable("LawyerProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("LawyerProfileId", "LegalSpecializationId");
+
+                    b.HasIndex("LegalSpecializationId", "LawyerProfileId")
+                        .HasDatabaseName("IX_LawyerSpecializations_LegalSpecializationId_LawyerProfileId");
+
+                    b.ToTable("LawyerSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CityId")
+                        .HasDatabaseName("IX_Areas_CityId");
+
+                    b.HasIndex("CityId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameAr");
+
+                    b.HasIndex("CityId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameEn");
+
+                    b.HasIndex("CityId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Areas_CityId_IsActive_DisplayOrder");
+
+                    b.ToTable("Areas", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GovernorateId")
+                        .HasDatabaseName("IX_Cities_GovernorateId");
+
+                    b.HasIndex("GovernorateId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameAr");
+
+                    b.HasIndex("GovernorateId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameEn");
+
+                    b.HasIndex("GovernorateId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Cities_GovernorateId_IsActive_DisplayOrder");
+
+                    b.ToTable("Cities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Governorate", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Governorates_IsActive_DisplayOrder");
+
+                    b.ToTable("Governorates", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_LegalSpecializations_IsActive_DisplayOrder");
+
+                    b.ToTable("LegalSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Infrastructure.Email.EmailOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("NextAttemptOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NotificationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProcessedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProcessingToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_CreatedOnUtc");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EmailOutboxMessages_IdempotencyKey");
+
+                    b.HasIndex("Status", "NextAttemptOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
+
+                    b.ToTable("EmailOutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Clients.ClientProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Clients.ClientProfile", "ClientProfile")
+                        .WithMany()
+                        .HasForeignKey("ClientProfileId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany()
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ClientProfile");
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Consultations.ConsultationRequest", "ConsultationRequest")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("ConsultationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ConsultationRequest");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerConsultationSettings")
+                        .WithMany("Availability")
+                        .HasForeignKey("LawyerConsultationSettingsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LawyerConsultationSettings");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithOne("ConsultationSettings")
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Documents")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Area", "Area")
+                        .WithMany()
+                        .HasForeignKey("AreaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Offices")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Area");
+
+                    b.Navigation("City");
+
+                    b.Navigation("Governorate");
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Specializations")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("City");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Governorate");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Navigation("Availability");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Navigation("ConsultationSettings");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("Offices");
+
+                    b.Navigation("Specializations");
+
+                    b.Navigation("StatusHistory");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\LawyerPlatformDbContextModelSnapshot.cs ==================== 
 ﻿// <auto-generated />
 using System;
@@ -45903,6 +47564,9 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("ConsultationType")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -46039,6 +47703,9 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("ConsultationType")
+                        .HasColumnType("int");
+
                     b.Property<int>("DayOfWeek")
                         .HasColumnType("int");
 
@@ -46053,9 +47720,9 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LawyerConsultationSettingsId", "DayOfWeek")
+                    b.HasIndex("LawyerConsultationSettingsId", "ConsultationType", "DayOfWeek")
                         .IsUnique()
-                        .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_DayOfWeek");
+                        .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek");
 
                     b.ToTable("LawyerAvailabilities", (string)null);
                 });
@@ -46066,10 +47733,6 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal>("ConsultationPrice")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -46078,6 +47741,11 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime?>("ModifiedOnUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<decimal>("OnlineConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("ConsultationPrice");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -48171,6 +49839,8 @@ public sealed class AdminConsultationRequestEndpointsTests
             TestContext.Current.CancellationToken);
         Assert.Equal(1, byReference.GetProperty("totalItems").GetInt64());
         Assert.Equal(first.Id, byReference.GetProperty("items")[0].GetProperty("id").GetGuid());
+        Assert.Equal("Onsite", byReference.GetProperty("items")[0].GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, byReference.GetProperty("items")[0].GetProperty("consultationPrice").ValueKind);
 
         var byRequester = await client.GetFromJsonAsync<JsonElement>(
             "/api/v1/admin/consultation-requests?searchText=Admin%20Search%20Guest",
@@ -48187,6 +49857,8 @@ public sealed class AdminConsultationRequestEndpointsTests
         Assert.Equal("01088111111", details.GetProperty("requesterPhoneNumber").GetString());
         Assert.Equal("Administrative Lawyer", details.GetProperty("lawyer").GetProperty("fullName").GetString());
         Assert.Equal("Admin request details", details.GetProperty("description").GetString());
+        Assert.Equal("Onsite", details.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, details.GetProperty("consultationPrice").ValueKind);
         Assert.Equal(0, details.GetProperty("statusHistory").GetArrayLength());
 
         var originalRowVersion = details.GetProperty("rowVersion").GetString()!;
@@ -48341,6 +50013,7 @@ public sealed class AdminConsultationRequestEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             fullName,
             phoneNumber,
@@ -49361,12 +51034,16 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         AssertNoPrivateLocationFields(list.GetRawText());
         Assert.Equal(1, list.GetProperty("totalItems").GetInt64());
         Assert.Equal(firstRequest.Id, list.GetProperty("items")[0].GetProperty("id").GetGuid());
+        Assert.Equal("Onsite", list.GetProperty("items")[0].GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, list.GetProperty("items")[0].GetProperty("consultationPrice").ValueKind);
 
         var ownDetails = await client.GetFromJsonAsync<JsonElement>(
             $"/api/v1/client/consultation-requests/{firstRequest.Id}",
             TestContext.Current.CancellationToken);
         Assert.Equal("First private description", ownDetails.GetProperty("description").GetString());
         Assert.Equal("Private client rejection", ownDetails.GetProperty("rejectionReason").GetString());
+        Assert.Equal("Onsite", ownDetails.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, ownDetails.GetProperty("consultationPrice").ValueKind);
         AssertNoPrivateLocationFields(ownDetails.GetRawText());
 
         await RegisterAndLoginClientAsync(
@@ -49397,6 +51074,8 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         var trackedText = await trackedResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         var tracked = JsonDocument.Parse(trackedText).RootElement;
         Assert.Equal("Rejected", tracked.GetProperty("status").GetString());
+        Assert.Equal("Onsite", tracked.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, tracked.GetProperty("consultationPrice").ValueKind);
         Assert.False(tracked.TryGetProperty("rejectionReason", out _));
         Assert.False(tracked.TryGetProperty("statusHistory", out _));
         Assert.False(tracked.TryGetProperty("description", out _));
@@ -49491,6 +51170,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             description
         }, TestContext.Current.CancellationToken);
@@ -49507,6 +51187,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             fullName = "Tracked Guest",
             phoneNumber = "01087333333",
@@ -49619,6 +51300,7 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         var sundayAtTen = NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(10, 0));
         var sundayAtFourteen = NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(14, 0));
         var sundayAtSeventeen = NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(17, 0));
+        var mondayAtTen = NextBusinessLocalUtc(DayOfWeek.Monday, new TimeOnly(10, 0));
 
         await AssertCreatedAsync(await PostGuestAsync(client, lawyer.ProfileId, sundayAtTen, "01081111111"));
         var oldGuestResponse = await PostGuestAsync(client, lawyer.ProfileId, sundayAtFourteen, "01082222222");
@@ -49635,11 +51317,28 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         await AssertProblemAsync(
             await PostGuestAsync(client, lawyer.ProfileId, NextBusinessLocalUtc(DayOfWeek.Wednesday, new TimeOnly(14, 0)), "01087777777"),
             "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
+        await AssertProblemAsync(
+            await PostGuestAsync(client, lawyer.ProfileId, mondayAtTen, "01087878787"),
+            "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
+        var onsiteGuest = await AssertCreatedAsync(
+            await PostGuestAsync(client, lawyer.ProfileId, mondayAtTen, "01087979797", "Onsite"));
+        Assert.Equal("Onsite", onsiteGuest.ConsultationType);
+        Assert.Null(onsiteGuest.ConsultationPrice);
+        await AssertProblemAsync(
+            await PostGuestAsync(client, lawyer.ProfileId, sundayAtFourteen, "01087676767", "Onsite"),
+            "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
 
         var clientToken = await RegisterAndLoginClientAsync(client);
         SetToken(client, clientToken);
         var oldClient = await AssertCreatedAsync(
             await PostClientAsync(client, lawyer.ProfileId, sundayAtFourteen));
+        var onsiteClient = await AssertCreatedAsync(
+            await PostClientAsync(client, lawyer.ProfileId, mondayAtTen, "Onsite"));
+        Assert.Equal("Onsite", onsiteClient.ConsultationType);
+        Assert.Null(onsiteClient.ConsultationPrice);
+        await AssertProblemAsync(
+            await PostClientAsync(client, lawyer.ProfileId, sundayAtFourteen, "Onsite"),
+            "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
         await AssertProblemAsync(
             await PostClientAsync(client, lawyer.ProfileId, NextBusinessLocalUtc(DayOfWeek.Wednesday, new TimeOnly(14, 0))),
             "ConsultationRequest.LawyerNotAvailableOnSelectedDay");
@@ -49651,10 +51350,20 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         var settings = await GetJsonAsync(client, "/api/v1/lawyer/consultation-settings");
         var priceUpdate = await client.PutAsJsonAsync("/api/v1/lawyer/consultation-settings", new
         {
-            consultationPrice = 700m,
-            availability = new[]
+            online = new
             {
-                new { dayOfWeek = "Sunday", startTime = "10:00:00", endTime = "17:00:00" }
+                price = 700m,
+                availability = new[]
+                {
+                    new { dayOfWeek = "Sunday", startTime = "10:00:00", endTime = "17:00:00" }
+                }
+            },
+            onsite = new
+            {
+                availability = new[]
+                {
+                    new { dayOfWeek = "Monday", startTime = "09:00:00", endTime = "15:00:00" }
+                }
             },
             rowVersion = settings.GetProperty("rowVersion").GetString()
         }, TestContext.Current.CancellationToken);
@@ -49671,13 +51380,21 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         {
             var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
             var prices = await context.ConsultationRequests.AsNoTracking()
-                .Where(request => new[] { oldGuest.Id, oldClient.Id, newGuest.Id, newClient.Id }.Contains(request.Id))
-                .ToDictionaryAsync(request => request.Id, request => request.ConsultationPrice,
+                .Where(request => new[] { oldGuest.Id, oldClient.Id, onsiteGuest.Id, onsiteClient.Id, newGuest.Id, newClient.Id }.Contains(request.Id))
+                .ToDictionaryAsync(request => request.Id, request => new
+                    {
+                        request.ConsultationType,
+                        request.ConsultationPrice
+                    },
                     TestContext.Current.CancellationToken);
-            Assert.Equal(500m, prices[oldGuest.Id]);
-            Assert.Equal(500m, prices[oldClient.Id]);
-            Assert.Equal(700m, prices[newGuest.Id]);
-            Assert.Equal(700m, prices[newClient.Id]);
+            Assert.Equal(500m, prices[oldGuest.Id].ConsultationPrice);
+            Assert.Equal(500m, prices[oldClient.Id].ConsultationPrice);
+            Assert.Equal(ConsultationType.Onsite, prices[onsiteGuest.Id].ConsultationType);
+            Assert.Null(prices[onsiteGuest.Id].ConsultationPrice);
+            Assert.Equal(ConsultationType.Onsite, prices[onsiteClient.Id].ConsultationType);
+            Assert.Null(prices[onsiteClient.Id].ConsultationPrice);
+            Assert.Equal(700m, prices[newGuest.Id].ConsultationPrice);
+            Assert.Equal(700m, prices[newClient.Id].ConsultationPrice);
         }
 
         SetToken(client, null);
@@ -49686,11 +51403,14 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
             referenceNumber = oldGuest.ReferenceNumber,
             phoneNumber = "01082222222"
         }, TestContext.Current.CancellationToken);
-        Assert.Equal(500m, (await ReadJsonAsync(tracking)).GetProperty("consultationPrice").GetDecimal());
+        var trackingBody = await ReadJsonAsync(tracking);
+        Assert.Equal("Online", trackingBody.GetProperty("consultationType").GetString());
+        Assert.Equal(500m, trackingBody.GetProperty("consultationPrice").GetDecimal());
 
         SetToken(client, clientToken);
-        Assert.Equal(500m, (await GetJsonAsync(client, $"/api/v1/client/consultation-requests/{oldClient.Id}"))
-            .GetProperty("consultationPrice").GetDecimal());
+        var clientDetails = await GetJsonAsync(client, $"/api/v1/client/consultation-requests/{oldClient.Id}");
+        Assert.Equal("Online", clientDetails.GetProperty("consultationType").GetString());
+        Assert.Equal(500m, clientDetails.GetProperty("consultationPrice").GetDecimal());
         SetToken(client, lawyer.Token);
         Assert.Equal(500m, (await GetJsonAsync(client, $"/api/v1/lawyer/consultation-requests/{oldGuest.Id}"))
             .GetProperty("consultationPrice").GetDecimal());
@@ -49708,6 +51428,16 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         Assert.Equal(700m, publicDetails.GetProperty("consultationPrice").GetDecimal());
         Assert.Equal("Sunday", publicDetails.GetProperty("availability")[0].GetProperty("dayOfWeek").GetString());
         Assert.False(publicDetails.TryGetProperty("rowVersion", out _));
+        var publicSettings = await GetJsonAsync(
+            client,
+            $"/api/v1/public/lawyers/{lawyer.ProfileId}/consultation-settings");
+        Assert.Equal(700m, publicSettings.GetProperty("online").GetProperty("price").GetDecimal());
+        Assert.Equal("Sunday", publicSettings.GetProperty("online").GetProperty("availability")[0]
+            .GetProperty("dayOfWeek").GetString());
+        Assert.Equal("Monday", publicSettings.GetProperty("onsite").GetProperty("availability")[0]
+            .GetProperty("dayOfWeek").GetString());
+        Assert.False(publicSettings.TryGetProperty("rowVersion", out _));
+        Assert.DoesNotContain("lawyerProfileId", publicSettings.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -49724,13 +51454,14 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
 
         SetToken(client, null);
         var contact = await AssertCreatedAsync(
-            await PostGuestAsync(client, lawyer.ProfileId, null, "01089999999"));
+            await PostGuestAsync(client, lawyer.ProfileId, null, "01089999999", "Onsite"));
         await AssertProblemAsync(
             await PostGuestAsync(
                 client,
                 lawyer.ProfileId,
                 NextBusinessLocalUtc(DayOfWeek.Sunday, new TimeOnly(14, 0)),
-                "01080000000"),
+                "01080000000",
+                "Onsite"),
             "ConsultationRequest.LawyerAvailabilityNotConfigured");
 
         await using var scope = factory.Services.CreateAsyncScope();
@@ -49796,7 +51527,10 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
             context.LawyerConsultationSettings.Add(LawyerConsultationSettings.Create(
                 profileId,
                 500m,
-                [new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0))],
+                [
+                    new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
+                    new LawyerAvailabilityPeriod(ConsultationType.Onsite, DayOfWeek.Monday, new TimeOnly(9, 0), new TimeOnly(15, 0))
+                ],
                 nowUtc).Value);
         }
 
@@ -49816,12 +51550,14 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         HttpClient client,
         Guid lawyerId,
         DateTime? appointmentOnUtc,
-        string phoneNumber)
+        string phoneNumber,
+        string consultationType = "Online")
     {
         SetToken(client, null);
         return client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType,
             legalSpecializationId = 1,
             fullName = "Availability Guest",
             phoneNumber,
@@ -49834,10 +51570,12 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
     private static Task<HttpResponseMessage> PostClientAsync(
         HttpClient client,
         Guid lawyerId,
-        DateTime appointmentOnUtc)
+        DateTime appointmentOnUtc,
+        string consultationType = "Online")
         => client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType,
             legalSpecializationId = 1,
             description = "Client availability validation request",
             preferredAppointmentOnUtc = appointmentOnUtc
@@ -49849,7 +51587,11 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         var body = await ReadJsonAsync(response);
         return new CreatedRequest(
             body.GetProperty("id").GetGuid(),
-            body.GetProperty("referenceNumber").GetString()!);
+            body.GetProperty("referenceNumber").GetString()!,
+            body.GetProperty("consultationType").GetString()!,
+            body.GetProperty("consultationPrice").ValueKind == JsonValueKind.Null
+                ? null
+                : body.GetProperty("consultationPrice").GetDecimal());
     }
 
     private static async Task AssertProblemAsync(HttpResponseMessage response, string code)
@@ -49945,7 +51687,11 @@ public sealed class ConsultationAvailabilityAndPriceSnapshotTests
         });
 
     private sealed record ApprovedLawyer(Guid ProfileId, string Token);
-    private sealed record CreatedRequest(Guid Id, string ReferenceNumber);
+    private sealed record CreatedRequest(
+        Guid Id,
+        string ReferenceNumber,
+        string ConsultationType,
+        decimal? ConsultationPrice);
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\ConsultationRequestCreationEndpointsTests.cs ==================== 
@@ -49968,6 +51714,38 @@ namespace LawyerPlatform.IntegrationTests;
 public sealed class ConsultationRequestCreationEndpointsTests
 {
     [Fact]
+    public async Task SwaggerDocumentsConsultationTypesAndPublicSettingsEndpoint()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+
+        var swagger = await client.GetFromJsonAsync<JsonElement>(
+            "/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        var schemas = swagger.GetProperty("components").GetProperty("schemas");
+        foreach (var schemaName in new[]
+                 {
+                     "CreateGuestConsultationRequest",
+                     "CreateClientConsultationRequest"
+                 })
+        {
+            Assert.Equal(
+                ["Online", "Onsite"],
+                schemas.GetProperty(schemaName)
+                    .GetProperty("properties")
+                    .GetProperty("consultationType")
+                    .GetProperty("enum")
+                    .EnumerateArray()
+                    .Select(item => item.GetString()!)
+                    .ToArray());
+        }
+
+        Assert.True(swagger.GetProperty("paths").TryGetProperty(
+            "/api/v1/public/lawyers/{lawyerId}/consultation-settings",
+            out _));
+    }
+
+    [Fact]
     public async Task GuestCreationValidatesIdentityLawyerSpecializationAndPreferredTime()
     {
         await using var factory = await CreateFactoryAsync();
@@ -49975,12 +51753,29 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var draftLawyerId = await CreateLawyerAsync(factory, "guest.draft", complete: true, approved: false, accountActive: true);
         var inactiveLawyerId = await CreateLawyerAsync(factory, "guest.inactive", complete: true, approved: true, accountActive: false);
         var incompleteLawyerId = await CreateLawyerAsync(factory, "guest.incomplete", complete: false, approved: true, accountActive: true);
+        await ConfigureAllWeekAvailabilityAsync(factory, eligibleLawyerId);
         using var client = CreateClient(factory);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.GetAsync(
+                $"/api/v1/public/lawyers/{eligibleLawyerId}/consultation-settings",
+                TestContext.Current.CancellationToken)).StatusCode);
+        foreach (var hiddenLawyerId in new[] { draftLawyerId, inactiveLawyerId, incompleteLawyerId })
+        {
+            Assert.Equal(
+                HttpStatusCode.NotFound,
+                (await client.GetAsync(
+                    $"/api/v1/public/lawyers/{hiddenLawyerId}/consultation-settings",
+                    TestContext.Current.CancellationToken)).StatusCode);
+        }
 
         var success = await PostGuestAsync(client, eligibleLawyerId, specializationId: null);
         Assert.Equal(HttpStatusCode.Created, success.StatusCode);
         var created = await success.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal("New", created.GetProperty("status").GetString());
+        Assert.Equal("Online", created.GetProperty("consultationType").GetString());
+        Assert.Equal(500m, created.GetProperty("consultationPrice").GetDecimal());
         Assert.StartsWith("CR-", created.GetProperty("referenceNumber").GetString(), StringComparison.Ordinal);
         Assert.DoesNotContain("smtp", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("emailSent", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
@@ -49988,6 +51783,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var guestWithoutEmail = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest Without Email",
             phoneNumber = "01012345679",
             description = "Private guest description"
@@ -50030,6 +51826,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var missingName = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "",
             phoneNumber = "01012345678",
             description = "Description"
@@ -50039,6 +51836,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var missingPhone = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest",
             phoneNumber = "",
             description = "Description"
@@ -50048,6 +51846,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var invalidEmail = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest",
             phoneNumber = "01012345678",
             email = "invalid-email",
@@ -50090,6 +51889,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var past = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest",
             phoneNumber = "01012345678",
             description = "Description",
@@ -50099,6 +51899,18 @@ public sealed class ConsultationRequestCreationEndpointsTests
             past,
             HttpStatusCode.UnprocessableEntity,
             "ConsultationRequest.PreferredAppointmentMustBeFuture");
+
+        var missingType = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
+        {
+            lawyerId = eligibleLawyerId,
+            fullName = "Guest",
+            phoneNumber = "01012345678",
+            description = "Description"
+        }, TestContext.Current.CancellationToken);
+        await AssertErrorAsync(
+            missingType,
+            HttpStatusCode.UnprocessableEntity,
+            "Validation.ConsultationRequest.InvalidConsultationType");
     }
 
     [Fact]
@@ -50113,6 +51925,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
             (await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
             {
                 lawyerId,
+                consultationType = "Online",
                 description = "Anonymous attempt"
             }, TestContext.Current.CancellationToken)).StatusCode);
 
@@ -50121,6 +51934,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Online",
             legalSpecializationId = 1,
             description = "  Authenticated client request  ",
             preferredAppointmentOnUtc = DateTime.UtcNow.AddDays(1),
@@ -50144,6 +51958,8 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Null(stored.GuestPhoneNumber);
         Assert.Equal("Authenticated client request", stored.Description);
         Assert.Equal(ConsultationRequestStatus.New, stored.Status);
+        Assert.Equal(ConsultationType.Online, stored.ConsultationType);
+        Assert.Equal(500m, stored.ConsultationPrice);
 
         var notifications = await context.EmailOutboxMessages
             .AsNoTracking()
@@ -50198,6 +52014,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         => client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Online",
             legalSpecializationId = specializationId,
             fullName = "Guest Requester",
             phoneNumber = "01012345678",
@@ -50298,6 +52115,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
     {
         var periods = Enum.GetValues<DayOfWeek>()
             .Select(day => new LawyerAvailabilityPeriod(
+                ConsultationType.Online,
                 day,
                 TimeOnly.MinValue,
                 TimeOnly.FromTimeSpan(TimeSpan.FromTicks(TimeSpan.TicksPerDay - 1))))
@@ -51044,6 +52862,11 @@ public sealed class LawyerConsultationRequestEndpointsTests
         var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal(3, list.GetProperty("totalItems").GetInt64());
         Assert.Equal(2, list.GetProperty("items").GetArrayLength());
+        Assert.All(list.GetProperty("items").EnumerateArray(), item =>
+        {
+            Assert.Equal("Onsite", item.GetProperty("consultationType").GetString());
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("consultationPrice").ValueKind);
+        });
         Assert.DoesNotContain(
             list.GetProperty("items").EnumerateArray(),
             item => item.GetProperty("id").GetGuid() == otherLawyerRequest.Id);
@@ -51058,6 +52881,8 @@ public sealed class LawyerConsultationRequestEndpointsTests
         Assert.Equal("First Guest", guestDetails.GetProperty("requesterFullName").GetString());
         Assert.Equal("01011112222", guestDetails.GetProperty("requesterPhoneNumber").GetString());
         Assert.Equal("first.guest@example.test", guestDetails.GetProperty("requesterEmail").GetString());
+        Assert.Equal("Onsite", guestDetails.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, guestDetails.GetProperty("consultationPrice").ValueKind);
 
         var clientDetails = await GetDetailsAsync(client, clientRequest.Id);
         Assert.Equal("Client", clientDetails.GetProperty("requesterType").GetString());
@@ -51289,6 +53114,7 @@ public sealed class LawyerConsultationRequestEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             fullName,
             phoneNumber,
             email = $"{fullName.Replace(" ", ".", StringComparison.Ordinal).ToLowerInvariant()}@example.test",
@@ -51325,6 +53151,7 @@ public sealed class LawyerConsultationRequestEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             description = "Client consultation request"
         }, TestContext.Current.CancellationToken);
@@ -51492,7 +53319,7 @@ public sealed class LawyerConsultationSettingsEndpointsTests
         Assert.NotEqual(firstRowVersion, secondRowVersion);
         Assert.Equal(
             ["Sunday", "Wednesday"],
-            updated.GetProperty("availability").EnumerateArray()
+            updated.GetProperty("online").GetProperty("availability").EnumerateArray()
                 .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
 
         var nextResponse = await PutSettingsAsync(client, 550m, secondRowVersion,
@@ -51568,10 +53395,10 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             await updateResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var updated = await ReadJsonAsync(updateResponse);
 
-        Assert.Equal(expectedPrice, updated.GetProperty("consultationPrice").GetDecimal());
+        Assert.Equal(expectedPrice, updated.GetProperty("online").GetProperty("price").GetDecimal());
         Assert.Equal(
             replacement.Select(item => item.DayOfWeek).OrderBy(DayIndex).ToArray(),
-            updated.GetProperty("availability").EnumerateArray()
+            updated.GetProperty("online").GetProperty("availability").EnumerateArray()
                 .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
         Assert.NotEqual(firstRowVersion, updated.GetProperty("rowVersion").GetString());
     }
@@ -51591,8 +53418,9 @@ public sealed class LawyerConsultationSettingsEndpointsTests
 
         SetToken(client, lawyerToken);
         var unconfigured = await GetJsonAsync(client, "/api/v1/lawyer/consultation-settings");
-        Assert.Equal(JsonValueKind.Null, unconfigured.GetProperty("consultationPrice").ValueKind);
-        Assert.Empty(unconfigured.GetProperty("availability").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, unconfigured.GetProperty("online").GetProperty("price").ValueKind);
+        Assert.Empty(unconfigured.GetProperty("online").GetProperty("availability").EnumerateArray());
+        Assert.Empty(unconfigured.GetProperty("onsite").GetProperty("availability").EnumerateArray());
         Assert.Equal(JsonValueKind.Null, unconfigured.GetProperty("rowVersion").ValueKind);
 
         var createdResponse = await PutSettingsAsync(client, 500m, null,
@@ -51602,10 +53430,10 @@ public sealed class LawyerConsultationSettingsEndpointsTests
         Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
         var created = await ReadJsonAsync(createdResponse);
         var firstRowVersion = created.GetProperty("rowVersion").GetString()!;
-        Assert.Equal(500m, created.GetProperty("consultationPrice").GetDecimal());
+        Assert.Equal(500m, created.GetProperty("online").GetProperty("price").GetDecimal());
         Assert.Equal(
             ["Sunday", "Monday", "Tuesday"],
-            created.GetProperty("availability").EnumerateArray()
+            created.GetProperty("online").GetProperty("availability").EnumerateArray()
                 .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
 
         var duplicate = await PutSettingsAsync(client, 500m, firstRowVersion,
@@ -51632,7 +53460,7 @@ public sealed class LawyerConsultationSettingsEndpointsTests
             await updatedResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var updated = await ReadJsonAsync(updatedResponse);
         Assert.NotEqual(firstRowVersion, updated.GetProperty("rowVersion").GetString());
-        Assert.Equal(["Sunday", "Monday"], updated.GetProperty("availability").EnumerateArray()
+        Assert.Equal(["Sunday", "Monday"], updated.GetProperty("online").GetProperty("availability").EnumerateArray()
             .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
 
         var stale = await PutSettingsAsync(client, 900m, firstRowVersion,
@@ -51647,20 +53475,91 @@ public sealed class LawyerConsultationSettingsEndpointsTests
                 TestContext.Current.CancellationToken)).StatusCode);
     }
 
+    [Fact]
+    public async Task LawyerCanRoundTripAndReplaceIndependentOnlineAndOnsiteAvailability()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+        SetToken(client, await RegisterAndLoginLawyerAsync(
+            client,
+            "settings.types",
+            "01077777777"));
+
+        var createdResponse = await PutGroupedSettingsAsync(
+            client,
+            500m,
+            null,
+            [new AvailabilityJson("Sunday", "10:00:00", "17:00:00")],
+            [new AvailabilityJson("Sunday", "09:00:00", "14:00:00")]);
+        Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
+        var created = await ReadJsonAsync(createdResponse);
+        Assert.Equal(500m, created.GetProperty("online").GetProperty("price").GetDecimal());
+        Assert.Equal("10:00:00", created.GetProperty("online").GetProperty("availability")[0]
+            .GetProperty("startTime").GetString());
+        Assert.Equal("09:00:00", created.GetProperty("onsite").GetProperty("availability")[0]
+            .GetProperty("startTime").GetString());
+
+        var updatedResponse = await PutGroupedSettingsAsync(
+            client,
+            700m,
+            created.GetProperty("rowVersion").GetString(),
+            [
+                new AvailabilityJson("Sunday", "08:00:00", "18:00:00"),
+                new AvailabilityJson("Friday", "10:00:00", "16:00:00")
+            ],
+            [
+                new AvailabilityJson("Sunday", "08:30:00", "15:00:00"),
+                new AvailabilityJson("Thursday", "09:00:00", "14:00:00")
+            ]);
+        Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
+        var updated = await ReadJsonAsync(updatedResponse);
+        Assert.NotEqual(
+            created.GetProperty("rowVersion").GetString(),
+            updated.GetProperty("rowVersion").GetString());
+        Assert.Equal(
+            ["Sunday", "Friday"],
+            updated.GetProperty("online").GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+        Assert.Equal(
+            ["Sunday", "Thursday"],
+            updated.GetProperty("onsite").GetProperty("availability").EnumerateArray()
+                .Select(item => item.GetProperty("dayOfWeek").GetString()!).ToArray());
+    }
+
     private static Task<HttpResponseMessage> PutSettingsAsync(
         HttpClient client,
         decimal price,
         string? rowVersion,
         params AvailabilityJson[] availability)
+        => PutGroupedSettingsAsync(client, price, rowVersion, availability, []);
+
+    private static Task<HttpResponseMessage> PutGroupedSettingsAsync(
+        HttpClient client,
+        decimal price,
+        string? rowVersion,
+        AvailabilityJson[] onlineAvailability,
+        AvailabilityJson[] onsiteAvailability)
         => client.PutAsJsonAsync("/api/v1/lawyer/consultation-settings", new
         {
-            consultationPrice = price,
-            availability = availability.Select(item => new
+            online = new
             {
-                dayOfWeek = item.DayOfWeek,
-                startTime = item.StartTime,
-                endTime = item.EndTime
-            }),
+                price,
+                availability = onlineAvailability.Select(item => new
+                {
+                    dayOfWeek = item.DayOfWeek,
+                    startTime = item.StartTime,
+                    endTime = item.EndTime
+                })
+            },
+            onsite = new
+            {
+                availability = onsiteAvailability.Select(item => new
+                {
+                    dayOfWeek = item.DayOfWeek,
+                    startTime = item.StartTime,
+                    endTime = item.EndTime
+                })
+            },
             rowVersion
         }, TestContext.Current.CancellationToken);
 
@@ -51767,14 +53666,37 @@ using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Infrastructure.Lawyers;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace LawyerPlatform.IntegrationTests;
 
 public sealed class LawyerConsultationSettingsPersistenceModelTests
 {
+    [Fact]
+    public void ConsultationTypeMigrationMapsAllExistingRowsToOnlineWithoutChangingPrices()
+    {
+        var migration = new AddOnlineAndOnsiteConsultationTypes();
+        var addedTypeColumns = migration.UpOperations
+            .OfType<AddColumnOperation>()
+            .Where(operation => operation.Name == "ConsultationType")
+            .ToArray();
+
+        Assert.Equal(2, addedTypeColumns.Length);
+        Assert.All(addedTypeColumns, operation =>
+        {
+            Assert.False(operation.IsNullable);
+            Assert.Equal((int)ConsultationType.Online, operation.DefaultValue);
+        });
+        Assert.DoesNotContain(migration.UpOperations, operation =>
+            operation is DropColumnOperation drop && drop.Name == "ConsultationPrice");
+        Assert.DoesNotContain(migration.UpOperations, operation =>
+            operation is AlterColumnOperation alter && alter.Name == "ConsultationPrice");
+    }
+
     [Fact]
     public void SqlServerModelContainsSettingsAvailabilityAndNullablePriceSnapshotMappings()
     {
@@ -51788,16 +53710,28 @@ public sealed class LawyerConsultationSettingsPersistenceModelTests
 
         Assert.Equal("LawyerConsultationSettings", settings.GetTableName());
         Assert.Equal("LawyerAvailabilities", availability.GetTableName());
-        Assert.Equal("decimal(18,2)", settings.FindProperty(nameof(LawyerConsultationSettings.ConsultationPrice))!.GetColumnType());
+        Assert.Equal("decimal(18,2)", settings.FindProperty(nameof(LawyerConsultationSettings.OnlineConsultationPrice))!.GetColumnType());
+        Assert.Equal("ConsultationPrice", settings.FindProperty(nameof(LawyerConsultationSettings.OnlineConsultationPrice))!
+            .GetColumnName(StoreObjectIdentifier.Table("LawyerConsultationSettings", null)));
         Assert.True(settings.FindProperty(nameof(LawyerConsultationSettings.RowVersion))!.IsConcurrencyToken);
         Assert.Equal("time", availability.FindProperty(nameof(LawyerAvailability.StartTime))!.GetColumnType());
         Assert.Equal("time", availability.FindProperty(nameof(LawyerAvailability.EndTime))!.GetColumnType());
+        Assert.Equal(typeof(int), availability.FindProperty(nameof(LawyerAvailability.ConsultationType))!
+            .GetTypeMapping().Converter!.ProviderClrType);
+        Assert.Equal(typeof(int), request.FindProperty(nameof(ConsultationRequest.ConsultationType))!
+            .GetTypeMapping().Converter!.ProviderClrType);
         Assert.Equal("decimal(18,2)", request.FindProperty(nameof(ConsultationRequest.ConsultationPrice))!.GetColumnType());
         Assert.True(request.FindProperty(nameof(ConsultationRequest.ConsultationPrice))!.IsNullable);
         Assert.Contains(settings.GetIndexes(), index =>
             index.IsUnique && index.GetDatabaseName() == "UX_LawyerConsultationSettings_LawyerProfileId");
         Assert.Contains(availability.GetIndexes(), index =>
-            index.IsUnique && index.GetDatabaseName() == "UX_LawyerAvailabilities_SettingsId_DayOfWeek");
+            index.IsUnique &&
+            index.GetDatabaseName() == "UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(LawyerAvailability.LawyerConsultationSettingsId),
+                nameof(LawyerAvailability.ConsultationType),
+                nameof(LawyerAvailability.DayOfWeek)
+            ]));
         Assert.Equal(DeleteBehavior.Restrict, settings.GetForeignKeys().Single().DeleteBehavior);
         Assert.Equal(DeleteBehavior.Cascade, availability.GetForeignKeys().Single().DeleteBehavior);
         Assert.Equal(ValueGenerated.Never, availability.FindProperty(nameof(LawyerAvailability.Id))!.ValueGenerated);
@@ -51830,7 +53764,9 @@ public sealed class LawyerConsultationSettingsPersistenceModelTests
             [
                 Period(DayOfWeek.Sunday, 10, 17),
                 Period(DayOfWeek.Wednesday, 10, 20),
-                Period(DayOfWeek.Thursday, 10, 19)
+                Period(DayOfWeek.Thursday, 10, 19),
+                Period(ConsultationType.Onsite, DayOfWeek.Sunday, 9, 14),
+                Period(ConsultationType.Onsite, DayOfWeek.Monday, 9, 15)
             ],
             nowUtc).Value;
         context.LawyerProfiles.Add(profile);
@@ -51850,9 +53786,11 @@ public sealed class LawyerConsultationSettingsPersistenceModelTests
             [
                 Period(DayOfWeek.Sunday, 9, 18),
                 Period(DayOfWeek.Wednesday, 10, 20),
-                Period(DayOfWeek.Friday, 10, 16)
+                Period(DayOfWeek.Friday, 10, 16),
+                Period(ConsultationType.Onsite, DayOfWeek.Sunday, 8, 15),
+                Period(ConsultationType.Onsite, DayOfWeek.Thursday, 9, 14)
             ]).IsSuccess);
-        tokenManager.MarkPropertyModified(tracked, item => item.ConsultationPrice);
+        tokenManager.MarkPropertyModified(tracked, item => item.OnlineConsultationPrice);
         context.ChangeTracker.DetectChanges();
 
         var settingsEntry = context.Entry(tracked);
@@ -51860,21 +53798,33 @@ public sealed class LawyerConsultationSettingsPersistenceModelTests
         Assert.Equal(EntityState.Modified, settingsEntry.State);
         Assert.Equal(originalRowVersion, rowVersionEntry.OriginalValue);
         Assert.Equal(originalRowVersion, rowVersionEntry.CurrentValue);
-        Assert.True(settingsEntry.Property(item => item.ConsultationPrice).IsModified);
+        Assert.True(settingsEntry.Property(item => item.OnlineConsultationPrice).IsModified);
 
         var availabilityStates = context.ChangeTracker.Entries<LawyerAvailability>()
-            .ToDictionary(entry => entry.Entity.DayOfWeek, entry => entry.State);
-        Assert.Equal(EntityState.Modified, availabilityStates[DayOfWeek.Sunday]);
-        Assert.Equal(EntityState.Unchanged, availabilityStates[DayOfWeek.Wednesday]);
-        Assert.Equal(EntityState.Deleted, availabilityStates[DayOfWeek.Thursday]);
-        Assert.Equal(EntityState.Added, availabilityStates[DayOfWeek.Friday]);
+            .ToDictionary(
+                entry => (entry.Entity.ConsultationType, entry.Entity.DayOfWeek),
+                entry => entry.State);
+        Assert.Equal(EntityState.Modified, availabilityStates[(ConsultationType.Online, DayOfWeek.Sunday)]);
+        Assert.Equal(EntityState.Unchanged, availabilityStates[(ConsultationType.Online, DayOfWeek.Wednesday)]);
+        Assert.Equal(EntityState.Deleted, availabilityStates[(ConsultationType.Online, DayOfWeek.Thursday)]);
+        Assert.Equal(EntityState.Added, availabilityStates[(ConsultationType.Online, DayOfWeek.Friday)]);
+        Assert.Equal(EntityState.Modified, availabilityStates[(ConsultationType.Onsite, DayOfWeek.Sunday)]);
+        Assert.Equal(EntityState.Deleted, availabilityStates[(ConsultationType.Onsite, DayOfWeek.Monday)]);
+        Assert.Equal(EntityState.Added, availabilityStates[(ConsultationType.Onsite, DayOfWeek.Thursday)]);
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         Assert.False(originalRowVersion.SequenceEqual(tracked.RowVersion));
     }
 
     private static LawyerAvailabilityPeriod Period(DayOfWeek day, int startHour, int endHour)
-        => new(day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
+        => Period(ConsultationType.Online, day, startHour, endHour);
+
+    private static LawyerAvailabilityPeriod Period(
+        ConsultationType consultationType,
+        DayOfWeek day,
+        int startHour,
+        int endHour)
+        => new(consultationType, day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\LawyerConsultationSettingsSqlServerTests.cs ==================== 
@@ -51959,11 +53909,11 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             var tokenManager = new ConcurrencyTokenManager(updateContext);
             tokenManager.SetOriginalRowVersion(tracked, rowVersions[^1]);
             Assert.True(tracked.Update(updates[index].Price, updates[index].Availability).IsSuccess);
-            tokenManager.MarkPropertyModified(tracked, item => item.ConsultationPrice);
+            tokenManager.MarkPropertyModified(tracked, item => item.OnlineConsultationPrice);
             updateContext.ChangeTracker.DetectChanges();
 
             Assert.Equal(rowVersions[^1], updateContext.Entry(tracked).Property(item => item.RowVersion).OriginalValue);
-            Assert.True(updateContext.Entry(tracked).Property(item => item.ConsultationPrice).IsModified);
+            Assert.True(updateContext.Entry(tracked).Property(item => item.OnlineConsultationPrice).IsModified);
             if (index == 0)
             {
                 Assert.Equal(
@@ -51990,7 +53940,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         var staleTokenManager = new ConcurrencyTokenManager(staleContext);
         staleTokenManager.SetOriginalRowVersion(staleCopy, rowVersions[^3]);
         Assert.True(staleCopy.Update(999m, []).IsSuccess);
-        staleTokenManager.MarkPropertyModified(staleCopy, item => item.ConsultationPrice);
+        staleTokenManager.MarkPropertyModified(staleCopy, item => item.OnlineConsultationPrice);
 
         var exception = await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
             staleContext.SaveChangesAsync(TestContext.Current.CancellationToken));
@@ -52005,7 +53955,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             650m,
             (await verificationContext.LawyerConsultationSettings.AsNoTracking()
                 .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken))
-            .ConsultationPrice);
+            .OnlineConsultationPrice);
     }
 
     [Fact]
@@ -52026,7 +53976,10 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         var settings = LawyerConsultationSettings.Create(
             profile.Id,
             500.25m,
-            [new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))],
+            [
+                new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45)),
+                new LawyerAvailabilityPeriod(ConsultationType.Onsite, DayOfWeek.Sunday, new TimeOnly(9, 0), new TimeOnly(14, 0))
+            ],
             nowUtc).Value;
         var historicalRequest = ConsultationRequest.CreateForGuest(
             $"CR-{suffix[..20]}",
@@ -52034,6 +53987,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             "01012345678",
             null,
             profile.Id,
+            ConsultationType.Onsite,
             null,
             "Historical nullable price request",
             null,
@@ -52052,9 +54006,13 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             var stored = await readContext.LawyerConsultationSettings.AsNoTracking()
                 .Include(item => item.Availability)
                 .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
-            Assert.Equal(500.25m, stored.ConsultationPrice);
-            Assert.Equal(new TimeOnly(10, 15), stored.Availability.Single().StartTime);
-            Assert.Equal(new TimeOnly(17, 45), stored.Availability.Single().EndTime);
+            Assert.Equal(500.25m, stored.OnlineConsultationPrice);
+            var online = stored.Availability.Single(item => item.ConsultationType == ConsultationType.Online);
+            var onsite = stored.Availability.Single(item => item.ConsultationType == ConsultationType.Onsite);
+            Assert.Equal(new TimeOnly(10, 15), online.StartTime);
+            Assert.Equal(new TimeOnly(17, 45), online.EndTime);
+            Assert.Equal(new TimeOnly(9, 0), onsite.StartTime);
+            Assert.Equal(new TimeOnly(14, 0), onsite.EndTime);
             Assert.NotEmpty(stored.RowVersion);
             Assert.Null((await readContext.ConsultationRequests.AsNoTracking().SingleAsync(
                 item => item.Id == historicalRequest.Id,
@@ -52076,7 +54034,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
         {
             await Assert.ThrowsAsync<SqlException>(() =>
                 duplicateAvailabilityContext.Database.ExecuteSqlInterpolatedAsync(
-                    $"INSERT INTO LawyerAvailabilities (Id, LawyerConsultationSettingsId, DayOfWeek, StartTime, EndTime) VALUES ({Guid.NewGuid()}, {settings.Id}, {(int)DayOfWeek.Sunday}, {new TimeOnly(12, 0)}, {new TimeOnly(16, 0)})",
+                    $"INSERT INTO LawyerAvailabilities (Id, LawyerConsultationSettingsId, ConsultationType, DayOfWeek, StartTime, EndTime) VALUES ({Guid.NewGuid()}, {settings.Id}, {(int)ConsultationType.Online}, {(int)DayOfWeek.Sunday}, {new TimeOnly(12, 0)}, {new TimeOnly(16, 0)})",
                     TestContext.Current.CancellationToken));
         }
 
@@ -52089,10 +54047,10 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
             .Include(item => item.Availability)
             .SingleAsync(item => item.Id == settings.Id, TestContext.Current.CancellationToken);
         Assert.True(firstCopy.Update(700m, [
-            new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
+            new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
         await firstContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         Assert.True(secondCopy.Update(800m, [
-            new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
+            new LawyerAvailabilityPeriod(ConsultationType.Online, DayOfWeek.Sunday, new TimeOnly(10, 15), new TimeOnly(17, 45))]).IsSuccess);
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
             secondContext.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
@@ -52107,7 +54065,7 @@ public sealed class LawyerConsultationSettingsSqlServerTests(LawyerPlatformSqlSe
     }
 
     private static LawyerAvailabilityPeriod Period(DayOfWeek day, int startHour, int endHour)
-        => new(day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
+        => new(ConsultationType.Online, day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 
     private sealed record SettingsUpdate(
         decimal Price,
@@ -53452,10 +55410,12 @@ public sealed class DashboardEndpointsTests(CustomWebApplicationFactory factory)
             referenceNumber,
             clientProfileId,
             lawyerProfileId,
+            ConsultationType.Online,
             null,
             "Dashboard test request",
             null,
-            nowUtc).Value;
+            nowUtc,
+            500m).Value;
         switch (status)
         {
             case ConsultationRequestStatus.UnderReview:
@@ -55454,10 +57414,12 @@ public sealed class ConsultationRequestTests
             "01000000000",
             null,
             LawyerId,
+            ConsultationType.Online,
             null,
             "Description",
             null,
-            NowUtc);
+            NowUtc,
+            500m);
         var empty = ConsultationRequest.Create(
             "CR-EMPTY",
             null,
@@ -55465,10 +57427,12 @@ public sealed class ConsultationRequestTests
             null,
             null,
             LawyerId,
+            ConsultationType.Online,
             null,
             "Description",
             null,
-            NowUtc);
+            NowUtc,
+            500m);
 
         Assert.Equal(ConsultationRequestStatus.New, guest.Status);
         Assert.Null(guest.ClientProfileId);
@@ -55477,6 +57441,60 @@ public sealed class ConsultationRequestTests
         Assert.Null(client.GuestFullName);
         Assert.Contains(mixed.Errors, error => error.Code == "ConsultationRequest.InvalidSource");
         Assert.Contains(empty.Errors, error => error.Code == "ConsultationRequest.InvalidSource");
+    }
+
+    [Fact]
+    public void OnlineRequestRequiresAndStoresValidPriceSnapshot()
+    {
+        var request = CreateGuest();
+        var missingPrice = ConsultationRequest.CreateForGuest(
+            "CR-ONLINE-NO-PRICE",
+            "Guest Name",
+            "01000000000",
+            null,
+            LawyerId,
+            ConsultationType.Online,
+            1,
+            "Description",
+            null,
+            NowUtc,
+            null);
+
+        Assert.Equal(ConsultationType.Online, request.ConsultationType);
+        Assert.Equal(500m, request.ConsultationPrice);
+        Assert.Contains(missingPrice.Errors, error =>
+            error.Code == "ConsultationRequest.ConsultationPriceRequired");
+    }
+
+    [Fact]
+    public void OnsiteRequestRequiresNullPriceSnapshot()
+    {
+        var onsite = ConsultationRequest.CreateForClient(
+            "CR-ONSITE",
+            ClientId,
+            LawyerId,
+            ConsultationType.Onsite,
+            1,
+            "Description",
+            null,
+            NowUtc,
+            null);
+        var pricedOnsite = ConsultationRequest.CreateForClient(
+            "CR-ONSITE-PRICED",
+            ClientId,
+            LawyerId,
+            ConsultationType.Onsite,
+            1,
+            "Description",
+            null,
+            NowUtc,
+            500m);
+
+        Assert.True(onsite.IsSuccess);
+        Assert.Equal(ConsultationType.Onsite, onsite.Value.ConsultationType);
+        Assert.Null(onsite.Value.ConsultationPrice);
+        Assert.Contains(pricedOnsite.Errors, error =>
+            error.Code == "ConsultationRequest.OnsitePriceNotAllowed");
     }
 
     [Theory]
@@ -55573,20 +57591,24 @@ public sealed class ConsultationRequestTests
             "01000000000",
             "guest@example.test",
             LawyerId,
+            ConsultationType.Online,
             1,
             "Description",
             null,
-            NowUtc).Value;
+            NowUtc,
+            500m).Value;
 
     private static ConsultationRequest CreateClient()
         => ConsultationRequest.CreateForClient(
             $"CR-{Guid.NewGuid():N}"[..23],
             ClientId,
             LawyerId,
+            ConsultationType.Online,
             null,
             "Description",
             null,
-            NowUtc).Value;
+            NowUtc,
+            500m).Value;
 
     private static ConsultationRequest CreateInStatus(ConsultationRequestStatus status)
     {
@@ -55616,8 +57638,85 @@ public sealed class ConsultationRequestTests
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Consultations\ConsultationTypeValidatorTests.cs ==================== 
+using LawyerPlatform.Application.Features.ConsultationRequests.CreateClient;
+using LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
+using LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Update;
+using LawyerPlatform.Domain.Consultations;
+
+namespace LawyerPlatform.UnitTests.Consultations;
+
+public sealed class ConsultationTypeValidatorTests
+{
+    [Fact]
+    public void GuestAndClientCreationRequireKnownConsultationType()
+    {
+        var guest = new CreateGuestConsultationRequestCommandValidator().Validate(
+            new CreateGuestConsultationRequestCommand(
+                Guid.NewGuid(),
+                null,
+                1,
+                "Guest",
+                "01012345678",
+                "guest@example.test",
+                "Description",
+                null));
+        var client = new CreateClientConsultationRequestCommandValidator().Validate(
+            new CreateClientConsultationRequestCommand(
+                Guid.NewGuid(),
+                (ConsultationType)999,
+                1,
+                "Description",
+                null));
+
+        Assert.Contains(guest.Errors, error =>
+            error.PropertyName == "ConsultationType" &&
+            error.ErrorCode == "ConsultationRequest.InvalidConsultationType");
+        Assert.Contains(client.Errors, error =>
+            error.PropertyName == "ConsultationType" &&
+            error.ErrorCode == "ConsultationRequest.InvalidConsultationType");
+    }
+
+    [Fact]
+    public void SettingsUpdateRequiresBothGroupsAndTheirAvailabilityCollections()
+    {
+        var validator = new UpdateLawyerConsultationSettingsCommandValidator();
+        var missingGroups = validator.Validate(
+            new UpdateLawyerConsultationSettingsCommand(null, null, null));
+        var missingAvailability = validator.Validate(
+            new UpdateLawyerConsultationSettingsCommand(
+                new UpdateLawyerOnlineConsultationSettings(500m, null),
+                new UpdateLawyerOnsiteConsultationSettings(null),
+                null));
+
+        Assert.Contains(missingGroups.Errors, error =>
+            error.ErrorCode == "Lawyer.OnlineConsultationSettingsRequired");
+        Assert.Contains(missingGroups.Errors, error =>
+            error.ErrorCode == "Lawyer.OnsiteConsultationSettingsRequired");
+        Assert.Equal(2, missingAvailability.Errors.Count(error =>
+            error.ErrorCode == "Lawyer.AvailabilityInvalid"));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1.001)]
+    public void SettingsUpdateRejectsInvalidOnlinePrice(decimal price)
+    {
+        var result = new UpdateLawyerConsultationSettingsCommandValidator().Validate(
+            new UpdateLawyerConsultationSettingsCommand(
+                new UpdateLawyerOnlineConsultationSettings(price, []),
+                new UpdateLawyerOnsiteConsultationSettings([]),
+                null));
+
+        Assert.Contains(result.Errors, error =>
+            error.ErrorCode == "Lawyer.ConsultationPriceInvalid");
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Lawyers\LawyerConsultationSettingsTests.cs ==================== 
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.UnitTests.Lawyers;
@@ -55628,25 +57727,32 @@ public sealed class LawyerConsultationSettingsTests
     private static readonly DateTime NowUtc = new(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void PositivePriceValidPeriodAndEmptyAvailabilityAreAccepted()
+    public void ValidOnlinePriceAndIndependentSchedulesAreAccepted()
     {
         var configured = LawyerConsultationSettings.Create(
             LawyerId,
             500m,
-            [new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0))],
+            [
+                Period(ConsultationType.Online, DayOfWeek.Sunday, 10, 17),
+                Period(ConsultationType.Onsite, DayOfWeek.Sunday, 9, 14)
+            ],
             NowUtc);
-        var empty = LawyerConsultationSettings.Create(LawyerId, 500m, [], NowUtc);
 
         Assert.True(configured.IsSuccess);
-        Assert.True(empty.IsSuccess);
-        Assert.Empty(empty.Value.Availability);
+        Assert.Equal(500m, configured.Value.OnlineConsultationPrice);
+        Assert.Equal(2, configured.Value.Availability.Count);
+        Assert.Contains(configured.Value.Availability, item =>
+            item.ConsultationType == ConsultationType.Online && item.StartTime == new TimeOnly(10, 0));
+        Assert.Contains(configured.Value.Availability, item =>
+            item.ConsultationType == ConsultationType.Onsite && item.StartTime == new TimeOnly(9, 0));
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(1.001)]
-    public void InvalidPricesAreRejected(decimal price)
+    [InlineData(10000000000000000)]
+    public void InvalidOnlinePricesAreRejected(decimal price)
     {
         var result = LawyerConsultationSettings.Create(LawyerId, price, [], NowUtc);
 
@@ -55662,6 +57768,7 @@ public sealed class LawyerConsultationSettingsTests
             LawyerId,
             500m,
             [new LawyerAvailabilityPeriod(
+                ConsultationType.Online,
                 DayOfWeek.Sunday,
                 new TimeOnly(startHour, startMinute),
                 new TimeOnly(endHour, endMinute))],
@@ -55670,57 +57777,88 @@ public sealed class LawyerConsultationSettingsTests
         Assert.Contains(result.Errors, error => error.Code == "Lawyer.AvailabilityInvalid");
     }
 
-    [Fact]
-    public void DuplicateDayIsRejectedAndSevenUniqueDaysAreAccepted()
+    [Theory]
+    [InlineData(ConsultationType.Online)]
+    [InlineData(ConsultationType.Onsite)]
+    public void DuplicateDayWithinTypeIsRejected(ConsultationType consultationType)
     {
         var duplicate = LawyerConsultationSettings.Create(
             LawyerId,
             500m,
             [
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(12, 0), new TimeOnly(16, 0))
+                Period(consultationType, DayOfWeek.Sunday, 10, 17),
+                Period(consultationType, DayOfWeek.Sunday, 12, 16)
             ],
-            NowUtc);
-        var seven = LawyerConsultationSettings.Create(
-            LawyerId,
-            500m,
-            Enum.GetValues<DayOfWeek>()
-                .Select(day => new LawyerAvailabilityPeriod(day, new TimeOnly(10, 0), new TimeOnly(17, 0)))
-                .ToArray(),
             NowUtc);
 
         Assert.Contains(duplicate.Errors, error => error.Code == "Lawyer.DuplicateAvailabilityDay");
-        Assert.True(seven.IsSuccess);
-        Assert.Equal(7, seven.Value.Availability.Count);
+    }
+
+    [Theory]
+    [InlineData(ConsultationType.Online)]
+    [InlineData(ConsultationType.Onsite)]
+    public void MoreThanSevenPeriodsPerTypeIsRejected(ConsultationType consultationType)
+    {
+        var periods = Enum.GetValues<DayOfWeek>()
+            .Select(day => Period(consultationType, day, 10, 17))
+            .Append(Period(consultationType, DayOfWeek.Sunday, 18, 20))
+            .ToArray();
+
+        var result = LawyerConsultationSettings.Create(LawyerId, 500m, periods, NowUtc);
+
+        Assert.Contains(result.Errors, error => error.Code == "Lawyer.AvailabilityInvalid");
     }
 
     [Fact]
-    public void UpdateFullyReplacesAvailabilityAndDoesNotChangeLawyerApprovalStatus()
+    public void UpdateReconcilesByTypeAndDayAndPreservesMatchingChildIds()
     {
         var settings = LawyerConsultationSettings.Create(
             LawyerId,
             500m,
             [
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Monday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Tuesday, new TimeOnly(10, 0), new TimeOnly(17, 0))
+                Period(ConsultationType.Online, DayOfWeek.Sunday, 10, 17),
+                Period(ConsultationType.Online, DayOfWeek.Wednesday, 10, 17),
+                Period(ConsultationType.Onsite, DayOfWeek.Monday, 9, 15)
             ],
             NowUtc).Value;
+        var onlineSundayId = settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Online &&
+            item.DayOfWeek == DayOfWeek.Sunday).Id;
+        var onsiteMondayId = settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Onsite &&
+            item.DayOfWeek == DayOfWeek.Monday).Id;
         var lawyer = CreateApprovedLawyer();
         var approvalStatus = lawyer.ApprovalStatus;
 
         var result = settings.Update(
             700m,
             [
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(9, 0), new TimeOnly(18, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Monday, new TimeOnly(10, 0), new TimeOnly(17, 0))
+                Period(ConsultationType.Online, DayOfWeek.Sunday, 8, 18),
+                Period(ConsultationType.Online, DayOfWeek.Friday, 10, 16),
+                Period(ConsultationType.Onsite, DayOfWeek.Monday, 8, 16),
+                Period(ConsultationType.Onsite, DayOfWeek.Thursday, 9, 14)
             ]);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(700m, settings.ConsultationPrice);
-        Assert.Equal([DayOfWeek.Sunday, DayOfWeek.Monday], settings.Availability.Select(item => item.DayOfWeek).ToArray());
+        Assert.Equal(700m, settings.OnlineConsultationPrice);
+        Assert.Equal(onlineSundayId, settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Online &&
+            item.DayOfWeek == DayOfWeek.Sunday).Id);
+        Assert.Equal(onsiteMondayId, settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Onsite &&
+            item.DayOfWeek == DayOfWeek.Monday).Id);
+        Assert.DoesNotContain(settings.Availability, item =>
+            item.ConsultationType == ConsultationType.Online &&
+            item.DayOfWeek == DayOfWeek.Wednesday);
         Assert.Equal(approvalStatus, lawyer.ApprovalStatus);
     }
+
+    private static LawyerAvailabilityPeriod Period(
+        ConsultationType consultationType,
+        DayOfWeek day,
+        int startHour,
+        int endHour)
+        => new(consultationType, day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 
     private static LawyerProfile CreateApprovedLawyer()
     {
@@ -56540,6 +58678,7 @@ public sealed class UpsertPrimaryOfficeHandlerTests
 using BuildingBlock.Application.Time;
 using LawyerPlatform.Application.Notifications.Email;
 using System.Globalization;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.UnitTests.Notifications;
 
@@ -56651,6 +58790,33 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("Preferred consultation date:", lawyerBody, StringComparison.Ordinal);
         Assert.Contains("Recorded preferred date:", approvedBody, StringComparison.Ordinal);
         Assert.Contains("2026-09-01 12:30 UTC", approvedBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationTemplatesRenderTypeAndOnlinePriceOnly()
+    {
+        var online = Consultation() with
+        {
+            ConsultationType = ConsultationType.Online,
+            ConsultationPrice = 500m
+        };
+        var onsite = Consultation() with
+        {
+            ConsultationType = ConsultationType.Onsite,
+            ConsultationPrice = null
+        };
+
+        var onlineBody = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            online).HtmlBody;
+        var onsiteBody = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            onsite).HtmlBody;
+
+        Assert.Contains("Consultation type:<br>Online", onlineBody, StringComparison.Ordinal);
+        Assert.Contains("Consultation price:<br>500.00 EGP", onlineBody, StringComparison.Ordinal);
+        Assert.Contains("Consultation type:<br>Onsite", onsiteBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Consultation price:", onsiteBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -57914,6 +60080,7 @@ using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
 using LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
 using LawyerPlatform.Application.Features.ConsultationRequests.Guest.TrackRequest;
 using LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.UnitTests.Validation;
 
@@ -58049,6 +60216,7 @@ public sealed class EgyptianMobileNumberValidationTests
         => new CreateGuestConsultationRequestCommandValidator().Validate(
             new CreateGuestConsultationRequestCommand(
                 Guid.NewGuid(),
+                ConsultationType.Online,
                 1,
                 "Guest One",
                 phoneNumber,

@@ -17,6 +17,38 @@ namespace LawyerPlatform.IntegrationTests;
 public sealed class ConsultationRequestCreationEndpointsTests
 {
     [Fact]
+    public async Task SwaggerDocumentsConsultationTypesAndPublicSettingsEndpoint()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var client = CreateClient(factory);
+
+        var swagger = await client.GetFromJsonAsync<JsonElement>(
+            "/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        var schemas = swagger.GetProperty("components").GetProperty("schemas");
+        foreach (var schemaName in new[]
+                 {
+                     "CreateGuestConsultationRequest",
+                     "CreateClientConsultationRequest"
+                 })
+        {
+            Assert.Equal(
+                ["Online", "Onsite"],
+                schemas.GetProperty(schemaName)
+                    .GetProperty("properties")
+                    .GetProperty("consultationType")
+                    .GetProperty("enum")
+                    .EnumerateArray()
+                    .Select(item => item.GetString()!)
+                    .ToArray());
+        }
+
+        Assert.True(swagger.GetProperty("paths").TryGetProperty(
+            "/api/v1/public/lawyers/{lawyerId}/consultation-settings",
+            out _));
+    }
+
+    [Fact]
     public async Task GuestCreationValidatesIdentityLawyerSpecializationAndPreferredTime()
     {
         await using var factory = await CreateFactoryAsync();
@@ -24,12 +56,29 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var draftLawyerId = await CreateLawyerAsync(factory, "guest.draft", complete: true, approved: false, accountActive: true);
         var inactiveLawyerId = await CreateLawyerAsync(factory, "guest.inactive", complete: true, approved: true, accountActive: false);
         var incompleteLawyerId = await CreateLawyerAsync(factory, "guest.incomplete", complete: false, approved: true, accountActive: true);
+        await ConfigureAllWeekAvailabilityAsync(factory, eligibleLawyerId);
         using var client = CreateClient(factory);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.GetAsync(
+                $"/api/v1/public/lawyers/{eligibleLawyerId}/consultation-settings",
+                TestContext.Current.CancellationToken)).StatusCode);
+        foreach (var hiddenLawyerId in new[] { draftLawyerId, inactiveLawyerId, incompleteLawyerId })
+        {
+            Assert.Equal(
+                HttpStatusCode.NotFound,
+                (await client.GetAsync(
+                    $"/api/v1/public/lawyers/{hiddenLawyerId}/consultation-settings",
+                    TestContext.Current.CancellationToken)).StatusCode);
+        }
 
         var success = await PostGuestAsync(client, eligibleLawyerId, specializationId: null);
         Assert.Equal(HttpStatusCode.Created, success.StatusCode);
         var created = await success.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal("New", created.GetProperty("status").GetString());
+        Assert.Equal("Online", created.GetProperty("consultationType").GetString());
+        Assert.Equal(500m, created.GetProperty("consultationPrice").GetDecimal());
         Assert.StartsWith("CR-", created.GetProperty("referenceNumber").GetString(), StringComparison.Ordinal);
         Assert.DoesNotContain("smtp", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("emailSent", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
@@ -37,6 +86,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var guestWithoutEmail = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest Without Email",
             phoneNumber = "01012345679",
             description = "Private guest description"
@@ -79,6 +129,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var missingName = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "",
             phoneNumber = "01012345678",
             description = "Description"
@@ -88,6 +139,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var missingPhone = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest",
             phoneNumber = "",
             description = "Description"
@@ -97,6 +149,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var invalidEmail = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest",
             phoneNumber = "01012345678",
             email = "invalid-email",
@@ -139,6 +192,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var past = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId = eligibleLawyerId,
+            consultationType = "Online",
             fullName = "Guest",
             phoneNumber = "01012345678",
             description = "Description",
@@ -148,6 +202,18 @@ public sealed class ConsultationRequestCreationEndpointsTests
             past,
             HttpStatusCode.UnprocessableEntity,
             "ConsultationRequest.PreferredAppointmentMustBeFuture");
+
+        var missingType = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
+        {
+            lawyerId = eligibleLawyerId,
+            fullName = "Guest",
+            phoneNumber = "01012345678",
+            description = "Description"
+        }, TestContext.Current.CancellationToken);
+        await AssertErrorAsync(
+            missingType,
+            HttpStatusCode.UnprocessableEntity,
+            "Validation.ConsultationRequest.InvalidConsultationType");
     }
 
     [Fact]
@@ -162,6 +228,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
             (await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
             {
                 lawyerId,
+                consultationType = "Online",
                 description = "Anonymous attempt"
             }, TestContext.Current.CancellationToken)).StatusCode);
 
@@ -170,6 +237,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Online",
             legalSpecializationId = 1,
             description = "  Authenticated client request  ",
             preferredAppointmentOnUtc = DateTime.UtcNow.AddDays(1),
@@ -193,6 +261,8 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Null(stored.GuestPhoneNumber);
         Assert.Equal("Authenticated client request", stored.Description);
         Assert.Equal(ConsultationRequestStatus.New, stored.Status);
+        Assert.Equal(ConsultationType.Online, stored.ConsultationType);
+        Assert.Equal(500m, stored.ConsultationPrice);
 
         var notifications = await context.EmailOutboxMessages
             .AsNoTracking()
@@ -247,6 +317,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
         => client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Online",
             legalSpecializationId = specializationId,
             fullName = "Guest Requester",
             phoneNumber = "01012345678",
@@ -347,6 +418,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
     {
         var periods = Enum.GetValues<DayOfWeek>()
             .Select(day => new LawyerAvailabilityPeriod(
+                ConsultationType.Online,
                 day,
                 TimeOnly.MinValue,
                 TimeOnly.FromTimeSpan(TimeSpan.FromTicks(TimeSpan.TicksPerDay - 1))))

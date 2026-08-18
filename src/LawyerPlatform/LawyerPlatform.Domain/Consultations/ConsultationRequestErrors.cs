@@ -8,6 +8,18 @@ public static class ConsultationRequestErrors
         "ConsultationRequest.Invalid",
         "The consultation request is invalid.");
 
+    public static readonly Error InvalidConsultationType = Error.Validation(
+        "ConsultationRequest.InvalidConsultationType",
+        "Consultation type must be Online or Onsite.");
+
+    public static readonly Error ConsultationPriceRequired = Error.Validation(
+        "ConsultationRequest.ConsultationPriceRequired",
+        "An Online consultation requires a valid price snapshot.");
+
+    public static readonly Error OnsitePriceNotAllowed = Error.Validation(
+        "ConsultationRequest.OnsitePriceNotAllowed",
+        "An Onsite consultation cannot contain a price snapshot.");
+
     public static readonly Error InvalidSource = Error.Domain(
         "ConsultationRequest.InvalidSource",
         "A consultation request must have exactly one valid requester source.");

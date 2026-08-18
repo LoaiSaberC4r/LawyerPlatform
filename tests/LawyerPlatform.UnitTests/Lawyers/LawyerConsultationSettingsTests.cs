@@ -1,4 +1,5 @@
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.UnitTests.Lawyers;
@@ -9,25 +10,32 @@ public sealed class LawyerConsultationSettingsTests
     private static readonly DateTime NowUtc = new(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void PositivePriceValidPeriodAndEmptyAvailabilityAreAccepted()
+    public void ValidOnlinePriceAndIndependentSchedulesAreAccepted()
     {
         var configured = LawyerConsultationSettings.Create(
             LawyerId,
             500m,
-            [new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0))],
+            [
+                Period(ConsultationType.Online, DayOfWeek.Sunday, 10, 17),
+                Period(ConsultationType.Onsite, DayOfWeek.Sunday, 9, 14)
+            ],
             NowUtc);
-        var empty = LawyerConsultationSettings.Create(LawyerId, 500m, [], NowUtc);
 
         Assert.True(configured.IsSuccess);
-        Assert.True(empty.IsSuccess);
-        Assert.Empty(empty.Value.Availability);
+        Assert.Equal(500m, configured.Value.OnlineConsultationPrice);
+        Assert.Equal(2, configured.Value.Availability.Count);
+        Assert.Contains(configured.Value.Availability, item =>
+            item.ConsultationType == ConsultationType.Online && item.StartTime == new TimeOnly(10, 0));
+        Assert.Contains(configured.Value.Availability, item =>
+            item.ConsultationType == ConsultationType.Onsite && item.StartTime == new TimeOnly(9, 0));
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(1.001)]
-    public void InvalidPricesAreRejected(decimal price)
+    [InlineData(10000000000000000)]
+    public void InvalidOnlinePricesAreRejected(decimal price)
     {
         var result = LawyerConsultationSettings.Create(LawyerId, price, [], NowUtc);
 
@@ -43,6 +51,7 @@ public sealed class LawyerConsultationSettingsTests
             LawyerId,
             500m,
             [new LawyerAvailabilityPeriod(
+                ConsultationType.Online,
                 DayOfWeek.Sunday,
                 new TimeOnly(startHour, startMinute),
                 new TimeOnly(endHour, endMinute))],
@@ -51,57 +60,88 @@ public sealed class LawyerConsultationSettingsTests
         Assert.Contains(result.Errors, error => error.Code == "Lawyer.AvailabilityInvalid");
     }
 
-    [Fact]
-    public void DuplicateDayIsRejectedAndSevenUniqueDaysAreAccepted()
+    [Theory]
+    [InlineData(ConsultationType.Online)]
+    [InlineData(ConsultationType.Onsite)]
+    public void DuplicateDayWithinTypeIsRejected(ConsultationType consultationType)
     {
         var duplicate = LawyerConsultationSettings.Create(
             LawyerId,
             500m,
             [
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(12, 0), new TimeOnly(16, 0))
+                Period(consultationType, DayOfWeek.Sunday, 10, 17),
+                Period(consultationType, DayOfWeek.Sunday, 12, 16)
             ],
-            NowUtc);
-        var seven = LawyerConsultationSettings.Create(
-            LawyerId,
-            500m,
-            Enum.GetValues<DayOfWeek>()
-                .Select(day => new LawyerAvailabilityPeriod(day, new TimeOnly(10, 0), new TimeOnly(17, 0)))
-                .ToArray(),
             NowUtc);
 
         Assert.Contains(duplicate.Errors, error => error.Code == "Lawyer.DuplicateAvailabilityDay");
-        Assert.True(seven.IsSuccess);
-        Assert.Equal(7, seven.Value.Availability.Count);
+    }
+
+    [Theory]
+    [InlineData(ConsultationType.Online)]
+    [InlineData(ConsultationType.Onsite)]
+    public void MoreThanSevenPeriodsPerTypeIsRejected(ConsultationType consultationType)
+    {
+        var periods = Enum.GetValues<DayOfWeek>()
+            .Select(day => Period(consultationType, day, 10, 17))
+            .Append(Period(consultationType, DayOfWeek.Sunday, 18, 20))
+            .ToArray();
+
+        var result = LawyerConsultationSettings.Create(LawyerId, 500m, periods, NowUtc);
+
+        Assert.Contains(result.Errors, error => error.Code == "Lawyer.AvailabilityInvalid");
     }
 
     [Fact]
-    public void UpdateFullyReplacesAvailabilityAndDoesNotChangeLawyerApprovalStatus()
+    public void UpdateReconcilesByTypeAndDayAndPreservesMatchingChildIds()
     {
         var settings = LawyerConsultationSettings.Create(
             LawyerId,
             500m,
             [
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Monday, new TimeOnly(10, 0), new TimeOnly(17, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Tuesday, new TimeOnly(10, 0), new TimeOnly(17, 0))
+                Period(ConsultationType.Online, DayOfWeek.Sunday, 10, 17),
+                Period(ConsultationType.Online, DayOfWeek.Wednesday, 10, 17),
+                Period(ConsultationType.Onsite, DayOfWeek.Monday, 9, 15)
             ],
             NowUtc).Value;
+        var onlineSundayId = settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Online &&
+            item.DayOfWeek == DayOfWeek.Sunday).Id;
+        var onsiteMondayId = settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Onsite &&
+            item.DayOfWeek == DayOfWeek.Monday).Id;
         var lawyer = CreateApprovedLawyer();
         var approvalStatus = lawyer.ApprovalStatus;
 
         var result = settings.Update(
             700m,
             [
-                new LawyerAvailabilityPeriod(DayOfWeek.Sunday, new TimeOnly(9, 0), new TimeOnly(18, 0)),
-                new LawyerAvailabilityPeriod(DayOfWeek.Monday, new TimeOnly(10, 0), new TimeOnly(17, 0))
+                Period(ConsultationType.Online, DayOfWeek.Sunday, 8, 18),
+                Period(ConsultationType.Online, DayOfWeek.Friday, 10, 16),
+                Period(ConsultationType.Onsite, DayOfWeek.Monday, 8, 16),
+                Period(ConsultationType.Onsite, DayOfWeek.Thursday, 9, 14)
             ]);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(700m, settings.ConsultationPrice);
-        Assert.Equal([DayOfWeek.Sunday, DayOfWeek.Monday], settings.Availability.Select(item => item.DayOfWeek).ToArray());
+        Assert.Equal(700m, settings.OnlineConsultationPrice);
+        Assert.Equal(onlineSundayId, settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Online &&
+            item.DayOfWeek == DayOfWeek.Sunday).Id);
+        Assert.Equal(onsiteMondayId, settings.Availability.Single(item =>
+            item.ConsultationType == ConsultationType.Onsite &&
+            item.DayOfWeek == DayOfWeek.Monday).Id);
+        Assert.DoesNotContain(settings.Availability, item =>
+            item.ConsultationType == ConsultationType.Online &&
+            item.DayOfWeek == DayOfWeek.Wednesday);
         Assert.Equal(approvalStatus, lawyer.ApprovalStatus);
     }
+
+    private static LawyerAvailabilityPeriod Period(
+        ConsultationType consultationType,
+        DayOfWeek day,
+        int startHour,
+        int endHour)
+        => new(consultationType, day, new TimeOnly(startHour, 0), new TimeOnly(endHour, 0));
 
     private static LawyerProfile CreateApprovedLawyer()
     {

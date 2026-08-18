@@ -16,6 +16,8 @@ namespace LawyerPlatform.Application.Features.ConsultationRequests.Create;
 public sealed record CreateConsultationRequestResponse(
     Guid Id,
     string ReferenceNumber,
+    string ConsultationType,
+    decimal? ConsultationPrice,
     string Status,
     DateTime CreatedOnUtc);
 
@@ -32,6 +34,7 @@ internal sealed class ConsultationRequestCreationService(
 {
     public async Task<Result<CreateConsultationRequestResponse>> CreateGuestAsync(
         Guid lawyerId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string fullName,
         string phoneNumber,
@@ -42,6 +45,7 @@ internal sealed class ConsultationRequestCreationService(
         => await CreateAsync(
             null,
             lawyerId,
+            consultationType,
             legalSpecializationId,
             fullName,
             phoneNumber,
@@ -56,6 +60,7 @@ internal sealed class ConsultationRequestCreationService(
     public async Task<Result<CreateConsultationRequestResponse>> CreateClientAsync(
         Guid clientProfileId,
         Guid lawyerId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string requesterName,
         string requesterEmail,
@@ -65,6 +70,7 @@ internal sealed class ConsultationRequestCreationService(
         => await CreateAsync(
             clientProfileId,
             lawyerId,
+            consultationType,
             legalSpecializationId,
             null,
             null,
@@ -79,6 +85,7 @@ internal sealed class ConsultationRequestCreationService(
     private async Task<Result<CreateConsultationRequestResponse>> CreateAsync(
         Guid? clientProfileId,
         Guid lawyerId,
+        ConsultationType consultationType,
         int? legalSpecializationId,
         string? guestFullName,
         string? guestPhoneNumber,
@@ -135,9 +142,16 @@ internal sealed class ConsultationRequestCreationService(
                 ConsultationRequestErrors.PreferredAppointmentMustBeFuture);
         }
 
+        if (consultationType == ConsultationType.Online && !lawyer.HasConsultationSettings)
+        {
+            return Result<CreateConsultationRequestResponse>.Fail(
+                ConsultationRequestErrors.LawyerAvailabilityNotConfigured);
+        }
+
         if (preferredAppointmentOnUtc is { } appointmentOnUtc)
         {
-            if (!lawyer.HasConsultationSettings)
+            if (!lawyer.HasConsultationSettings ||
+                !lawyer.Availability.Any(period => period.ConsultationType == consultationType))
             {
                 return Result<CreateConsultationRequestResponse>.Fail(
                     ConsultationRequestErrors.LawyerAvailabilityNotConfigured);
@@ -145,7 +159,8 @@ internal sealed class ConsultationRequestCreationService(
 
             var localAppointment = schedulingTimeZone.ConvertUtcToBusinessLocal(appointmentOnUtc);
             var availability = lawyer.Availability.SingleOrDefault(
-                period => period.DayOfWeek == localAppointment.DayOfWeek);
+                period => period.ConsultationType == consultationType &&
+                          period.DayOfWeek == localAppointment.DayOfWeek);
             if (availability is null)
             {
                 return Result<CreateConsultationRequestResponse>.Fail(
@@ -172,22 +187,28 @@ internal sealed class ConsultationRequestCreationService(
                 referenceNumber,
                 clientId,
                 lawyerId,
+                consultationType,
                 legalSpecializationId,
                 description,
                 preferredAppointmentOnUtc,
                 nowUtc,
-                lawyer.ConsultationPrice)
+                consultationType == ConsultationType.Online
+                    ? lawyer.OnlineConsultationPrice
+                    : null)
             : ConsultationRequest.CreateForGuest(
                 referenceNumber,
                 guestFullName!,
                 guestPhoneNumber!,
                 guestEmail,
                 lawyerId,
+                consultationType,
                 legalSpecializationId,
                 description,
                 preferredAppointmentOnUtc,
                 nowUtc,
-                lawyer.ConsultationPrice);
+                consultationType == ConsultationType.Online
+                    ? lawyer.OnlineConsultationPrice
+                    : null);
         if (creation.IsFailure)
         {
             return Result<CreateConsultationRequestResponse>.Fail(creation.Errors);
@@ -211,6 +232,8 @@ internal sealed class ConsultationRequestCreationService(
         return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
             request.Id,
             request.ReferenceNumber,
+            request.ConsultationType.ToString(),
+            request.ConsultationPrice,
             request.Status.ToString(),
             request.CreatedOnUtc));
     }
@@ -239,10 +262,11 @@ internal sealed record EligibleConsultationLawyerSnapshot(
     string Email,
     IReadOnlyList<int> ActiveSpecializationIds,
     bool HasConsultationSettings,
-    decimal? ConsultationPrice,
+    decimal? OnlineConsultationPrice,
     IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability);
 
 internal sealed record EligibleLawyerAvailabilitySnapshot(
+    ConsultationType ConsultationType,
     DayOfWeek DayOfWeek,
     TimeOnly StartTime,
     TimeOnly EndTime);
@@ -267,11 +291,12 @@ internal sealed class EligibleLawyerForConsultationSpecification
             profile.ConsultationSettings != null,
             profile.ConsultationSettings == null
                 ? null
-                : profile.ConsultationSettings.ConsultationPrice,
+                : profile.ConsultationSettings.OnlineConsultationPrice,
             profile.ConsultationSettings == null
                 ? Array.Empty<EligibleLawyerAvailabilitySnapshot>()
                 : profile.ConsultationSettings.Availability
                     .Select(item => new EligibleLawyerAvailabilitySnapshot(
+                        item.ConsultationType,
                         item.DayOfWeek,
                         item.StartTime,
                         item.EndTime))

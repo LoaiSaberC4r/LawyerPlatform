@@ -12,7 +12,8 @@ internal sealed class LawyerConsultationSettingsConfiguration
     {
         builder.ToTable("LawyerConsultationSettings");
         builder.HasKey(settings => settings.Id);
-        builder.Property(settings => settings.ConsultationPrice)
+        builder.Property(settings => settings.OnlineConsultationPrice)
+            .HasColumnName("ConsultationPrice")
             .HasPrecision(18, 2)
             .IsRequired();
         builder.Property(settings => settings.RowVersion)

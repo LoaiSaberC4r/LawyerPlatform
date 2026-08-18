@@ -24,6 +24,7 @@ public sealed class PublicConsultationRequestsController(ISender sender) : Contr
     {
         var result = await sender.Send(new CreateGuestConsultationRequestCommand(
             request.LawyerId,
+            ConsultationTypeContract.Parse(request.ConsultationType),
             request.LegalSpecializationId,
             request.FullName,
             request.PhoneNumber,

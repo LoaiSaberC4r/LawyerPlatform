@@ -49,12 +49,23 @@ public sealed class LawyerController(ISender sender) : ControllerBase
         UpdateLawyerConsultationSettingsRequest request,
         CancellationToken cancellationToken)
         => (await sender.Send(new UpdateLawyerConsultationSettingsCommand(
-            request.ConsultationPrice,
-            request.Availability?.Select(item => new UpdateLawyerAvailabilityItem(
-                item.DayOfWeek,
-                item.StartTime,
-                item.EndTime)).ToArray(),
+            request.Online is null
+                ? null
+                : new UpdateLawyerOnlineConsultationSettings(
+                    request.Online.Price,
+                    MapAvailability(request.Online.Availability)),
+            request.Onsite is null
+                ? null
+                : new UpdateLawyerOnsiteConsultationSettings(
+                    MapAvailability(request.Onsite.Availability)),
             request.RowVersion), cancellationToken)).ToIActionResult(cancellationToken);
+
+    private static UpdateLawyerAvailabilityItem[]? MapAvailability(
+        IReadOnlyList<UpdateLawyerAvailabilityRequest>? availability)
+        => availability?.Select(item => new UpdateLawyerAvailabilityItem(
+            item.DayOfWeek,
+            item.StartTime,
+            item.EndTime)).ToArray();
 
     [HttpPut("profile")]
     public async Task<IActionResult> UpdateProfile(UpdateLawyerProfileRequest request, CancellationToken cancellationToken)

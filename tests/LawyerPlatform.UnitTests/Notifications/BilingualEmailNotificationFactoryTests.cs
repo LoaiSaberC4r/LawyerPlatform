@@ -1,6 +1,7 @@
 using BuildingBlock.Application.Time;
 using LawyerPlatform.Application.Notifications.Email;
 using System.Globalization;
+using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.UnitTests.Notifications;
 
@@ -112,6 +113,33 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("Preferred consultation date:", lawyerBody, StringComparison.Ordinal);
         Assert.Contains("Recorded preferred date:", approvedBody, StringComparison.Ordinal);
         Assert.Contains("2026-09-01 12:30 UTC", approvedBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationTemplatesRenderTypeAndOnlinePriceOnly()
+    {
+        var online = Consultation() with
+        {
+            ConsultationType = ConsultationType.Online,
+            ConsultationPrice = 500m
+        };
+        var onsite = Consultation() with
+        {
+            ConsultationType = ConsultationType.Onsite,
+            ConsultationPrice = null
+        };
+
+        var onlineBody = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            online).HtmlBody;
+        var onsiteBody = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            onsite).HtmlBody;
+
+        Assert.Contains("Consultation type:<br>Online", onlineBody, StringComparison.Ordinal);
+        Assert.Contains("Consultation price:<br>500.00 EGP", onlineBody, StringComparison.Ordinal);
+        Assert.Contains("Consultation type:<br>Onsite", onsiteBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Consultation price:", onsiteBody, StringComparison.Ordinal);
     }
 
     [Fact]

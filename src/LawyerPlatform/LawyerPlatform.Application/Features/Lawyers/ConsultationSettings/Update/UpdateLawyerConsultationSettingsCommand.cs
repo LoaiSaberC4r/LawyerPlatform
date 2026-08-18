@@ -4,10 +4,12 @@ using BuildingBlock.Application.Abstraction.Security;
 using BuildingBlock.Application.Repositories;
 using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
+using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Common;
 using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.Lawyers.ConsultationSettings.Update;
@@ -17,12 +19,50 @@ public sealed record UpdateLawyerAvailabilityItem(
     TimeOnly? StartTime,
     TimeOnly? EndTime);
 
+public sealed record UpdateLawyerOnlineConsultationSettings(
+    decimal Price,
+    IReadOnlyList<UpdateLawyerAvailabilityItem>? Availability);
+
+public sealed record UpdateLawyerOnsiteConsultationSettings(
+    IReadOnlyList<UpdateLawyerAvailabilityItem>? Availability);
+
 public sealed record UpdateLawyerConsultationSettingsCommand(
-    decimal ConsultationPrice,
-    IReadOnlyList<UpdateLawyerAvailabilityItem>? Availability,
+    UpdateLawyerOnlineConsultationSettings? Online,
+    UpdateLawyerOnsiteConsultationSettings? Onsite,
     string? RowVersion)
     : ICommand<LawyerConsultationSettingsResponse>,
       ITransactionalCommand<LawyerPlatformWritePersistence>;
+
+internal sealed class UpdateLawyerConsultationSettingsCommandValidator
+    : AbstractValidator<UpdateLawyerConsultationSettingsCommand>
+{
+    public UpdateLawyerConsultationSettingsCommandValidator()
+    {
+        RuleFor(command => command.Online)
+            .NotNull()
+            .WithErrorCode("Lawyer.OnlineConsultationSettingsRequired");
+        RuleFor(command => command.Onsite)
+            .NotNull()
+            .WithErrorCode("Lawyer.OnsiteConsultationSettingsRequired");
+        When(command => command.Online is not null, () =>
+        {
+            RuleFor(command => command.Online!.Price)
+                .GreaterThan(0)
+                .WithErrorCode("Lawyer.ConsultationPriceInvalid")
+                .LessThanOrEqualTo(LawyerConsultationSettings.MaximumConsultationPrice)
+                .WithErrorCode("Lawyer.ConsultationPriceInvalid")
+                .Must(price => decimal.Round(price, 2) == price)
+                .WithErrorCode("Lawyer.ConsultationPriceInvalid");
+            RuleFor(command => command.Online!.Availability)
+                .NotNull()
+                .WithErrorCode("Lawyer.AvailabilityInvalid");
+        });
+        When(command => command.Onsite is not null, () =>
+            RuleFor(command => command.Onsite!.Availability)
+                .NotNull()
+                .WithErrorCode("Lawyer.AvailabilityInvalid"));
+    }
+}
 
 internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
     ICurrentUser currentUser,
@@ -49,7 +89,12 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
             return Result<LawyerConsultationSettingsResponse>.Fail(LawyerErrors.NotFound);
         }
 
-        var periodsResult = CreatePeriods(command.Availability);
+        if (command.Online is null || command.Onsite is null)
+        {
+            return Result<LawyerConsultationSettingsResponse>.Fail(LawyerErrors.AvailabilityInvalid);
+        }
+
+        var periodsResult = CreatePeriods(command.Online.Availability, command.Onsite.Availability);
         if (periodsResult.IsFailure)
         {
             return Result<LawyerConsultationSettingsResponse>.Fail(periodsResult.Errors);
@@ -70,7 +115,7 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
 
             var creation = LawyerConsultationSettings.Create(
                 lawyer.Id,
-                command.ConsultationPrice,
+                command.Online.Price,
                 periodsResult.Value,
                 clock.UtcNow);
             if (creation.IsFailure)
@@ -90,7 +135,7 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
             }
 
             concurrencyTokenManager.SetOriginalRowVersion(settings, rowVersion);
-            var update = settings.Update(command.ConsultationPrice, periodsResult.Value);
+            var update = settings.Update(command.Online.Price, periodsResult.Value);
             if (update.IsFailure)
             {
                 return Result<LawyerConsultationSettingsResponse>.Fail(update.Errors);
@@ -100,7 +145,7 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
             // the independent settings RowVersion without changing child entity states.
             concurrencyTokenManager.MarkPropertyModified(
                 settings,
-                item => item.ConsultationPrice);
+                item => item.OnlineConsultationPrice);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -109,29 +154,48 @@ internal sealed class UpdateLawyerConsultationSettingsCommandHandler(
     }
 
     private static Result<IReadOnlyCollection<LawyerAvailabilityPeriod>> CreatePeriods(
-        IReadOnlyList<UpdateLawyerAvailabilityItem>? items)
+        IReadOnlyList<UpdateLawyerAvailabilityItem>? onlineItems,
+        IReadOnlyList<UpdateLawyerAvailabilityItem>? onsiteItems)
     {
-        if (items is null)
+        if (onlineItems is null || onsiteItems is null)
         {
             return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Fail(
                 LawyerErrors.AvailabilityInvalid);
         }
 
-        var periods = new List<LawyerAvailabilityPeriod>(items.Count);
+        var periods = new List<LawyerAvailabilityPeriod>(onlineItems.Count + onsiteItems.Count);
+        if (!AddPeriods(onlineItems, ConsultationType.Online, periods) ||
+            !AddPeriods(onsiteItems, ConsultationType.Onsite, periods))
+        {
+            return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Fail(
+                LawyerErrors.AvailabilityInvalid);
+        }
+
+        return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Ok(periods);
+    }
+
+    private static bool AddPeriods(
+        IReadOnlyList<UpdateLawyerAvailabilityItem> items,
+        ConsultationType consultationType,
+        List<LawyerAvailabilityPeriod> periods)
+    {
         foreach (var item in items)
         {
             if (!TryParseDay(item.DayOfWeek, out var day) ||
                 !item.StartTime.HasValue ||
                 !item.EndTime.HasValue)
             {
-                return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Fail(
-                    LawyerErrors.AvailabilityInvalid);
+                return false;
             }
 
-            periods.Add(new LawyerAvailabilityPeriod(day, item.StartTime.Value, item.EndTime.Value));
+            periods.Add(new LawyerAvailabilityPeriod(
+                consultationType,
+                day,
+                item.StartTime.Value,
+                item.EndTime.Value));
         }
 
-        return Result<IReadOnlyCollection<LawyerAvailabilityPeriod>>.Ok(periods);
+        return true;
     }
 
     private static bool TryParseDay(string? value, out DayOfWeek dayOfWeek)

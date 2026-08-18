@@ -55,6 +55,7 @@ internal sealed record LawyerConsultationDetailsSnapshot(
     string? SpecializationNameAr,
     string? SpecializationNameEn,
     string Description,
+    ConsultationType ConsultationType,
     DateTime? PreferredAppointmentOnUtc,
     decimal? ConsultationPrice,
     ConsultationRequestStatus Status,
@@ -80,6 +81,7 @@ internal sealed record LawyerConsultationDetailsSnapshot(
                     SpecializationNameEn!)
                 : null,
             Description,
+            ConsultationType.ToString(),
             PreferredAppointmentOnUtc,
             ConsultationPrice,
             Status.ToString(),
@@ -117,6 +119,7 @@ internal sealed class LawyerConsultationRequestDetailsSpecification
             request.LegalSpecialization != null ? request.LegalSpecialization.NameAr : null,
             request.LegalSpecialization != null ? request.LegalSpecialization.NameEn : null,
             request.Description,
+            request.ConsultationType,
             request.PreferredAppointmentOnUtc,
             request.ConsultationPrice,
             request.Status,

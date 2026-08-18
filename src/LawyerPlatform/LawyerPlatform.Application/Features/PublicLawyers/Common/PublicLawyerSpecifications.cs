@@ -2,6 +2,7 @@ using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using System.Text.Json.Serialization;
 
@@ -170,7 +171,7 @@ internal static class PublicLawyerProjection
                     office.PublicPhoneNumber)).Single(),
             profile.ConsultationSettings == null
                 ? null
-                : profile.ConsultationSettings.ConsultationPrice);
+                : profile.ConsultationSettings.OnlineConsultationPrice);
 
     public static System.Linq.Expressions.Expression<Func<LawyerProfile, PublicLawyerDetailsSnapshot>> CreateDetails()
         => profile => new PublicLawyerDetailsSnapshot(
@@ -203,10 +204,11 @@ internal static class PublicLawyerProjection
                         office.PublicPhoneNumber)).Single(),
                 profile.ConsultationSettings == null
                     ? null
-                    : profile.ConsultationSettings.ConsultationPrice),
+                    : profile.ConsultationSettings.OnlineConsultationPrice),
             profile.ConsultationSettings == null
                 ? Array.Empty<PublicAvailabilitySnapshot>()
                 : profile.ConsultationSettings.Availability
+                    .Where(item => item.ConsultationType == ConsultationType.Online)
                     .OrderBy(item => item.DayOfWeek)
                     .Select(item => new PublicAvailabilitySnapshot(
                         item.DayOfWeek,

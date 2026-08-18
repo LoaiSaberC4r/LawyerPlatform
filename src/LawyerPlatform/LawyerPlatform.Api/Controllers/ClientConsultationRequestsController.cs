@@ -40,6 +40,7 @@ public sealed class ClientConsultationRequestsController(ISender sender) : Contr
     {
         var result = await sender.Send(new CreateClientConsultationRequestCommand(
             request.LawyerId,
+            ConsultationTypeContract.Parse(request.ConsultationType),
             request.LegalSpecializationId,
             request.Description,
             request.PreferredAppointmentOnUtc), cancellationToken);

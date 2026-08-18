@@ -16,6 +16,9 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
         builder.Property(availability => availability.DayOfWeek)
             .HasConversion<int>()
             .IsRequired();
+        builder.Property(availability => availability.ConsultationType)
+            .HasConversion<int>()
+            .IsRequired();
         builder.Property(availability => availability.StartTime)
             .HasColumnType("time")
             .IsRequired();
@@ -29,9 +32,10 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
         builder.HasIndex(availability => new
             {
                 availability.LawyerConsultationSettingsId,
+                availability.ConsultationType,
                 availability.DayOfWeek
             })
             .IsUnique()
-            .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_DayOfWeek");
+            .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek");
     }
 }

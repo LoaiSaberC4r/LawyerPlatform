@@ -95,7 +95,9 @@ internal sealed class EmailNotificationCoordinator(
             request.ReferenceNumber,
             context.SpecializationNameAr,
             context.SpecializationNameEn,
-            request.PreferredAppointmentOnUtc);
+            request.PreferredAppointmentOnUtc,
+            ConsultationType: request.ConsultationType,
+            ConsultationPrice: request.ConsultationPrice);
         var eventId = request.Id.ToString("N");
 
         await QueueAsync(
@@ -161,7 +163,9 @@ internal sealed class EmailNotificationCoordinator(
                 ? LawyerOfficeMapUrlBuilder.Create(
                     snapshot.PrimaryOffice?.Latitude,
                     snapshot.PrimaryOffice?.Longitude)
-                : null);
+                : null,
+            snapshot.ConsultationType,
+            snapshot.ConsultationPrice);
         await QueueAsync(
             notificationType.Value,
             request.Id,
@@ -245,6 +249,8 @@ internal sealed record ConsultationEmailSnapshot(
     string LawyerName,
     string SpecializationNameAr,
     string SpecializationNameEn,
+    ConsultationType ConsultationType,
+    decimal? ConsultationPrice,
     DateTime? PreferredAppointmentOnUtc,
     ConsultationOfficeCoordinatesSnapshot? PrimaryOffice);
 
@@ -269,6 +275,8 @@ internal sealed class ConsultationEmailSnapshotByIdSpecification
             request.LawyerProfile.FullName,
             request.LegalSpecialization == null ? "غير محدد" : request.LegalSpecialization.NameAr,
             request.LegalSpecialization == null ? "Not specified" : request.LegalSpecialization.NameEn,
+            request.ConsultationType,
+            request.ConsultationPrice,
             request.PreferredAppointmentOnUtc,
             request.LawyerProfile.Offices
                 .Where(office => office.IsPrimary && office.IsActive)

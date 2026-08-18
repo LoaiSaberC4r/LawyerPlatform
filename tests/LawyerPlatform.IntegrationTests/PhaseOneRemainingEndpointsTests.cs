@@ -441,10 +441,12 @@ public sealed class DashboardEndpointsTests(CustomWebApplicationFactory factory)
             referenceNumber,
             clientProfileId,
             lawyerProfileId,
+            ConsultationType.Online,
             null,
             "Dashboard test request",
             null,
-            nowUtc).Value;
+            nowUtc,
+            500m).Value;
         switch (status)
         {
             case ConsultationRequestStatus.UnderReview:

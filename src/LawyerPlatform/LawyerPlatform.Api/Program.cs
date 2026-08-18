@@ -37,7 +37,10 @@ builder.Services
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
-    options.OperationFilter<ParameterDescriptionOperationFilter>());
+{
+    options.OperationFilter<ParameterDescriptionOperationFilter>();
+    options.SchemaFilter<ConsultationTypeSchemaFilter>();
+});
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);

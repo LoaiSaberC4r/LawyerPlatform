@@ -43,6 +43,11 @@ public sealed class LawyerConsultationRequestEndpointsTests
         var list = await listResponse.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.Equal(3, list.GetProperty("totalItems").GetInt64());
         Assert.Equal(2, list.GetProperty("items").GetArrayLength());
+        Assert.All(list.GetProperty("items").EnumerateArray(), item =>
+        {
+            Assert.Equal("Onsite", item.GetProperty("consultationType").GetString());
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("consultationPrice").ValueKind);
+        });
         Assert.DoesNotContain(
             list.GetProperty("items").EnumerateArray(),
             item => item.GetProperty("id").GetGuid() == otherLawyerRequest.Id);
@@ -57,6 +62,8 @@ public sealed class LawyerConsultationRequestEndpointsTests
         Assert.Equal("First Guest", guestDetails.GetProperty("requesterFullName").GetString());
         Assert.Equal("01011112222", guestDetails.GetProperty("requesterPhoneNumber").GetString());
         Assert.Equal("first.guest@example.test", guestDetails.GetProperty("requesterEmail").GetString());
+        Assert.Equal("Onsite", guestDetails.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, guestDetails.GetProperty("consultationPrice").ValueKind);
 
         var clientDetails = await GetDetailsAsync(client, clientRequest.Id);
         Assert.Equal("Client", clientDetails.GetProperty("requesterType").GetString());
@@ -288,6 +295,7 @@ public sealed class LawyerConsultationRequestEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             fullName,
             phoneNumber,
             email = $"{fullName.Replace(" ", ".", StringComparison.Ordinal).ToLowerInvariant()}@example.test",
@@ -324,6 +332,7 @@ public sealed class LawyerConsultationRequestEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             description = "Client consultation request"
         }, TestContext.Current.CancellationToken);

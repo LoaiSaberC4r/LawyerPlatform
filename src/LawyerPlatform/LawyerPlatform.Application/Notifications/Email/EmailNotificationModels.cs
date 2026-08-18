@@ -1,5 +1,7 @@
 namespace LawyerPlatform.Application.Notifications.Email;
 
+using LawyerPlatform.Domain.Consultations;
+
 public abstract record EmailNotificationModel;
 
 public sealed record LawyerEmailNotificationModel(
@@ -15,7 +17,9 @@ public sealed record ConsultationEmailNotificationModel(
     string SpecializationNameEn,
     DateTime? PreferredAppointmentOnUtc = null,
     string? Reason = null,
-    string? LawyerOfficeMapUrl = null) : EmailNotificationModel;
+    string? LawyerOfficeMapUrl = null,
+    ConsultationType ConsultationType = ConsultationType.Online,
+    decimal? ConsultationPrice = null) : EmailNotificationModel;
 
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;

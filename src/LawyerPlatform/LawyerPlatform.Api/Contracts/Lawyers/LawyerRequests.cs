@@ -23,9 +23,16 @@ public sealed record ReplaceLawyerSpecializationsRequest(
     string RowVersion);
 
 public sealed record UpdateLawyerConsultationSettingsRequest(
-    decimal ConsultationPrice,
-    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability,
+    UpdateLawyerOnlineConsultationSettingsRequest? Online,
+    UpdateLawyerOnsiteConsultationSettingsRequest? Onsite,
     string? RowVersion);
+
+public sealed record UpdateLawyerOnlineConsultationSettingsRequest(
+    decimal Price,
+    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability);
+
+public sealed record UpdateLawyerOnsiteConsultationSettingsRequest(
+    IReadOnlyList<UpdateLawyerAvailabilityRequest>? Availability);
 
 public sealed record UpdateLawyerAvailabilityRequest(
     string DayOfWeek,

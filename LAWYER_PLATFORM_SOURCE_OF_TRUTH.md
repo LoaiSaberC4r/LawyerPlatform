@@ -24,12 +24,13 @@
 
 ## Approved Later-Phase Decision — Lawyer Consultation Settings
 
-- A Lawyer owns independent Consultation Settings containing the current positive Consultation Price and zero to seven weekly availability periods.
-- Availability contains at most one working period per available `DayOfWeek`; an omitted day is unavailable and each period requires `StartTime < EndTime`.
+- A Lawyer owns one independently concurrent Consultation Settings aggregate for the `Online` and `Onsite` consultation types.
+- Online has the current positive consultation price and its own zero to seven weekly availability periods; Onsite has an independent zero to seven weekly availability periods and no platform price.
+- Availability contains at most one working period per `ConsultationType` and `DayOfWeek`; the same day may be configured once for each type, an omitted day is unavailable for that type, and each period requires `StartTime < EndTime`.
 - `PreferredAppointmentOnUtc` remains optional for Guest and Client Consultation Requests.
-- When `PreferredAppointmentOnUtc` is supplied, the backend converts it from UTC into the configured business timezone and requires its local day and time to match the Lawyer's weekly availability. Start and end boundaries are inclusive.
-- When Consultation Settings exist, their current Consultation Price is snapshotted into each new `ConsultationRequest`, including contact requests without an appointment.
-- When Consultation Settings do not exist, a contact request without an appointment remains valid and its historical Consultation Price is `null`; an appointment request is rejected.
+- Guest and Client creation requires a `ConsultationType`; when an appointment is supplied, the backend converts it from UTC into the configured business timezone and requires its local day and time to match availability for that selected type. Start and end boundaries are inclusive.
+- Online requests snapshot the current Online consultation price at creation; Onsite requests always have a `null` consultation price.
+- When Consultation Settings do not exist, an Onsite contact request without an appointment remains valid; Online requests and all appointment requests are rejected because their required settings are unavailable.
 - Later Lawyer price changes never modify old Consultation Requests. Request details always use the historical snapshot, while public Lawyer APIs use the current price.
 - Consultation Settings are operational settings with independent optimistic concurrency and do not modify Lawyer approval or public-eligibility state.
 - Slots, slot generation, appointment duration, reserved-time detection, and double-booking prevention are not included in this phase. Multiple requests may use the same preferred time.

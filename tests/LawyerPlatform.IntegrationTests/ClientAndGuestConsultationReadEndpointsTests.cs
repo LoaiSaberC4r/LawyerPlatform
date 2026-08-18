@@ -38,12 +38,16 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         AssertNoPrivateLocationFields(list.GetRawText());
         Assert.Equal(1, list.GetProperty("totalItems").GetInt64());
         Assert.Equal(firstRequest.Id, list.GetProperty("items")[0].GetProperty("id").GetGuid());
+        Assert.Equal("Onsite", list.GetProperty("items")[0].GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, list.GetProperty("items")[0].GetProperty("consultationPrice").ValueKind);
 
         var ownDetails = await client.GetFromJsonAsync<JsonElement>(
             $"/api/v1/client/consultation-requests/{firstRequest.Id}",
             TestContext.Current.CancellationToken);
         Assert.Equal("First private description", ownDetails.GetProperty("description").GetString());
         Assert.Equal("Private client rejection", ownDetails.GetProperty("rejectionReason").GetString());
+        Assert.Equal("Onsite", ownDetails.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, ownDetails.GetProperty("consultationPrice").ValueKind);
         AssertNoPrivateLocationFields(ownDetails.GetRawText());
 
         await RegisterAndLoginClientAsync(
@@ -74,6 +78,8 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         var trackedText = await trackedResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         var tracked = JsonDocument.Parse(trackedText).RootElement;
         Assert.Equal("Rejected", tracked.GetProperty("status").GetString());
+        Assert.Equal("Onsite", tracked.GetProperty("consultationType").GetString());
+        Assert.Equal(JsonValueKind.Null, tracked.GetProperty("consultationPrice").ValueKind);
         Assert.False(tracked.TryGetProperty("rejectionReason", out _));
         Assert.False(tracked.TryGetProperty("statusHistory", out _));
         Assert.False(tracked.TryGetProperty("description", out _));
@@ -168,6 +174,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/client/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             description
         }, TestContext.Current.CancellationToken);
@@ -184,6 +191,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         var response = await client.PostAsJsonAsync("/api/v1/public/consultation-requests", new
         {
             lawyerId,
+            consultationType = "Onsite",
             legalSpecializationId = 1,
             fullName = "Tracked Guest",
             phoneNumber = "01087333333",
