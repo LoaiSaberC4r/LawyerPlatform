@@ -23933,6 +23933,29 @@ public interface ISeeder
     Task SeedAsync(CancellationToken cancellationToken);
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Common\Validation\EgyptianMobileNumberValidatorExtensions.cs ==================== 
+using System.Text.RegularExpressions;
+using FluentValidation;
+
+namespace LawyerPlatform.Application.Common.Validation;
+
+internal static partial class EgyptianMobileNumberValidatorExtensions
+{
+    private const string EgyptianMobileNumberPattern = "^01[0125][0-9]{8}$";
+
+    public static IRuleBuilderOptions<T, string?> EgyptianMobileNumber<T>(
+        this IRuleBuilder<T, string?> ruleBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(ruleBuilder);
+
+        return ruleBuilder.Must(phoneNumber =>
+            phoneNumber is null || EgyptianMobileNumberRegex().IsMatch(phoneNumber));
+    }
+
+    [GeneratedRegex(EgyptianMobileNumberPattern, RegexOptions.CultureInvariant)]
+    private static partial Regex EgyptianMobileNumberRegex();
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\AdminClients\Common\AdminClientLifecycleService.cs ==================== 
 using BuildingBlock.Application.Repositories;
 using BuildingBlock.Application.Time;
@@ -26802,6 +26825,7 @@ internal sealed class RegisterClientCommandHandler(
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\RegisterClient\RegisterClientCommandValidator.cs ==================== 
 using BuildingBlock.Application.Abstraction.Encryption;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.Auth.Common;
 
 namespace LawyerPlatform.Application.Features.Auth.RegisterClient;
@@ -26826,8 +26850,9 @@ internal sealed class RegisterClientCommandValidator : AbstractValidator<Registe
             .EmailAddress().WithErrorCode("Account.EmailInvalid");
 
         RuleFor(command => command.PhoneNumber)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty().WithErrorCode("Account.PhoneNumberRequired")
-            .MaximumLength(30).WithErrorCode("Account.PhoneNumberInvalid");
+            .EgyptianMobileNumber().WithErrorCode("Account.PhoneNumberInvalid");
 
         RuleFor(command => command.Password)
             .NotEmpty().WithErrorCode("Account.PasswordRequired")
@@ -26963,6 +26988,7 @@ internal sealed class RegisterLawyerCommandHandler(
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\RegisterLawyer\RegisterLawyerCommandValidator.cs ==================== 
 using BuildingBlock.Application.Abstraction.Encryption;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.Auth.Common;
 
 namespace LawyerPlatform.Application.Features.Auth.RegisterLawyer;
@@ -26987,8 +27013,9 @@ internal sealed class RegisterLawyerCommandValidator : AbstractValidator<Registe
             .EmailAddress().WithErrorCode("Account.EmailInvalid");
 
         RuleFor(command => command.PhoneNumber)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty().WithErrorCode("Account.PhoneNumberRequired")
-            .MaximumLength(30).WithErrorCode("Account.PhoneNumberInvalid");
+            .EgyptianMobileNumber().WithErrorCode("Account.PhoneNumberInvalid");
 
         RuleFor(command => command.Password)
             .NotEmpty().WithErrorCode("Account.PasswordRequired")
@@ -28276,11 +28303,11 @@ internal sealed class CurrentClientProfileSpecification
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\ConsultationRequests\CreateGuest\CreateGuestConsultationRequestCommand.cs ==================== 
-using System.Text.RegularExpressions;
 using BuildingBlock.Application.Abstraction;
 using BuildingBlock.Application.Abstraction.Persistence;
 using BuildingBlock.Domain.Results;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.ConsultationRequests.Create;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
@@ -28297,7 +28324,7 @@ public sealed record CreateGuestConsultationRequestCommand(
     DateTime? PreferredAppointmentOnUtc)
     : ICommand<CreateConsultationRequestResponse>, ITransactionalCommand<LawyerPlatformWritePersistence>;
 
-internal sealed partial class CreateGuestConsultationRequestCommandValidator
+internal sealed class CreateGuestConsultationRequestCommandValidator
     : AbstractValidator<CreateGuestConsultationRequestCommand>
 {
     public CreateGuestConsultationRequestCommandValidator()
@@ -28308,10 +28335,9 @@ internal sealed partial class CreateGuestConsultationRequestCommandValidator
             .When(command => command.LegalSpecializationId.HasValue);
         RuleFor(command => command.FullName).NotEmpty().MaximumLength(200);
         RuleFor(command => command.PhoneNumber)
-            .NotEmpty()
-            .MaximumLength(30)
-            .Matches(EgyptianMobileNumberRegex())
-            .WithErrorCode("ConsultationRequest.InvalidPhoneNumber");
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty().WithErrorCode("ConsultationRequest.PhoneNumberRequired")
+            .EgyptianMobileNumber().WithErrorCode("ConsultationRequest.InvalidPhoneNumber");
         RuleFor(command => command.Email)
             .MaximumLength(320)
             .EmailAddress()
@@ -28320,9 +28346,6 @@ internal sealed partial class CreateGuestConsultationRequestCommandValidator
             .NotEmpty()
             .MaximumLength(ConsultationRequest.MaximumDescriptionLength);
     }
-
-    [GeneratedRegex("^(?:\\+20|0020|0)1[0125][0-9]{8}$", RegexOptions.CultureInvariant)]
-    private static partial Regex EgyptianMobileNumberRegex();
 }
 
 internal sealed class CreateGuestConsultationRequestCommandHandler(
@@ -28349,6 +28372,7 @@ using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.ConsultationRequests.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
@@ -28375,7 +28399,10 @@ internal sealed class TrackGuestConsultationRequestQueryValidator
     public TrackGuestConsultationRequestQueryValidator()
     {
         RuleFor(query => query.ReferenceNumber).NotEmpty().MaximumLength(ConsultationRequest.MaximumReferenceNumberLength);
-        RuleFor(query => query.PhoneNumber).NotEmpty().MaximumLength(30);
+        RuleFor(query => query.PhoneNumber)
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty().WithErrorCode("ConsultationRequest.PhoneNumberRequired")
+            .EgyptianMobileNumber().WithErrorCode("ConsultationRequest.InvalidPhoneNumber");
     }
 }
 
@@ -30704,6 +30731,7 @@ using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Common.Validation;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -30728,7 +30756,10 @@ internal sealed class UpsertPrimaryOfficeCommandValidator : AbstractValidator<Up
         RuleFor(command => command.CityId).GreaterThan(0);
         RuleFor(command => command.AreaId).GreaterThan(0);
         RuleFor(command => command.DetailedAddress).NotEmpty().MaximumLength(500);
-        RuleFor(command => command.PublicPhoneNumber).MaximumLength(30);
+        RuleFor(command => command.PublicPhoneNumber)
+            .EgyptianMobileNumber()
+            .WithErrorCode("Lawyer.InvalidPublicPhoneNumber")
+            .When(command => !string.IsNullOrWhiteSpace(command.PublicPhoneNumber));
         RuleFor(command => command.RowVersion)
             .Must(value => value is null || RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode("Lawyer.InvalidRowVersion");
@@ -52020,9 +52051,9 @@ public sealed class PhaseOneAuthorizationSwaggerAndCatalogRemovalTests(CustomWeb
         Assert.Empty(emptyClients.GetProperty("items").EnumerateArray());
 
         var registeredClient = await PhaseOneTestHelpers.RegisterClientAsync(
-            client, "authorization.client", "authorization.client@example.test", "01400000001", "Authorization Client", cancellationToken);
+            client, "authorization.client", "authorization.client@example.test", "01500000001", "Authorization Client", cancellationToken);
         var registeredLawyer = await PhaseOneTestHelpers.RegisterLawyerAsync(
-            client, "authorization.lawyer", "authorization.lawyer@example.test", "01400000002", "Authorization Lawyer", cancellationToken);
+            client, "authorization.lawyer", "authorization.lawyer@example.test", "01500000002", "Authorization Lawyer", cancellationToken);
         var clientToken = await PhaseOneTestHelpers.LoginAndReadTokenAsync(
             client, "authorization.client", PhaseOneTestHelpers.ClientPassword, cancellationToken);
         var lawyerToken = await PhaseOneTestHelpers.LoginAndReadTokenAsync(
@@ -55887,5 +55918,192 @@ public sealed class SuperAdminSeederTests
         public void Dispose()
         {
         }
+    }
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Validation\EgyptianMobileNumberValidationTests.cs ==================== 
+using BuildingBlock.Application.Abstraction.Encryption;
+using FluentValidation.Results;
+using LawyerPlatform.Application.Features.Auth.RegisterClient;
+using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
+using LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
+using LawyerPlatform.Application.Features.ConsultationRequests.Guest.TrackRequest;
+using LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
+
+namespace LawyerPlatform.UnitTests.Validation;
+
+public sealed class EgyptianMobileNumberValidationTests
+{
+    private readonly IPasswordService _passwordService = new TestPasswordService();
+
+    public static TheoryData<string> ValidPhoneNumbers => new()
+    {
+        "01012345678",
+        "01112345678",
+        "01212345678",
+        "01512345678"
+    };
+
+    public static TheoryData<string> InvalidPhoneNumbers => new()
+    {
+        "01312345678",
+        "01412345678",
+        "01612345678",
+        "01712345678",
+        "01812345678",
+        "01912345678",
+        "0101234567",
+        "010123456789",
+        "+201012345678",
+        "00201012345678",
+        "201012345678",
+        "010 1234 5678",
+        "010-1234-5678",
+        "(010)12345678",
+        "010ABC45678",
+        "abcdefghijk",
+        "12345678901"
+    };
+
+    [Theory]
+    [MemberData(nameof(ValidPhoneNumbers))]
+    public void CoveredValidators_AcceptValidEgyptianMobileNumbers(string phoneNumber)
+    {
+        Assert.True(ValidateClientRegistration(phoneNumber).IsValid);
+        Assert.True(ValidateLawyerRegistration(phoneNumber).IsValid);
+        Assert.True(ValidateGuestCreation(phoneNumber).IsValid);
+        Assert.True(ValidateGuestTracking(phoneNumber).IsValid);
+        Assert.True(ValidateOffice(phoneNumber).IsValid);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidPhoneNumbers))]
+    public void CoveredValidators_RejectInvalidPhoneNumbers(string phoneNumber)
+    {
+        AssertSinglePhoneError(
+            ValidateClientRegistration(phoneNumber),
+            nameof(RegisterClientCommand.PhoneNumber),
+            "Account.PhoneNumberInvalid");
+        AssertSinglePhoneError(
+            ValidateLawyerRegistration(phoneNumber),
+            nameof(RegisterLawyerCommand.PhoneNumber),
+            "Account.PhoneNumberInvalid");
+        AssertSinglePhoneError(
+            ValidateGuestCreation(phoneNumber),
+            nameof(CreateGuestConsultationRequestCommand.PhoneNumber),
+            "ConsultationRequest.InvalidPhoneNumber");
+        AssertSinglePhoneError(
+            ValidateGuestTracking(phoneNumber),
+            nameof(TrackGuestConsultationRequestQuery.PhoneNumber),
+            "ConsultationRequest.InvalidPhoneNumber");
+        AssertSinglePhoneError(
+            ValidateOffice(phoneNumber),
+            nameof(UpsertPrimaryOfficeCommand.PublicPhoneNumber),
+            "Lawyer.InvalidPublicPhoneNumber");
+    }
+
+    [Fact]
+    public void RequiredPhoneValidators_ReportOnlyRequiredErrorForEmptyInput()
+    {
+        AssertSinglePhoneError(
+            ValidateClientRegistration(string.Empty),
+            nameof(RegisterClientCommand.PhoneNumber),
+            "Account.PhoneNumberRequired");
+        AssertSinglePhoneError(
+            ValidateLawyerRegistration(string.Empty),
+            nameof(RegisterLawyerCommand.PhoneNumber),
+            "Account.PhoneNumberRequired");
+        AssertSinglePhoneError(
+            ValidateGuestCreation(string.Empty),
+            nameof(CreateGuestConsultationRequestCommand.PhoneNumber),
+            "ConsultationRequest.PhoneNumberRequired");
+        AssertSinglePhoneError(
+            ValidateGuestTracking(string.Empty),
+            nameof(TrackGuestConsultationRequestQuery.PhoneNumber),
+            "ConsultationRequest.PhoneNumberRequired");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void OfficeValidator_PreservesOptionalEmptyPhoneBehavior(string? phoneNumber)
+    {
+        Assert.True(ValidateOffice(phoneNumber).IsValid);
+    }
+
+    [Fact]
+    public void GuestCreation_RejectsInternationalFormatAndKeepsLocalFormatValid()
+    {
+        AssertSinglePhoneError(
+            ValidateGuestCreation("+201012345678"),
+            nameof(CreateGuestConsultationRequestCommand.PhoneNumber),
+            "ConsultationRequest.InvalidPhoneNumber");
+        Assert.True(ValidateGuestCreation("01012345678").IsValid);
+    }
+
+    private ValidationResult ValidateClientRegistration(string phoneNumber)
+        => new RegisterClientCommandValidator(_passwordService).Validate(
+            new RegisterClientCommand(
+                "Client One",
+                "client.one",
+                "client@example.test",
+                phoneNumber,
+                "StrongPassword1"));
+
+    private ValidationResult ValidateLawyerRegistration(string phoneNumber)
+        => new RegisterLawyerCommandValidator(_passwordService).Validate(
+            new RegisterLawyerCommand(
+                "Lawyer One",
+                "lawyer.one",
+                "lawyer@example.test",
+                phoneNumber,
+                "StrongPassword1"));
+
+    private static ValidationResult ValidateGuestCreation(string phoneNumber)
+        => new CreateGuestConsultationRequestCommandValidator().Validate(
+            new CreateGuestConsultationRequestCommand(
+                Guid.NewGuid(),
+                1,
+                "Guest One",
+                phoneNumber,
+                "guest@example.test",
+                "Consultation description",
+                null));
+
+    private static ValidationResult ValidateGuestTracking(string phoneNumber)
+        => new TrackGuestConsultationRequestQueryValidator().Validate(
+            new TrackGuestConsultationRequestQuery("CR-VALID", phoneNumber));
+
+    private static ValidationResult ValidateOffice(string? phoneNumber)
+        => new UpsertPrimaryOfficeCommandValidator().Validate(
+            new UpsertPrimaryOfficeCommand(1, 1, 1, "Office address", phoneNumber, null));
+
+    private static void AssertSinglePhoneError(
+        ValidationResult result,
+        string propertyName,
+        string expectedErrorCode)
+    {
+        Assert.False(result.IsValid);
+        var error = Assert.Single(result.Errors, item => item.PropertyName == propertyName);
+        Assert.Equal(expectedErrorCode, error.ErrorCode);
+    }
+
+    private sealed class TestPasswordService : IPasswordService
+    {
+        public string Hash(string password) => $"hash:{password}";
+
+        public bool Verify(string password, string passwordHash) => passwordHash == Hash(password);
+
+        public PasswordVerification VerifyDetailed(string password, string passwordHash)
+            => new(Verify(password, passwordHash), false);
+
+        public Task<string> HashAsync(string password, CancellationToken ct = default)
+            => Task.FromResult(Hash(password));
+
+        public Task<bool> VerifyAsync(string password, string passwordHash, CancellationToken ct = default)
+            => Task.FromResult(Verify(password, passwordHash));
+
+        public bool IsStrongPassword(string password) => password == "StrongPassword1";
     }
 }
