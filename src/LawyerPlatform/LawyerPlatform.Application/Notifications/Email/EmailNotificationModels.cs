@@ -17,6 +17,7 @@ public sealed record ConsultationEmailNotificationModel(
     string SpecializationNameEn,
     DateTime? PreferredAppointmentOnUtc = null,
     string? Reason = null,
+    string? LawyerPublicPhoneNumber = null,
     string? LawyerOfficeMapUrl = null,
     ConsultationType ConsultationType = ConsultationType.Online,
     decimal? ConsultationPrice = null) : EmailNotificationModel;

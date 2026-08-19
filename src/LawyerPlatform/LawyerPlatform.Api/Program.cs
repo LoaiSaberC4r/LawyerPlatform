@@ -36,11 +36,13 @@ builder.Services
     .AddApplicationPart(typeof(BuildingBlock.Api.ProblemDetailsMappingMvc).Assembly);
 
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(options =>
 {
     options.OperationFilter<ParameterDescriptionOperationFilter>();
     options.SchemaFilter<ConsultationTypeSchemaFilter>();
 });
+
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
@@ -55,6 +57,7 @@ builder.Services.AddApiVersioning(options =>
     options.GroupNameFormat = "'v'VVV";
     options.SubstituteApiVersionInUrl = true;
 });
+
 builder.Services.AddBuildingBlockSwagger(options =>
 {
     options.ApiTitle = "LawyerPlatform API";
@@ -73,32 +76,42 @@ builder.Services
     });
 
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-    .Configure<Microsoft.Extensions.Options.IOptions<JwtOptions>>((options, jwtOptionsAccessor) =>
-    {
-        var jwtOptions = jwtOptionsAccessor.Value;
-        options.TokenValidationParameters = new TokenValidationParameters
+    .Configure<Microsoft.Extensions.Options.IOptions<JwtOptions>>(
+        (options, jwtOptionsAccessor) =>
         {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtOptions.Issuer,
-            ValidAudience = jwtOptions.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
-            ClockSkew = TimeSpan.FromMinutes(1),
-            NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
-            RoleClaimType = LawyerPlatformClaimTypes.Role
-        };
-    });
+            var jwtOptions = jwtOptionsAccessor.Value;
+
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+
+                ValidIssuer = jwtOptions.Issuer,
+                ValidAudience = jwtOptions.Audience,
+
+                IssuerSigningKey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(jwtOptions.Key)),
+
+                ClockSkew = TimeSpan.FromMinutes(1),
+
+                NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
+                RoleClaimType = LawyerPlatformClaimTypes.Role
+            };
+        });
 
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("BuildingBlockDiagnostics", policy =>
         policy.RequireAuthenticatedUser());
+
     options.AddPolicy("SuperAdminOnly", policy =>
         policy.RequireRole(AccountRole.SuperAdmin.ToString()));
+
     options.AddPolicy("LawyerOnly", policy =>
         policy.RequireRole(AccountRole.Lawyer.ToString()));
+
     options.AddPolicy("ClientOnly", policy =>
         policy.RequireRole(AccountRole.Client.ToString()));
 });
@@ -106,6 +119,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
     options.AddFixedWindowLimiter("auth", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -114,6 +128,7 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+
     options.AddFixedWindowLimiter("consultation-guest", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -122,6 +137,7 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+
     options.AddFixedWindowLimiter("consultation-track", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -130,12 +146,16 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+
     options.OnRejected = async (context, cancellationToken) =>
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var isConsultationRequest = context.HttpContext.Request.Path.StartsWithSegments(
-            "/api/v1/public/consultation-requests",
-            StringComparison.OrdinalIgnoreCase);
+
+        var isConsultationRequest =
+            context.HttpContext.Request.Path.StartsWithSegments(
+                "/api/v1/public/consultation-requests",
+                StringComparison.OrdinalIgnoreCase);
+
         var error = isConsultationRequest
             ? Error.RateLimit(
                 "ConsultationRequest.RateLimitExceeded",
@@ -145,11 +165,15 @@ builder.Services.AddRateLimiter(options =>
                 "Auth.RateLimitExceeded",
                 "Too many authentication attempts.",
                 TimeSpan.FromMinutes(1));
-        await new[] { error }.ToProblem(context.HttpContext).ExecuteAsync(context.HttpContext);
+
+        await new[] { error }
+            .ToProblem(context.HttpContext)
+            .ExecuteAsync(context.HttpContext);
     };
 });
 
-builder.Services.AddHealthChecks()
+builder.Services
+    .AddHealthChecks()
     .AddDbContextCheck<LawyerPlatformDbContext>();
 
 builder.Services.AddLawyerPlatformCors(builder.Configuration);
@@ -159,13 +183,27 @@ builder.Services.AddLawyerPlatformInfrastructure(builder.Configuration);
 var app = builder.Build();
 
 app.UseBuildingBlockSerilog();
+
 app.UseHttpsRedirection();
+
 app.UseBuildingBlockLocalization();
+
+// Serve Angular index.html automatically for "/".
+app.UseDefaultFiles();
+
+// Serve Angular JavaScript, CSS, images and assets from wwwroot.
+app.UseStaticFiles();
+
 app.UseRouting();
+
 app.UseCors(CorsPolicyNames.Default);
+
 app.UseRateLimiter();
+
 app.UseAuthentication();
+
 app.UseMiddleware<PasswordChangeRequiredMiddleware>();
+
 app.UseAuthorization();
 
 app.UseSwagger(options =>
@@ -184,9 +222,67 @@ app.UseSwaggerUI(options =>
 });
 
 app.MapControllers();
+
 app.MapHealthChecks("/health")
     .WithMetadata(new AllowPasswordChangeRequiredAttribute());
+
 app.MapBuildingBlockLoggingDiagnostics();
+
+// Angular SPA fallback.
+// API, Swagger, Health and internal routes must never fall back to index.html.
+app.MapFallback(async context =>
+{
+    var path = context.Request.Path;
+
+    var isBackendPath =
+        path.StartsWithSegments(
+            "/api",
+            StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments(
+            "/swagger",
+            StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments(
+            "/health",
+            StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments(
+            "/internal",
+            StringComparison.OrdinalIgnoreCase);
+
+    if (isBackendPath)
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status404NotFound;
+
+        return;
+    }
+
+    var webRootPath =
+        app.Environment.WebRootPath ??
+        Path.Combine(
+            app.Environment.ContentRootPath,
+            "wwwroot");
+
+    var indexFilePath =
+        Path.Combine(
+            webRootPath,
+            "index.html");
+
+    if (!File.Exists(indexFilePath))
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status404NotFound;
+
+        return;
+    }
+
+    context.Response.ContentType =
+        "text/html; charset=utf-8";
+
+    await context.Response.SendFileAsync(
+        indexFilePath,
+        context.RequestAborted);
+})
+.WithMetadata(new AllowPasswordChangeRequiredAttribute());
 
 app.Run();
 

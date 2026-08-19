@@ -16,6 +16,8 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class ConsultationRequestCreationEndpointsTests
 {
+    private const string LawyerPublicPhoneNumber = "01012345678";
+
     [Fact]
     public async Task SwaggerDocumentsConsultationTypesAndPublicSettingsEndpoint()
     {
@@ -114,6 +116,13 @@ public sealed class ConsultationRequestCreationEndpointsTests
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
             Assert.Contains(withEmailNotifications, message =>
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+            var confirmation = Assert.Single(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+            var lawyerNotification = Assert.Single(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
+            AssertCreationContactBehavior(confirmation.HtmlBody);
+            Assert.DoesNotContain(LawyerPublicPhoneNumber, lawyerNotification.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("Lawyer Phone Number:", lawyerNotification.HtmlBody, StringComparison.Ordinal);
             Assert.DoesNotContain(withEmailNotifications, message =>
                 message.HtmlBody.Contains("Legal consultation description", StringComparison.Ordinal));
             Assert.Single(withoutEmailNotifications);
@@ -275,6 +284,9 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Contains(notifications, message =>
             message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation &&
             message.RecipientEmail == "consultation.client@example.test");
+        var confirmation = Assert.Single(notifications, message =>
+            message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+        AssertCreationContactBehavior(confirmation.HtmlBody);
         Assert.All(notifications, message =>
         {
             Assert.DoesNotContain("Authenticated client request", message.HtmlBody, StringComparison.Ordinal);
@@ -376,7 +388,14 @@ public sealed class ConsultationRequestCreationEndpointsTests
             profile.UpdateProfessionalProfile($"{userName} Lawyer", "Attorney", "Biography", 8, $"REG-{normalized}");
             var area = EgyptLocationSeedCatalog.Areas[0];
             var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
-            profile.UpsertPrimaryOffice(city.GovernorateId, city.Id, area.Id, "Complete address", null);
+            profile.UpsertPrimaryOffice(
+                city.GovernorateId,
+                city.Id,
+                area.Id,
+                "Complete address",
+                LawyerPublicPhoneNumber,
+                30.044420m,
+                31.235712m);
             profile.ReplaceSpecializations([1]);
             profile.AddDocument("IdentityVerification", $"docs/{userName}-id.pdf", "id.pdf", "application/pdf", 100, nowUtc);
             profile.AddDocument("ProfessionalMembership", $"docs/{userName}-member.pdf", "member.pdf", "application/pdf", 100, nowUtc);
@@ -445,5 +464,23 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Contains(
             body.GetProperty("errors").EnumerateArray(),
             error => error.GetProperty("code").GetString() == expectedCode);
+    }
+
+    private static void AssertCreationContactBehavior(string htmlBody)
+    {
+        Assert.Contains("رقم هاتف المحامي:", htmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", htmlBody, StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, htmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            htmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            htmlBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", htmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("30.044420", htmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("31.235712", htmlBody, StringComparison.Ordinal);
     }
 }

@@ -226,7 +226,8 @@ internal sealed class ConsultationRequestCreationService(
                 persistedRequesterEmail ?? request.GuestEmail,
                 requesterIdentity ?? request.Id.ToString("N"),
                 specializationNameAr,
-                specializationNameEn),
+                specializationNameEn,
+                lawyer.PrimaryOffice?.PublicPhoneNumber),
             cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
@@ -263,7 +264,11 @@ internal sealed record EligibleConsultationLawyerSnapshot(
     IReadOnlyList<int> ActiveSpecializationIds,
     bool HasConsultationSettings,
     decimal? OnlineConsultationPrice,
-    IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability);
+    IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability,
+    EligibleLawyerOfficeContactSnapshot? PrimaryOffice);
+
+internal sealed record EligibleLawyerOfficeContactSnapshot(
+    string? PublicPhoneNumber);
 
 internal sealed record EligibleLawyerAvailabilitySnapshot(
     ConsultationType ConsultationType,
@@ -300,7 +305,12 @@ internal sealed class EligibleLawyerForConsultationSpecification
                         item.DayOfWeek,
                         item.StartTime,
                         item.EndTime))
-                    .ToArray()));
+                    .ToArray(),
+            profile.Offices
+                .Where(office => office.IsPrimary && office.IsActive)
+                .Select(office => new EligibleLawyerOfficeContactSnapshot(
+                    office.PublicPhoneNumber))
+                .FirstOrDefault()));
     }
 }
 
