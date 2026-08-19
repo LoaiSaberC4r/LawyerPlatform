@@ -145,25 +145,120 @@ public sealed class BilingualEmailNotificationFactoryTests
     [Fact]
     public void ConsultationApproved_RendersSafeClickableMapLocationOnlyWhenPresent()
     {
+        const string publicPhoneNumber = "01012345678";
         const string mapUrl =
             "https://www.google.com/maps/search/?api=1&query=30.044420,31.235712";
-        var withMap = Consultation() with { LawyerOfficeMapUrl = mapUrl };
+        var withPhoneAndMap = Consultation() with
+        {
+            LawyerPublicPhoneNumber = publicPhoneNumber,
+            LawyerOfficeMapUrl = mapUrl
+        };
+        var withPhoneOnly = Consultation() with { LawyerPublicPhoneNumber = publicPhoneNumber };
+        var withMapOnly = Consultation() with { LawyerOfficeMapUrl = mapUrl };
 
-        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, withMap);
-        var withoutMap = _factory.Create(EmailNotificationType.ConsultationApproved, Consultation());
-        var created = _factory.Create(
-            EmailNotificationType.ConsultationRequestCreatedConfirmation,
-            withMap);
+        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, withPhoneAndMap);
+        var phoneOnly = _factory.Create(EmailNotificationType.ConsultationApproved, withPhoneOnly);
+        var mapOnly = _factory.Create(EmailNotificationType.ConsultationApproved, withMapOnly);
+        var withoutContact = _factory.Create(EmailNotificationType.ConsultationApproved, Consultation());
 
+        Assert.Contains("رقم هاتف المحامي:", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(publicPhoneNumber, approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("موقع مكتب المحامي", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("عرض موقع المكتب على Google Maps", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Lawyer Office Location", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("View Lawyer Office on Google Maps", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains($"href=\"{mapUrl.Replace("&", "&amp;", StringComparison.Ordinal)}\"", approved.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("Lawyer Office Location", withoutMap.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("موقع مكتب المحامي", withoutMap.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain(mapUrl, created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(publicPhoneNumber, phoneOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", phoneOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", phoneOnly.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Lawyer Office Location", mapOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", mapOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("رقم هاتف المحامي:", mapOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", withoutContact.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("موقع مكتب المحامي", withoutContact.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", withoutContact.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationCreatedConfirmation_RendersPhoneAndLocationMessageButNeverMap()
+    {
+        const string publicPhoneNumber = "01012345678";
+        const string mapUrl =
+            "https://www.google.com/maps/search/?api=1&query=30.044420,31.235712";
+        var model = Consultation() with
+        {
+            LawyerPublicPhoneNumber = publicPhoneNumber,
+            LawyerOfficeMapUrl = mapUrl
+        };
+
+        var created = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            model);
+        var createdForLawyer = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedForLawyer,
+            model);
+
+        Assert.Contains("رقم هاتف المحامي:", created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(publicPhoneNumber, created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            created.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            created.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", created.HtmlBody, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Lawyer Office Location", created.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("عرض موقع المكتب على Google Maps", created.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(publicPhoneNumber, createdForLawyer.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", createdForLawyer.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationCreatedConfirmation_WithoutPhoneOmitsPhoneAndKeepsLocationMessage()
+    {
+        var model = Consultation() with { LawyerPublicPhoneNumber = "   " };
+
+        var result = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            model);
+
+        Assert.DoesNotContain("رقم هاتف المحامي:", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            result.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            result.HtmlBody,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationContactPhone_IsHtmlEncoded()
+    {
+        const string unsafePhone = "01012345678<script>alert('x')</script>&";
+        var model = Consultation() with { LawyerPublicPhoneNumber = unsafePhone };
+
+        var created = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            model);
+        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, model);
+
+        Assert.DoesNotContain("<script>", created.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<script>", approved.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "01012345678&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&amp;",
+            created.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "01012345678&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&amp;",
+            approved.HtmlBody,
+            StringComparison.Ordinal);
     }
 
     [Fact]

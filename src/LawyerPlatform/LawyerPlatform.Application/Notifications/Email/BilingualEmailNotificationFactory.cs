@@ -193,31 +193,40 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
     }
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
-        => BuildConsultation(
+    {
+        var arabic = new List<string>
+        {
+            Lines($"مرحبًا {model.RequesterName}،"),
+            Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
+            Lines("رقم متابعة الطلب:", model.ReferenceNumber),
+            Lines("المحامي:", model.LawyerName),
+            Lines("التخصص:", model.SpecializationNameAr),
+            Lines("حالة الطلب:", "جديد")
+        };
+        var english = new List<string>
+        {
+            Lines($"Hello {model.RequesterName},"),
+            Lines("Your consultation request has been successfully received by Avokatoo."),
+            Lines("Request Reference:", model.ReferenceNumber),
+            Lines("Lawyer:", model.LawyerName),
+            Lines("Specialization:", model.SpecializationNameEn),
+            Lines("Current status:", "New")
+        };
+        AddLawyerPublicPhone(model, arabic, english);
+        arabic.Add(Lines("في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك."));
+        arabic.Add(Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."));
+        arabic.Add(Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."));
+        arabic.Add(Lines("مع تحيات،", "Avokatoo"));
+        english.Add(Lines("If the lawyer approves your consultation request, the lawyer's office location will be sent to you."));
+        english.Add(Lines("Please keep your request reference as you may need it to track your request."));
+        english.Add(Lines("We will notify you when important updates are made to your request status."));
+        english.Add(Lines("Regards,", "Avokatoo"));
+        return BuildConsultation(
             "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received",
             model,
-            [
-                Lines($"مرحبًا {model.RequesterName}،"),
-                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
-                Lines("رقم متابعة الطلب:", model.ReferenceNumber),
-                Lines("المحامي:", model.LawyerName),
-                Lines("التخصص:", model.SpecializationNameAr),
-                Lines("حالة الطلب:", "جديد"),
-                Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."),
-                Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."),
-                Lines("مع تحيات،", "Avokatoo")
-            ],
-            [
-                Lines($"Hello {model.RequesterName},"),
-                Lines("Your consultation request has been successfully received by Avokatoo."),
-                Lines("Request Reference:", model.ReferenceNumber),
-                Lines("Lawyer:", model.LawyerName),
-                Lines("Specialization:", model.SpecializationNameEn),
-                Lines("Current status:", "New"),
-                Lines("Please keep your request reference as you may need it to track your request."),
-                Lines("We will notify you when important updates are made to your request status."),
-                Lines("Regards,", "Avokatoo")
-            ]);
+            arabic,
+            english);
+    }
 
     private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
         => BuildConsultation(
@@ -265,6 +274,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             Lines("Status:", "Approved")
         };
         AddPreferredAppointment(model, arabic, english, "التاريخ المفضل المسجل:", "Recorded preferred date:");
+        AddLawyerPublicPhone(model, arabic, english);
         AddLawyerOfficeMapLocation(model, arabic, english);
         arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Avokatoo."));
         arabic.Add(Lines("مع تحيات،", "Avokatoo"));
@@ -453,6 +463,20 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             "Lawyer Office Location",
             "You can view the lawyer's office location on Google Maps:"));
         english.Add(Link(safeUrl, "View Lawyer Office on Google Maps"));
+    }
+
+    private static void AddLawyerPublicPhone(
+        ConsultationEmailNotificationModel model,
+        List<string> arabic,
+        List<string> english)
+    {
+        if (string.IsNullOrWhiteSpace(model.LawyerPublicPhoneNumber))
+        {
+            return;
+        }
+
+        arabic.Add(Lines("رقم هاتف المحامي:", model.LawyerPublicPhoneNumber));
+        english.Add(Lines("Lawyer Phone Number:", model.LawyerPublicPhoneNumber));
     }
 
     private static string? GetSafeGoogleMapsUrl(string? value)

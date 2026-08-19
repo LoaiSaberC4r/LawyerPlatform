@@ -16,7 +16,8 @@ internal sealed record ConsultationCreationEmailContext(
     string? RequesterEmail,
     string RequesterIdentity,
     string SpecializationNameAr,
-    string SpecializationNameEn);
+    string SpecializationNameEn,
+    string? LawyerPublicPhoneNumber);
 
 internal sealed class EmailNotificationCoordinator(
     IEmailNotificationFactory factory,
@@ -96,6 +97,7 @@ internal sealed class EmailNotificationCoordinator(
             context.SpecializationNameAr,
             context.SpecializationNameEn,
             request.PreferredAppointmentOnUtc,
+            LawyerPublicPhoneNumber: context.LawyerPublicPhoneNumber,
             ConsultationType: request.ConsultationType,
             ConsultationPrice: request.ConsultationPrice);
         var eventId = request.Id.ToString("N");
@@ -158,14 +160,17 @@ internal sealed class EmailNotificationCoordinator(
             snapshot.SpecializationNameAr,
             snapshot.SpecializationNameEn,
             snapshot.PreferredAppointmentOnUtc,
-            history.Reason,
-            notificationType == EmailNotificationType.ConsultationApproved
+            Reason: history.Reason,
+            LawyerPublicPhoneNumber: notificationType == EmailNotificationType.ConsultationApproved
+                ? snapshot.PrimaryOffice?.PublicPhoneNumber
+                : null,
+            LawyerOfficeMapUrl: notificationType == EmailNotificationType.ConsultationApproved
                 ? LawyerOfficeMapUrlBuilder.Create(
                     snapshot.PrimaryOffice?.Latitude,
                     snapshot.PrimaryOffice?.Longitude)
                 : null,
-            snapshot.ConsultationType,
-            snapshot.ConsultationPrice);
+            ConsultationType: snapshot.ConsultationType,
+            ConsultationPrice: snapshot.ConsultationPrice);
         await QueueAsync(
             notificationType.Value,
             request.Id,
@@ -252,9 +257,10 @@ internal sealed record ConsultationEmailSnapshot(
     ConsultationType ConsultationType,
     decimal? ConsultationPrice,
     DateTime? PreferredAppointmentOnUtc,
-    ConsultationOfficeCoordinatesSnapshot? PrimaryOffice);
+    ConsultationOfficeContactSnapshot? PrimaryOffice);
 
-internal sealed record ConsultationOfficeCoordinatesSnapshot(
+internal sealed record ConsultationOfficeContactSnapshot(
+    string? PublicPhoneNumber,
     decimal? Latitude,
     decimal? Longitude);
 
@@ -280,7 +286,8 @@ internal sealed class ConsultationEmailSnapshotByIdSpecification
             request.PreferredAppointmentOnUtc,
             request.LawyerProfile.Offices
                 .Where(office => office.IsPrimary && office.IsActive)
-                .Select(office => new ConsultationOfficeCoordinatesSnapshot(
+                .Select(office => new ConsultationOfficeContactSnapshot(
+                    office.PublicPhoneNumber,
                     office.Latitude,
                     office.Longitude))
                 .FirstOrDefault()));

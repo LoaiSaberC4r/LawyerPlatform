@@ -15,6 +15,8 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class LawyerConsultationRequestEndpointsTests
 {
+    private const string LawyerPublicPhoneNumber = "01012345678";
+
     [Fact]
     public async Task LawyerCanOnlyViewAndTransitionOwnRequestsWithContactHistoryAndConcurrency()
     {
@@ -161,6 +163,15 @@ public sealed class LawyerConsultationRequestEndpointsTests
             completedBody.GetProperty("rowVersion").GetString()!);
         Assert.Equal((HttpStatusCode)422, completedTerminal.StatusCode);
 
+        var clientApprovalDetails = await GetDetailsAsync(client, clientRequest.Id);
+        var clientApproved = await UpdateStatusAsync(
+            client,
+            clientRequest.Id,
+            ConsultationRequestStatus.Approved,
+            null,
+            clientApprovalDetails.GetProperty("rowVersion").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, clientApproved.StatusCode);
+
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secondLawyer.Token);
         Assert.Equal(
             HttpStatusCode.NotFound,
@@ -214,14 +225,48 @@ public sealed class LawyerConsultationRequestEndpointsTests
                 message.AggregateId == completedCandidate.Id &&
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation,
                 TestContext.Current.CancellationToken);
+        var clientApprovedWithMap = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == clientRequest.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
         Assert.Contains(
             "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
             approvedWithMap.HtmlBody,
             StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("رقم هاتف المحامي:", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("موقع مكتب المحامي", approvedWithMap.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Lawyer Office Location", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("01086111111", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("رقم هاتف المحامي:", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("موقع مكتب المحامي", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Office Location", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
+            clientApprovedWithMap.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, approvedWithoutMap.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Office Location", approvedWithoutMap.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", approvedWithoutMap.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(LawyerPublicPhoneNumber, createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("رقم هاتف المحامي:", createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            createdConfirmation.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            createdConfirmation.HtmlBody,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", createdConfirmation.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("30.044420", createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("31.235712", createdConfirmation.HtmlBody, StringComparison.Ordinal);
     }
 
     private static async Task<(Guid ProfileId, Guid UserAccountId, string Token)> RegisterApproveAndLoginLawyerAsync(
@@ -260,7 +305,7 @@ public sealed class LawyerConsultationRequestEndpointsTests
                 city.Id,
                 area.Id,
                 "Complete address",
-                null,
+                LawyerPublicPhoneNumber,
                 includeCoordinates ? 30.044420m : null,
                 includeCoordinates ? 31.235712m : null);
             profile.ReplaceSpecializations([1]);
