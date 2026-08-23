@@ -5,7 +5,9 @@ using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Application.Notifications.Email;
 
-internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
+internal sealed class BilingualEmailNotificationFactory(
+    IDateTimeProvider clock,
+    IEmailBrandingProvider emailBranding)
     : IEmailNotificationFactory
 {
     private const string GoogleMapsUrlPrefix = "https://www.google.com/maps/search/?api=1&query=";
@@ -393,7 +395,13 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             .Append("</section><footer style=\"margin-top:28px;color:#666\">")
             .Append("Avokatoo<br>&copy; ")
             .Append(clock.UtcNow.Year)
-            .Append("</footer></div></body></html>");
+            .Append("</footer>")
+            .Append("<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin-top:24px;\">")
+            .Append("<tr><td align=\"center\">")
+            .Append("<img src=\"")
+            .Append(WebUtility.HtmlEncode(emailBranding.FooterImageUrl))
+            .Append("\" alt=\"Avokatoo\" width=\"700\" style=\"display:block;width:100%;max-width:700px;height:auto;border:0;outline:none;text-decoration:none;\">")
+            .Append("</td></tr></table></div></body></html>");
         return new EmailNotificationContent(subject, body.ToString());
     }
 

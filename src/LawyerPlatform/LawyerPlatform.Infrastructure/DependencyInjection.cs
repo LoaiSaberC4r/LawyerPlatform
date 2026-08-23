@@ -19,6 +19,7 @@ using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.Infrastructure;
 
@@ -83,6 +84,10 @@ public static class DependencyInjection
                            options.ClaimLeaseSeconds >= 120,
                 "Email outbox options are invalid.")
             .ValidateOnStart();
+        services.AddOptions<EmailBrandingOptions>()
+            .Bind(configuration.GetSection(EmailBrandingOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<EmailBrandingOptions>, EmailBrandingOptionsValidator>();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
@@ -95,6 +100,7 @@ public static class DependencyInjection
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
         services.AddScoped<IEmailNotificationOutbox, EmailNotificationOutbox>();
+        services.AddSingleton<IEmailBrandingProvider, EmailBrandingProvider>();
         services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();

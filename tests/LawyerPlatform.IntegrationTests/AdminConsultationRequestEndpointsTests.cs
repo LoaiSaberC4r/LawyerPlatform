@@ -173,6 +173,19 @@ public sealed class AdminConsultationRequestEndpointsTests
             "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
             adminApprovedMessage.HtmlBody,
             StringComparison.Ordinal);
+        var footerImageUrl = notificationScope.ServiceProvider
+            .GetRequiredService<IOptions<EmailBrandingOptions>>()
+            .Value
+            .FooterImageUrl;
+        Assert.Contains(footerImageUrl, adminApprovedMessage.HtmlBody, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            adminApprovedMessage.HtmlBody.Split(
+                footerImageUrl,
+                StringSplitOptions.None).Length - 1);
+        Assert.True(
+            adminApprovedMessage.HtmlBody.IndexOf("lang=\"en\"", StringComparison.Ordinal) <
+            adminApprovedMessage.HtmlBody.IndexOf(footerImageUrl, StringComparison.Ordinal));
 
         var processor = new EmailOutboxProcessor(
             notificationContext,
