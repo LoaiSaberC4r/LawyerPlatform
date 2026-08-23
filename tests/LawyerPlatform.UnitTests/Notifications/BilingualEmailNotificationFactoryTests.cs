@@ -7,9 +7,12 @@ namespace LawyerPlatform.UnitTests.Notifications;
 
 public sealed class BilingualEmailNotificationFactoryTests
 {
+    private const string FooterImageUrl =
+        "https://cdn.example.test/email-assets/avokatoo-email-footer.png";
     private static readonly Guid LawyerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private readonly BilingualEmailNotificationFactory _factory = new(
-        new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)));
+        new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)),
+        new FixedEmailBrandingProvider(FooterImageUrl));
 
     public static TheoryData<EmailNotificationType, EmailNotificationModel, string, string> Templates => new()
     {
@@ -51,6 +54,53 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("Avokatoo", result.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Platform", result.Subject, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Platform", result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(Templates))]
+    public void Create_AppendsOneGlobalFooterAfterBothLanguageSections(
+        EmailNotificationType notificationType,
+        EmailNotificationModel model,
+        string expectedSubject,
+        string expectedField)
+    {
+        var result = _factory.Create(notificationType, model);
+        var body = result.HtmlBody;
+
+        var arabicIndex = body.IndexOf("lang=\"ar\"", StringComparison.Ordinal);
+        var englishIndex = body.IndexOf("lang=\"en\"", StringComparison.Ordinal);
+        var footerImageIndex = body.IndexOf(FooterImageUrl, StringComparison.Ordinal);
+
+        Assert.Equal(Enum.GetValues<EmailNotificationType>().Length, Templates.Count);
+        Assert.Equal(expectedSubject, result.Subject);
+        Assert.Contains(expectedField, body, StringComparison.Ordinal);
+        Assert.True(arabicIndex >= 0);
+        Assert.True(englishIndex > arabicIndex);
+        Assert.True(footerImageIndex > englishIndex);
+        Assert.Equal(1, CountOccurrences(body, FooterImageUrl));
+        Assert.Equal(1, CountOccurrences(body, "alt=\"Avokatoo\""));
+        Assert.Contains(
+            "width=\"700\" style=\"display:block;width:100%;max-width:700px;height:auto;",
+            body,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_HtmlEncodesConfiguredFooterImageUrl()
+    {
+        const string urlWithHtmlSpecialCharacter =
+            "https://cdn.example.test/email-assets/avokatoo&wide.png";
+        var factory = new BilingualEmailNotificationFactory(
+            new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)),
+            new FixedEmailBrandingProvider(urlWithHtmlSpecialCharacter));
+
+        var body = factory.Create(EmailNotificationType.ClientReactivated, Client()).HtmlBody;
+
+        Assert.Contains(
+            "src=\"https://cdn.example.test/email-assets/avokatoo&amp;wide.png\"",
+            body,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain($"src=\"{urlWithHtmlSpecialCharacter}\"", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -316,8 +366,28 @@ public sealed class BilingualEmailNotificationFactoryTests
     private static ClientEmailNotificationModel Client()
         => new("العميل Client");
 
+    private static int CountOccurrences(string value, string searchValue)
+    {
+        var count = 0;
+        var searchIndex = 0;
+
+        while ((searchIndex = value.IndexOf(searchValue, searchIndex, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            searchIndex += searchValue.Length;
+        }
+
+        return count;
+    }
+
     private sealed class FixedClock(DateTime utcNow) : IDateTimeProvider
     {
         public DateTime UtcNow { get; } = utcNow;
+    }
+
+    private sealed class FixedEmailBrandingProvider(string footerImageUrl)
+        : IEmailBrandingProvider
+    {
+        public string FooterImageUrl { get; } = footerImageUrl;
     }
 }
