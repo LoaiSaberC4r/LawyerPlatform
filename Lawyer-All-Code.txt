@@ -22063,11 +22063,13 @@ builder.Services
     .AddApplicationPart(typeof(BuildingBlock.Api.ProblemDetailsMappingMvc).Assembly);
 
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(options =>
 {
     options.OperationFilter<ParameterDescriptionOperationFilter>();
     options.SchemaFilter<ConsultationTypeSchemaFilter>();
 });
+
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
@@ -22082,6 +22084,7 @@ builder.Services.AddApiVersioning(options =>
     options.GroupNameFormat = "'v'VVV";
     options.SubstituteApiVersionInUrl = true;
 });
+
 builder.Services.AddBuildingBlockSwagger(options =>
 {
     options.ApiTitle = "LawyerPlatform API";
@@ -22100,32 +22103,42 @@ builder.Services
     });
 
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-    .Configure<Microsoft.Extensions.Options.IOptions<JwtOptions>>((options, jwtOptionsAccessor) =>
-    {
-        var jwtOptions = jwtOptionsAccessor.Value;
-        options.TokenValidationParameters = new TokenValidationParameters
+    .Configure<Microsoft.Extensions.Options.IOptions<JwtOptions>>(
+        (options, jwtOptionsAccessor) =>
         {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtOptions.Issuer,
-            ValidAudience = jwtOptions.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
-            ClockSkew = TimeSpan.FromMinutes(1),
-            NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
-            RoleClaimType = LawyerPlatformClaimTypes.Role
-        };
-    });
+            var jwtOptions = jwtOptionsAccessor.Value;
+
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+
+                ValidIssuer = jwtOptions.Issuer,
+                ValidAudience = jwtOptions.Audience,
+
+                IssuerSigningKey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(jwtOptions.Key)),
+
+                ClockSkew = TimeSpan.FromMinutes(1),
+
+                NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
+                RoleClaimType = LawyerPlatformClaimTypes.Role
+            };
+        });
 
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("BuildingBlockDiagnostics", policy =>
         policy.RequireAuthenticatedUser());
+
     options.AddPolicy("SuperAdminOnly", policy =>
         policy.RequireRole(AccountRole.SuperAdmin.ToString()));
+
     options.AddPolicy("LawyerOnly", policy =>
         policy.RequireRole(AccountRole.Lawyer.ToString()));
+
     options.AddPolicy("ClientOnly", policy =>
         policy.RequireRole(AccountRole.Client.ToString()));
 });
@@ -22133,6 +22146,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
     options.AddFixedWindowLimiter("auth", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -22141,6 +22155,7 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+
     options.AddFixedWindowLimiter("consultation-guest", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -22149,6 +22164,7 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+
     options.AddFixedWindowLimiter("consultation-track", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -22157,12 +22173,16 @@ builder.Services.AddRateLimiter(options =>
         limiter.AutoReplenishment = true;
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+
     options.OnRejected = async (context, cancellationToken) =>
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var isConsultationRequest = context.HttpContext.Request.Path.StartsWithSegments(
-            "/api/v1/public/consultation-requests",
-            StringComparison.OrdinalIgnoreCase);
+
+        var isConsultationRequest =
+            context.HttpContext.Request.Path.StartsWithSegments(
+                "/api/v1/public/consultation-requests",
+                StringComparison.OrdinalIgnoreCase);
+
         var error = isConsultationRequest
             ? Error.RateLimit(
                 "ConsultationRequest.RateLimitExceeded",
@@ -22172,11 +22192,15 @@ builder.Services.AddRateLimiter(options =>
                 "Auth.RateLimitExceeded",
                 "Too many authentication attempts.",
                 TimeSpan.FromMinutes(1));
-        await new[] { error }.ToProblem(context.HttpContext).ExecuteAsync(context.HttpContext);
+
+        await new[] { error }
+            .ToProblem(context.HttpContext)
+            .ExecuteAsync(context.HttpContext);
     };
 });
 
-builder.Services.AddHealthChecks()
+builder.Services
+    .AddHealthChecks()
     .AddDbContextCheck<LawyerPlatformDbContext>();
 
 builder.Services.AddLawyerPlatformCors(builder.Configuration);
@@ -22186,13 +22210,27 @@ builder.Services.AddLawyerPlatformInfrastructure(builder.Configuration);
 var app = builder.Build();
 
 app.UseBuildingBlockSerilog();
+
 app.UseHttpsRedirection();
+
 app.UseBuildingBlockLocalization();
+
+// Serve Angular index.html automatically for "/".
+app.UseDefaultFiles();
+
+// Serve Angular JavaScript, CSS, images and assets from wwwroot.
+app.UseStaticFiles();
+
 app.UseRouting();
+
 app.UseCors(CorsPolicyNames.Default);
+
 app.UseRateLimiter();
+
 app.UseAuthentication();
+
 app.UseMiddleware<PasswordChangeRequiredMiddleware>();
+
 app.UseAuthorization();
 
 app.UseSwagger(options =>
@@ -22211,9 +22249,67 @@ app.UseSwaggerUI(options =>
 });
 
 app.MapControllers();
+
 app.MapHealthChecks("/health")
     .WithMetadata(new AllowPasswordChangeRequiredAttribute());
+
 app.MapBuildingBlockLoggingDiagnostics();
+
+// Angular SPA fallback.
+// API, Swagger, Health and internal routes must never fall back to index.html.
+app.MapFallback(async context =>
+{
+    var path = context.Request.Path;
+
+    var isBackendPath =
+        path.StartsWithSegments(
+            "/api",
+            StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments(
+            "/swagger",
+            StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments(
+            "/health",
+            StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWithSegments(
+            "/internal",
+            StringComparison.OrdinalIgnoreCase);
+
+    if (isBackendPath)
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status404NotFound;
+
+        return;
+    }
+
+    var webRootPath =
+        app.Environment.WebRootPath ??
+        Path.Combine(
+            app.Environment.ContentRootPath,
+            "wwwroot");
+
+    var indexFilePath =
+        Path.Combine(
+            webRootPath,
+            "index.html");
+
+    if (!File.Exists(indexFilePath))
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status404NotFound;
+
+        return;
+    }
+
+    context.Response.ContentType =
+        "text/html; charset=utf-8";
+
+    await context.Response.SendFileAsync(
+        indexFilePath,
+        context.RequestAborted);
+})
+.WithMetadata(new AllowPasswordChangeRequiredAttribute());
 
 app.Run();
 
@@ -28242,7 +28338,8 @@ internal sealed class ConsultationRequestCreationService(
                 persistedRequesterEmail ?? request.GuestEmail,
                 requesterIdentity ?? request.Id.ToString("N"),
                 specializationNameAr,
-                specializationNameEn),
+                specializationNameEn,
+                lawyer.PrimaryOffice?.PublicPhoneNumber),
             cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
@@ -28279,7 +28376,11 @@ internal sealed record EligibleConsultationLawyerSnapshot(
     IReadOnlyList<int> ActiveSpecializationIds,
     bool HasConsultationSettings,
     decimal? OnlineConsultationPrice,
-    IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability);
+    IReadOnlyList<EligibleLawyerAvailabilitySnapshot> Availability,
+    EligibleLawyerOfficeContactSnapshot? PrimaryOffice);
+
+internal sealed record EligibleLawyerOfficeContactSnapshot(
+    string? PublicPhoneNumber);
 
 internal sealed record EligibleLawyerAvailabilitySnapshot(
     ConsultationType ConsultationType,
@@ -28316,7 +28417,12 @@ internal sealed class EligibleLawyerForConsultationSpecification
                         item.DayOfWeek,
                         item.StartTime,
                         item.EndTime))
-                    .ToArray()));
+                    .ToArray(),
+            profile.Offices
+                .Where(office => office.IsPrimary && office.IsActive)
+                .Select(office => new EligibleLawyerOfficeContactSnapshot(
+                    office.PublicPhoneNumber))
+                .FirstOrDefault()));
     }
 }
 
@@ -31969,7 +32075,9 @@ using LawyerPlatform.Domain.Consultations;
 
 namespace LawyerPlatform.Application.Notifications.Email;
 
-internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
+internal sealed class BilingualEmailNotificationFactory(
+    IDateTimeProvider clock,
+    IEmailBrandingProvider emailBranding)
     : IEmailNotificationFactory
 {
     private const string GoogleMapsUrlPrefix = "https://www.google.com/maps/search/?api=1&query=";
@@ -32157,31 +32265,40 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
     }
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
-        => BuildConsultation(
+    {
+        var arabic = new List<string>
+        {
+            Lines($"مرحبًا {model.RequesterName}،"),
+            Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
+            Lines("رقم متابعة الطلب:", model.ReferenceNumber),
+            Lines("المحامي:", model.LawyerName),
+            Lines("التخصص:", model.SpecializationNameAr),
+            Lines("حالة الطلب:", "جديد")
+        };
+        var english = new List<string>
+        {
+            Lines($"Hello {model.RequesterName},"),
+            Lines("Your consultation request has been successfully received by Avokatoo."),
+            Lines("Request Reference:", model.ReferenceNumber),
+            Lines("Lawyer:", model.LawyerName),
+            Lines("Specialization:", model.SpecializationNameEn),
+            Lines("Current status:", "New")
+        };
+        AddLawyerPublicPhone(model, arabic, english);
+        arabic.Add(Lines("في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك."));
+        arabic.Add(Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."));
+        arabic.Add(Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."));
+        arabic.Add(Lines("مع تحيات،", "Avokatoo"));
+        english.Add(Lines("If the lawyer approves your consultation request, the lawyer's office location will be sent to you."));
+        english.Add(Lines("Please keep your request reference as you may need it to track your request."));
+        english.Add(Lines("We will notify you when important updates are made to your request status."));
+        english.Add(Lines("Regards,", "Avokatoo"));
+        return BuildConsultation(
             "Avokatoo | تم استلام طلب الاستشارة | Consultation Request Received",
             model,
-            [
-                Lines($"مرحبًا {model.RequesterName}،"),
-                Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
-                Lines("رقم متابعة الطلب:", model.ReferenceNumber),
-                Lines("المحامي:", model.LawyerName),
-                Lines("التخصص:", model.SpecializationNameAr),
-                Lines("حالة الطلب:", "جديد"),
-                Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."),
-                Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."),
-                Lines("مع تحيات،", "Avokatoo")
-            ],
-            [
-                Lines($"Hello {model.RequesterName},"),
-                Lines("Your consultation request has been successfully received by Avokatoo."),
-                Lines("Request Reference:", model.ReferenceNumber),
-                Lines("Lawyer:", model.LawyerName),
-                Lines("Specialization:", model.SpecializationNameEn),
-                Lines("Current status:", "New"),
-                Lines("Please keep your request reference as you may need it to track your request."),
-                Lines("We will notify you when important updates are made to your request status."),
-                Lines("Regards,", "Avokatoo")
-            ]);
+            arabic,
+            english);
+    }
 
     private EmailNotificationContent ConsultationUnderReview(ConsultationEmailNotificationModel model)
         => BuildConsultation(
@@ -32229,6 +32346,7 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             Lines("Status:", "Approved")
         };
         AddPreferredAppointment(model, arabic, english, "التاريخ المفضل المسجل:", "Recorded preferred date:");
+        AddLawyerPublicPhone(model, arabic, english);
         AddLawyerOfficeMapLocation(model, arabic, english);
         arabic.Add(Lines("يمكنك متابعة حالة الطلب من خلال Avokatoo."));
         arabic.Add(Lines("مع تحيات،", "Avokatoo"));
@@ -32347,7 +32465,13 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
             .Append("</section><footer style=\"margin-top:28px;color:#666\">")
             .Append("Avokatoo<br>&copy; ")
             .Append(clock.UtcNow.Year)
-            .Append("</footer></div></body></html>");
+            .Append("</footer>")
+            .Append("<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin-top:24px;\">")
+            .Append("<tr><td align=\"center\">")
+            .Append("<img src=\"")
+            .Append(WebUtility.HtmlEncode(emailBranding.FooterImageUrl))
+            .Append("\" alt=\"Avokatoo\" width=\"700\" style=\"display:block;width:100%;max-width:700px;height:auto;border:0;outline:none;text-decoration:none;\">")
+            .Append("</td></tr></table></div></body></html>");
         return new EmailNotificationContent(subject, body.ToString());
     }
 
@@ -32419,6 +32543,20 @@ internal sealed class BilingualEmailNotificationFactory(IDateTimeProvider clock)
         english.Add(Link(safeUrl, "View Lawyer Office on Google Maps"));
     }
 
+    private static void AddLawyerPublicPhone(
+        ConsultationEmailNotificationModel model,
+        List<string> arabic,
+        List<string> english)
+    {
+        if (string.IsNullOrWhiteSpace(model.LawyerPublicPhoneNumber))
+        {
+            return;
+        }
+
+        arabic.Add(Lines("رقم هاتف المحامي:", model.LawyerPublicPhoneNumber));
+        english.Add(Lines("Lawyer Phone Number:", model.LawyerPublicPhoneNumber));
+    }
+
     private static string? GetSafeGoogleMapsUrl(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) ||
@@ -32478,7 +32616,8 @@ internal sealed record ConsultationCreationEmailContext(
     string? RequesterEmail,
     string RequesterIdentity,
     string SpecializationNameAr,
-    string SpecializationNameEn);
+    string SpecializationNameEn,
+    string? LawyerPublicPhoneNumber);
 
 internal sealed class EmailNotificationCoordinator(
     IEmailNotificationFactory factory,
@@ -32558,6 +32697,7 @@ internal sealed class EmailNotificationCoordinator(
             context.SpecializationNameAr,
             context.SpecializationNameEn,
             request.PreferredAppointmentOnUtc,
+            LawyerPublicPhoneNumber: context.LawyerPublicPhoneNumber,
             ConsultationType: request.ConsultationType,
             ConsultationPrice: request.ConsultationPrice);
         var eventId = request.Id.ToString("N");
@@ -32620,14 +32760,17 @@ internal sealed class EmailNotificationCoordinator(
             snapshot.SpecializationNameAr,
             snapshot.SpecializationNameEn,
             snapshot.PreferredAppointmentOnUtc,
-            history.Reason,
-            notificationType == EmailNotificationType.ConsultationApproved
+            Reason: history.Reason,
+            LawyerPublicPhoneNumber: notificationType == EmailNotificationType.ConsultationApproved
+                ? snapshot.PrimaryOffice?.PublicPhoneNumber
+                : null,
+            LawyerOfficeMapUrl: notificationType == EmailNotificationType.ConsultationApproved
                 ? LawyerOfficeMapUrlBuilder.Create(
                     snapshot.PrimaryOffice?.Latitude,
                     snapshot.PrimaryOffice?.Longitude)
                 : null,
-            snapshot.ConsultationType,
-            snapshot.ConsultationPrice);
+            ConsultationType: snapshot.ConsultationType,
+            ConsultationPrice: snapshot.ConsultationPrice);
         await QueueAsync(
             notificationType.Value,
             request.Id,
@@ -32714,9 +32857,10 @@ internal sealed record ConsultationEmailSnapshot(
     ConsultationType ConsultationType,
     decimal? ConsultationPrice,
     DateTime? PreferredAppointmentOnUtc,
-    ConsultationOfficeCoordinatesSnapshot? PrimaryOffice);
+    ConsultationOfficeContactSnapshot? PrimaryOffice);
 
-internal sealed record ConsultationOfficeCoordinatesSnapshot(
+internal sealed record ConsultationOfficeContactSnapshot(
+    string? PublicPhoneNumber,
     decimal? Latitude,
     decimal? Longitude);
 
@@ -32742,7 +32886,8 @@ internal sealed class ConsultationEmailSnapshotByIdSpecification
             request.PreferredAppointmentOnUtc,
             request.LawyerProfile.Offices
                 .Where(office => office.IsPrimary && office.IsActive)
-                .Select(office => new ConsultationOfficeCoordinatesSnapshot(
+                .Select(office => new ConsultationOfficeContactSnapshot(
+                    office.PublicPhoneNumber,
                     office.Latitude,
                     office.Longitude))
                 .FirstOrDefault()));
@@ -32786,6 +32931,7 @@ public sealed record ConsultationEmailNotificationModel(
     string SpecializationNameEn,
     DateTime? PreferredAppointmentOnUtc = null,
     string? Reason = null,
+    string? LawyerPublicPhoneNumber = null,
     string? LawyerOfficeMapUrl = null,
     ConsultationType ConsultationType = ConsultationType.Online,
     decimal? ConsultationPrice = null) : EmailNotificationModel;
@@ -32816,6 +32962,14 @@ public enum EmailNotificationType
     ConsultationCompleted = 12,
     ClientSuspended = 13,
     ClientReactivated = 14
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\IEmailBrandingProvider.cs ==================== 
+namespace LawyerPlatform.Application.Notifications.Email;
+
+public interface IEmailBrandingProvider
+{
+    string FooterImageUrl { get; }
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\IEmailNotificationFactory.cs ==================== 
@@ -34812,6 +34966,7 @@ using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.Infrastructure;
 
@@ -34876,6 +35031,10 @@ public static class DependencyInjection
                            options.ClaimLeaseSeconds >= 120,
                 "Email outbox options are invalid.")
             .ValidateOnStart();
+        services.AddOptions<EmailBrandingOptions>()
+            .Bind(configuration.GetSection(EmailBrandingOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<EmailBrandingOptions>, EmailBrandingOptionsValidator>();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
@@ -34888,6 +35047,7 @@ public static class DependencyInjection
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
         services.AddScoped<IEmailNotificationOutbox, EmailNotificationOutbox>();
+        services.AddSingleton<IEmailBrandingProvider, EmailBrandingProvider>();
         services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();
@@ -35151,6 +35311,19 @@ internal sealed class ConsultationSchedulingTimeZone : IConsultationSchedulingTi
             return false;
         }
     }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailBrandingProvider.cs ==================== 
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.Infrastructure.Email;
+
+internal sealed class EmailBrandingProvider(IOptions<EmailBrandingOptions> options)
+    : IEmailBrandingProvider
+{
+    public string FooterImageUrl => options.Value.FooterImageUrl;
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Email\EmailNotificationOutbox.cs ==================== 
@@ -35760,6 +35933,53 @@ public sealed class DatabaseInitializationOptions
     public const string SectionName = "DatabaseInitialization";
 
     public bool ApplyMigrationsOnStartup { get; init; } = true;
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Options\EmailBrandingOptions.cs ==================== 
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.Infrastructure.Options;
+
+public sealed class EmailBrandingOptions
+{
+    public const string SectionName = "EmailBranding";
+
+    public string FooterImageUrl { get; set; } = string.Empty;
+}
+
+internal sealed class EmailBrandingOptionsValidator(IHostEnvironment environment)
+    : IValidateOptions<EmailBrandingOptions>
+{
+    public ValidateOptionsResult Validate(string? name, EmailBrandingOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (string.IsNullOrWhiteSpace(options.FooterImageUrl))
+        {
+            return ValidateOptionsResult.Fail(
+                "EmailBranding FooterImageUrl is required.");
+        }
+
+        if (!Uri.TryCreate(options.FooterImageUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return ValidateOptionsResult.Fail(
+                "EmailBranding FooterImageUrl must be an absolute HTTP or HTTPS URL without credentials, a query string, or a fragment.");
+        }
+
+        if (environment.IsProduction() && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return ValidateOptionsResult.Fail(
+                "EmailBranding FooterImageUrl must use HTTPS in Production.");
+        }
+
+        return ValidateOptionsResult.Success;
+    }
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Options\EmailOutboxOptions.cs ==================== 
@@ -49960,6 +50180,19 @@ public sealed class AdminConsultationRequestEndpointsTests
             "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
             adminApprovedMessage.HtmlBody,
             StringComparison.Ordinal);
+        var footerImageUrl = notificationScope.ServiceProvider
+            .GetRequiredService<IOptions<EmailBrandingOptions>>()
+            .Value
+            .FooterImageUrl;
+        Assert.Contains(footerImageUrl, adminApprovedMessage.HtmlBody, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            adminApprovedMessage.HtmlBody.Split(
+                footerImageUrl,
+                StringSplitOptions.None).Length - 1);
+        Assert.True(
+            adminApprovedMessage.HtmlBody.IndexOf("lang=\"en\"", StringComparison.Ordinal) <
+            adminApprovedMessage.HtmlBody.IndexOf(footerImageUrl, StringComparison.Ordinal));
 
         var processor = new EmailOutboxProcessor(
             notificationContext,
@@ -51713,6 +51946,8 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class ConsultationRequestCreationEndpointsTests
 {
+    private const string LawyerPublicPhoneNumber = "01012345678";
+
     [Fact]
     public async Task SwaggerDocumentsConsultationTypesAndPublicSettingsEndpoint()
     {
@@ -51811,6 +52046,13 @@ public sealed class ConsultationRequestCreationEndpointsTests
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
             Assert.Contains(withEmailNotifications, message =>
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+            var confirmation = Assert.Single(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+            var lawyerNotification = Assert.Single(withEmailNotifications, message =>
+                message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
+            AssertCreationContactBehavior(confirmation.HtmlBody);
+            Assert.DoesNotContain(LawyerPublicPhoneNumber, lawyerNotification.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("Lawyer Phone Number:", lawyerNotification.HtmlBody, StringComparison.Ordinal);
             Assert.DoesNotContain(withEmailNotifications, message =>
                 message.HtmlBody.Contains("Legal consultation description", StringComparison.Ordinal));
             Assert.Single(withoutEmailNotifications);
@@ -51972,6 +52214,9 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Contains(notifications, message =>
             message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation &&
             message.RecipientEmail == "consultation.client@example.test");
+        var confirmation = Assert.Single(notifications, message =>
+            message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
+        AssertCreationContactBehavior(confirmation.HtmlBody);
         Assert.All(notifications, message =>
         {
             Assert.DoesNotContain("Authenticated client request", message.HtmlBody, StringComparison.Ordinal);
@@ -52073,7 +52318,14 @@ public sealed class ConsultationRequestCreationEndpointsTests
             profile.UpdateProfessionalProfile($"{userName} Lawyer", "Attorney", "Biography", 8, $"REG-{normalized}");
             var area = EgyptLocationSeedCatalog.Areas[0];
             var city = EgyptLocationSeedCatalog.Cities.Single(item => item.Id == area.CityId);
-            profile.UpsertPrimaryOffice(city.GovernorateId, city.Id, area.Id, "Complete address", null);
+            profile.UpsertPrimaryOffice(
+                city.GovernorateId,
+                city.Id,
+                area.Id,
+                "Complete address",
+                LawyerPublicPhoneNumber,
+                30.044420m,
+                31.235712m);
             profile.ReplaceSpecializations([1]);
             profile.AddDocument("IdentityVerification", $"docs/{userName}-id.pdf", "id.pdf", "application/pdf", 100, nowUtc);
             profile.AddDocument("ProfessionalMembership", $"docs/{userName}-member.pdf", "member.pdf", "application/pdf", 100, nowUtc);
@@ -52142,6 +52394,24 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Contains(
             body.GetProperty("errors").EnumerateArray(),
             error => error.GetProperty("code").GetString() == expectedCode);
+    }
+
+    private static void AssertCreationContactBehavior(string htmlBody)
+    {
+        Assert.Contains("رقم هاتف المحامي:", htmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", htmlBody, StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, htmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            htmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            htmlBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", htmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("30.044420", htmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("31.235712", htmlBody, StringComparison.Ordinal);
     }
 }
  
@@ -52582,6 +52852,34 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\EmailBrandingStaticFileTests.cs ==================== 
+using System.Net;
+using Microsoft.AspNetCore.Mvc.Testing;
+
+namespace LawyerPlatform.IntegrationTests;
+
+public sealed class EmailBrandingStaticFileTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>
+{
+    [Fact]
+    public async Task FooterImage_IsServedAnonymouslyFromEmailAssets()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+        using var response = await client.GetAsync(
+            "/email-assets/avokatoo-email-footer.png",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
+        Assert.True((await response.Content.ReadAsByteArrayAsync(
+            TestContext.Current.CancellationToken)).Length > 0);
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\EmailOutboxProcessorTests.cs ==================== 
 using BuildingBlock.Application.Email;
 using BuildingBlock.Application.Time;
@@ -52834,6 +53132,8 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class LawyerConsultationRequestEndpointsTests
 {
+    private const string LawyerPublicPhoneNumber = "01012345678";
+
     [Fact]
     public async Task LawyerCanOnlyViewAndTransitionOwnRequestsWithContactHistoryAndConcurrency()
     {
@@ -52980,6 +53280,15 @@ public sealed class LawyerConsultationRequestEndpointsTests
             completedBody.GetProperty("rowVersion").GetString()!);
         Assert.Equal((HttpStatusCode)422, completedTerminal.StatusCode);
 
+        var clientApprovalDetails = await GetDetailsAsync(client, clientRequest.Id);
+        var clientApproved = await UpdateStatusAsync(
+            client,
+            clientRequest.Id,
+            ConsultationRequestStatus.Approved,
+            null,
+            clientApprovalDetails.GetProperty("rowVersion").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, clientApproved.StatusCode);
+
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secondLawyer.Token);
         Assert.Equal(
             HttpStatusCode.NotFound,
@@ -53033,14 +53342,48 @@ public sealed class LawyerConsultationRequestEndpointsTests
                 message.AggregateId == completedCandidate.Id &&
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation,
                 TestContext.Current.CancellationToken);
+        var clientApprovedWithMap = await notificationContext.EmailOutboxMessages
+            .AsNoTracking()
+            .SingleAsync(message =>
+                message.AggregateId == clientRequest.Id &&
+                message.NotificationType == EmailNotificationType.ConsultationApproved,
+                TestContext.Current.CancellationToken);
         Assert.Contains(
             "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
             approvedWithMap.HtmlBody,
             StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("رقم هاتف المحامي:", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("موقع مكتب المحامي", approvedWithMap.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Lawyer Office Location", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("01086111111", approvedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("رقم هاتف المحامي:", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("موقع مكتب المحامي", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Office Location", clientApprovedWithMap.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "https://www.google.com/maps/search/?api=1&amp;query=30.044420,31.235712",
+            clientApprovedWithMap.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(LawyerPublicPhoneNumber, approvedWithoutMap.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Office Location", approvedWithoutMap.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", approvedWithoutMap.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(LawyerPublicPhoneNumber, createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("رقم هاتف المحامي:", createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            createdConfirmation.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            createdConfirmation.HtmlBody,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", createdConfirmation.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("30.044420", createdConfirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("31.235712", createdConfirmation.HtmlBody, StringComparison.Ordinal);
     }
 
     private static async Task<(Guid ProfileId, Guid UserAccountId, string Token)> RegisterApproveAndLoginLawyerAsync(
@@ -53079,7 +53422,7 @@ public sealed class LawyerConsultationRequestEndpointsTests
                 city.Id,
                 area.Id,
                 "Complete address",
-                null,
+                LawyerPublicPhoneNumber,
                 includeCoordinates ? 30.044420m : null,
                 includeCoordinates ? 31.235712m : null);
             profile.ReplaceSpecializations([1]);
@@ -58684,9 +59027,12 @@ namespace LawyerPlatform.UnitTests.Notifications;
 
 public sealed class BilingualEmailNotificationFactoryTests
 {
+    private const string FooterImageUrl =
+        "https://cdn.example.test/email-assets/avokatoo-email-footer.png";
     private static readonly Guid LawyerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private readonly BilingualEmailNotificationFactory _factory = new(
-        new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)));
+        new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)),
+        new FixedEmailBrandingProvider(FooterImageUrl));
 
     public static TheoryData<EmailNotificationType, EmailNotificationModel, string, string> Templates => new()
     {
@@ -58728,6 +59074,53 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("Avokatoo", result.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Platform", result.Subject, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Platform", result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(Templates))]
+    public void Create_AppendsOneGlobalFooterAfterBothLanguageSections(
+        EmailNotificationType notificationType,
+        EmailNotificationModel model,
+        string expectedSubject,
+        string expectedField)
+    {
+        var result = _factory.Create(notificationType, model);
+        var body = result.HtmlBody;
+
+        var arabicIndex = body.IndexOf("lang=\"ar\"", StringComparison.Ordinal);
+        var englishIndex = body.IndexOf("lang=\"en\"", StringComparison.Ordinal);
+        var footerImageIndex = body.IndexOf(FooterImageUrl, StringComparison.Ordinal);
+
+        Assert.Equal(Enum.GetValues<EmailNotificationType>().Length, Templates.Count);
+        Assert.Equal(expectedSubject, result.Subject);
+        Assert.Contains(expectedField, body, StringComparison.Ordinal);
+        Assert.True(arabicIndex >= 0);
+        Assert.True(englishIndex > arabicIndex);
+        Assert.True(footerImageIndex > englishIndex);
+        Assert.Equal(1, CountOccurrences(body, FooterImageUrl));
+        Assert.Equal(1, CountOccurrences(body, "alt=\"Avokatoo\""));
+        Assert.Contains(
+            "width=\"700\" style=\"display:block;width:100%;max-width:700px;height:auto;",
+            body,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_HtmlEncodesConfiguredFooterImageUrl()
+    {
+        const string urlWithHtmlSpecialCharacter =
+            "https://cdn.example.test/email-assets/avokatoo&wide.png";
+        var factory = new BilingualEmailNotificationFactory(
+            new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)),
+            new FixedEmailBrandingProvider(urlWithHtmlSpecialCharacter));
+
+        var body = factory.Create(EmailNotificationType.ClientReactivated, Client()).HtmlBody;
+
+        Assert.Contains(
+            "src=\"https://cdn.example.test/email-assets/avokatoo&amp;wide.png\"",
+            body,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain($"src=\"{urlWithHtmlSpecialCharacter}\"", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -58822,25 +59215,120 @@ public sealed class BilingualEmailNotificationFactoryTests
     [Fact]
     public void ConsultationApproved_RendersSafeClickableMapLocationOnlyWhenPresent()
     {
+        const string publicPhoneNumber = "01012345678";
         const string mapUrl =
             "https://www.google.com/maps/search/?api=1&query=30.044420,31.235712";
-        var withMap = Consultation() with { LawyerOfficeMapUrl = mapUrl };
+        var withPhoneAndMap = Consultation() with
+        {
+            LawyerPublicPhoneNumber = publicPhoneNumber,
+            LawyerOfficeMapUrl = mapUrl
+        };
+        var withPhoneOnly = Consultation() with { LawyerPublicPhoneNumber = publicPhoneNumber };
+        var withMapOnly = Consultation() with { LawyerOfficeMapUrl = mapUrl };
 
-        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, withMap);
-        var withoutMap = _factory.Create(EmailNotificationType.ConsultationApproved, Consultation());
-        var created = _factory.Create(
-            EmailNotificationType.ConsultationRequestCreatedConfirmation,
-            withMap);
+        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, withPhoneAndMap);
+        var phoneOnly = _factory.Create(EmailNotificationType.ConsultationApproved, withPhoneOnly);
+        var mapOnly = _factory.Create(EmailNotificationType.ConsultationApproved, withMapOnly);
+        var withoutContact = _factory.Create(EmailNotificationType.ConsultationApproved, Consultation());
 
+        Assert.Contains("رقم هاتف المحامي:", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", approved.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(publicPhoneNumber, approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("موقع مكتب المحامي", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("عرض موقع المكتب على Google Maps", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Lawyer Office Location", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("View Lawyer Office on Google Maps", approved.HtmlBody, StringComparison.Ordinal);
         Assert.Contains($"href=\"{mapUrl.Replace("&", "&amp;", StringComparison.Ordinal)}\"", approved.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("Lawyer Office Location", withoutMap.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("موقع مكتب المحامي", withoutMap.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain(mapUrl, created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(publicPhoneNumber, phoneOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", phoneOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", phoneOnly.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Lawyer Office Location", mapOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", mapOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("رقم هاتف المحامي:", mapOnly.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Office Location", withoutContact.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("موقع مكتب المحامي", withoutContact.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", withoutContact.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationCreatedConfirmation_RendersPhoneAndLocationMessageButNeverMap()
+    {
+        const string publicPhoneNumber = "01012345678";
+        const string mapUrl =
+            "https://www.google.com/maps/search/?api=1&query=30.044420,31.235712";
+        var model = Consultation() with
+        {
+            LawyerPublicPhoneNumber = publicPhoneNumber,
+            LawyerOfficeMapUrl = mapUrl
+        };
+
+        var created = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            model);
+        var createdForLawyer = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedForLawyer,
+            model);
+
+        Assert.Contains("رقم هاتف المحامي:", created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Lawyer Phone Number:", created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(publicPhoneNumber, created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            created.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            created.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/maps", created.HtmlBody, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Lawyer Office Location", created.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("عرض موقع المكتب على Google Maps", created.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(publicPhoneNumber, createdForLawyer.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", createdForLawyer.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationCreatedConfirmation_WithoutPhoneOmitsPhoneAndKeepsLocationMessage()
+    {
+        var model = Consultation() with { LawyerPublicPhoneNumber = "   " };
+
+        var result = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            model);
+
+        Assert.DoesNotContain("رقم هاتف المحامي:", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Phone Number:", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            result.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            result.HtmlBody,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConsultationContactPhone_IsHtmlEncoded()
+    {
+        const string unsafePhone = "01012345678<script>alert('x')</script>&";
+        var model = Consultation() with { LawyerPublicPhoneNumber = unsafePhone };
+
+        var created = _factory.Create(
+            EmailNotificationType.ConsultationRequestCreatedConfirmation,
+            model);
+        var approved = _factory.Create(EmailNotificationType.ConsultationApproved, model);
+
+        Assert.DoesNotContain("<script>", created.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<script>", approved.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "01012345678&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&amp;",
+            created.HtmlBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "01012345678&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&amp;",
+            approved.HtmlBody,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -58898,9 +59386,29 @@ public sealed class BilingualEmailNotificationFactoryTests
     private static ClientEmailNotificationModel Client()
         => new("العميل Client");
 
+    private static int CountOccurrences(string value, string searchValue)
+    {
+        var count = 0;
+        var searchIndex = 0;
+
+        while ((searchIndex = value.IndexOf(searchValue, searchIndex, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            searchIndex += searchValue.Length;
+        }
+
+        return count;
+    }
+
     private sealed class FixedClock(DateTime utcNow) : IDateTimeProvider
     {
         public DateTime UtcNow { get; } = utcNow;
+    }
+
+    private sealed class FixedEmailBrandingProvider(string footerImageUrl)
+        : IEmailBrandingProvider
+    {
+        public string FooterImageUrl { get; } = footerImageUrl;
     }
 }
  
@@ -58911,6 +59419,8 @@ using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.UnitTests.Notifications;
@@ -58952,11 +59462,14 @@ public sealed class EmailInfrastructureRegistrationTests
                 ["EmailOutbox:PollingIntervalSeconds"] = "15",
                 ["EmailOutbox:BatchSize"] = "20",
                 ["EmailOutbox:MaxAttempts"] = "5",
-                ["EmailOutbox:ClaimLeaseSeconds"] = "300"
+                ["EmailOutbox:ClaimLeaseSeconds"] = "300",
+                ["EmailBranding:FooterImageUrl"] = "https://cdn.example.test/email-assets/avokatoo-email-footer.png"
             })
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(
+            new TestHostEnvironment(Environments.Development));
 
         services.AddLawyerPlatformInfrastructure(configuration);
 
@@ -58965,12 +59478,23 @@ public sealed class EmailInfrastructureRegistrationTests
         var smtp = scope.ServiceProvider.GetRequiredService<IOptions<SmtpOptions>>().Value;
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IEmailSender>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IEmailNotificationOutbox>());
+        Assert.Equal(
+            "https://cdn.example.test/email-assets/avokatoo-email-footer.png",
+            scope.ServiceProvider.GetRequiredService<IEmailBrandingProvider>().FooterImageUrl);
         Assert.Equal("smtp.example.test", smtp.Host);
         Assert.Equal(2525, smtp.Port);
         Assert.Equal("configured-user", smtp.UserName);
         Assert.Equal("configured-password", smtp.Password);
         Assert.Equal("no-reply@example.test", smtp.FromEmail);
         Assert.Equal("Lawyer Platform", smtp.FromName);
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "LawyerPlatform.UnitTests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }
  
@@ -59001,6 +59525,93 @@ public sealed class ConsultationSchedulingTimeZoneTests
     [InlineData("Egypt Standard Time")]
     public void IanaAndWindowsIdentifiersCanBeResolved(string timeZoneId)
         => Assert.True(ConsultationSchedulingTimeZone.CanResolve(timeZoneId));
+}
+ 
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Options\EmailBrandingOptionsTests.cs ==================== 
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.UnitTests;
+
+public sealed class EmailBrandingOptionsTests
+{
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("email-assets/avokatoo-email-footer.png")]
+    [InlineData("not a valid URL")]
+    [InlineData("ftp://cdn.example.test/avokatoo-email-footer.png")]
+    public void Validator_RejectsMissingRelativeOrInvalidFooterImageUrl(string? footerImageUrl)
+    {
+        var result = Validate(footerImageUrl, Environments.Development);
+
+        Assert.True(result.Failed);
+    }
+
+    [Fact]
+    public void Validator_RejectsHttpFooterImageUrlInProduction()
+    {
+        var result = Validate(
+            "http://cdn.example.test/email-assets/avokatoo-email-footer.png",
+            Environments.Production);
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            result.Failures,
+            failure => failure.Contains("HTTPS", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validator_AllowsHttpsFooterImageUrlInProduction()
+    {
+        var result = Validate(
+            "https://cdn.example.test/email-assets/avokatoo-email-footer.png",
+            Environments.Production);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public void Validator_AllowsHttpFooterImageUrlOutsideProduction()
+    {
+        var result = Validate(
+            "http://localhost:5000/email-assets/avokatoo-email-footer.png",
+            Environments.Development);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("https://user:password@cdn.example.test/email-assets/footer.png")]
+    [InlineData("https://cdn.example.test/email-assets/footer.png?token=secret")]
+    [InlineData("https://cdn.example.test/email-assets/footer.png#token")]
+    public void Validator_RejectsUrlPartsThatCouldContainCredentialsOrTokens(string footerImageUrl)
+    {
+        var result = Validate(footerImageUrl, Environments.Development);
+
+        Assert.True(result.Failed);
+    }
+
+    private static ValidateOptionsResult Validate(string? footerImageUrl, string environmentName)
+    {
+        var validator = new EmailBrandingOptionsValidator(
+            new TestHostEnvironment(environmentName));
+
+        return validator.Validate(
+            Options.DefaultName,
+            new EmailBrandingOptions { FooterImageUrl = footerImageUrl! });
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "LawyerPlatform.UnitTests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 }
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Options\InitialSuperAdminConfigurationTests.cs ==================== 
