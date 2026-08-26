@@ -30,4 +30,5 @@ public static class AccountErrors
     public static readonly Error InvalidStatusTransition = Error.Domain("Account.InvalidStatusTransition", "The requested account status transition is not allowed.");
     public static readonly Error InvalidRowVersion = Error.Validation("Account.InvalidRowVersion", "RowVersion must be a valid Base64 value.");
     public static readonly Error ConcurrencyConflict = Error.Conflict("Account.ConcurrencyConflict", "The account was changed by another request.");
+    public static readonly Error CredentialVersionLimitReached = Error.Conflict("Account.CredentialVersionLimitReached", "The account credentials cannot be changed.");
 }

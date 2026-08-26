@@ -15,6 +15,7 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     : DbContext(options)
 {
     public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
+    public DbSet<PasswordResetChallenge> PasswordResetChallenges => Set<PasswordResetChallenge>();
     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
     public DbSet<LawyerProfile> LawyerProfiles => Set<LawyerProfile>();
     public DbSet<Governorate> Governorates => Set<Governorate>();

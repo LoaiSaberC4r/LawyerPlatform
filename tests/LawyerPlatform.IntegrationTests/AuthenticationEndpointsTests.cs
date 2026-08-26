@@ -30,6 +30,9 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         Assert.True(paths.TryGetProperty("/api/v1/auth/lawyers/register", out _));
         Assert.True(paths.TryGetProperty("/api/v1/auth/login", out _));
         Assert.True(paths.TryGetProperty("/api/v1/auth/change-password", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/auth/forgot-password/request-otp", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/auth/forgot-password/verify-otp", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/auth/forgot-password/reset", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/governorates", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/governorates/{governorateId}/cities", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/cities/{cityId}/areas", out _));
@@ -142,6 +145,12 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
             cancellationToken);
         Assert.Equal(HttpStatusCode.OK, changePassword.StatusCode);
         var unrestrictedToken = await ReadTokenAsync(changePassword, cancellationToken);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", restrictedToken);
+        var revokedTokenResponse = await client.GetAsync(
+            "/api/v1/admin/dashboard",
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, revokedTokenResponse.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", unrestrictedToken);
         var unrestrictedResponse = await client.GetAsync(

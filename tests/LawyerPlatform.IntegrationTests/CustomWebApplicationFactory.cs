@@ -1,4 +1,5 @@
 using BuildingBlock.Infrastructure.Bootstrap;
+using BuildingBlock.Application.Email;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -40,6 +41,12 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["InitialSuperAdmin:PhoneNumber"] = "01000000000",
                 ["InitialSuperAdmin:Password"] = "InitialPassword1",
                 ["PasswordLifecycle:ExpiryDays"] = "90",
+                ["PasswordReset:OtpLength"] = "6",
+                ["PasswordReset:OtpExpirationMinutes"] = "5",
+                ["PasswordReset:MaximumVerificationAttempts"] = "5",
+                ["PasswordReset:ResendCooldownSeconds"] = "60",
+                ["PasswordReset:ResetTokenExpirationMinutes"] = "10",
+                ["PasswordReset:HmacSecret"] = "integration-test-password-reset-secret-0001",
                 ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
                 ["EmailOutbox:Enabled"] = "false",
@@ -73,6 +80,11 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<DbContextOptions<LawyerPlatformDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<LawyerPlatformDbContext>>();
             services.RemoveAll<LawyerPlatformDbContext>();
+            services.RemoveAll<IEmailSender>();
+
+            services.AddSingleton<TestPasswordResetEmailSender>();
+            services.AddSingleton<IEmailSender>(provider =>
+                provider.GetRequiredService<TestPasswordResetEmailSender>());
 
             var connection = new SqliteConnection("Data Source=:memory:");
             connection.Open();
@@ -90,5 +102,26 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 .Database
                 .EnsureCreated();
         });
+    }
+}
+
+public sealed class TestPasswordResetEmailSender : IEmailSender
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<EmailMessage> _messages = new();
+
+    public IReadOnlyCollection<EmailMessage> Messages => _messages.ToArray();
+
+    public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _messages.Enqueue(message);
+        return Task.CompletedTask;
+    }
+
+    public void Clear()
+    {
+        while (_messages.TryDequeue(out _))
+        {
+        }
     }
 }

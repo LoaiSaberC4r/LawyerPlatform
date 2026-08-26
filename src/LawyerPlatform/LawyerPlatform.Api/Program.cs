@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Text;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
@@ -99,6 +100,41 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
                 NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
                 RoleClaimType = LawyerPlatformClaimTypes.Role
             };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = async context =>
+                {
+                    var subjectValue = context.Principal?
+                        .FindFirst(LawyerPlatformClaimTypes.Subject)?.Value;
+                    var credentialVersionValue = context.Principal?
+                        .FindFirst(LawyerPlatformClaimTypes.CredentialVersion)?.Value;
+                    if (!Guid.TryParse(subjectValue, out var userAccountId) ||
+                        userAccountId == Guid.Empty ||
+                        !int.TryParse(
+                            credentialVersionValue,
+                            NumberStyles.None,
+                            CultureInfo.InvariantCulture,
+                            out var credentialVersion) ||
+                        credentialVersion <= 0)
+                    {
+                        context.Fail("Invalid access token.");
+                        return;
+                    }
+
+                    var stateReader = context.HttpContext.RequestServices
+                        .GetRequiredService<IUserAuthenticationStateReader>();
+                    var state = await stateReader.ReadAsync(
+                        userAccountId,
+                        context.HttpContext.RequestAborted);
+                    if (state is null ||
+                        state.Status != AccountStatus.Active ||
+                        state.CredentialVersion != credentialVersion)
+                    {
+                        context.Fail("Invalid access token.");
+                    }
+                }
+            };
         });
 
 builder.Services.AddAuthorization(options =>
@@ -129,6 +165,42 @@ builder.Services.AddRateLimiter(options =>
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
 
+    options.AddPolicy("password-recovery-request", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("password-recovery-verify", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("password-recovery-reset", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
     options.AddFixedWindowLimiter("consultation-guest", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -156,15 +228,28 @@ builder.Services.AddRateLimiter(options =>
                 "/api/v1/public/consultation-requests",
                 StringComparison.OrdinalIgnoreCase);
 
-        var error = isConsultationRequest
-            ? Error.RateLimit(
+        var isPasswordRecoveryRequest =
+            context.HttpContext.Request.Path.StartsWithSegments(
+                "/api/v1/auth/forgot-password",
+                StringComparison.OrdinalIgnoreCase);
+
+        var retryAfter = context.Lease.TryGetMetadata(
+            MetadataName.RetryAfter,
+            out TimeSpan retryAfterMetadata)
+            ? retryAfterMetadata
+            : TimeSpan.FromMinutes(15);
+
+        var error = isPasswordRecoveryRequest
+            ? PasswordResetErrors.RateLimitExceeded(retryAfter)
+            : isConsultationRequest
+                ? Error.RateLimit(
                 "ConsultationRequest.RateLimitExceeded",
                 "Too many consultation requests.",
                 TimeSpan.FromMinutes(1))
-            : Error.RateLimit(
-                "Auth.RateLimitExceeded",
-                "Too many authentication attempts.",
-                TimeSpan.FromMinutes(1));
+                : Error.RateLimit(
+                    "Auth.RateLimitExceeded",
+                    "Too many authentication attempts.",
+                    TimeSpan.FromMinutes(1));
 
         await new[] { error }
             .ToProblem(context.HttpContext)

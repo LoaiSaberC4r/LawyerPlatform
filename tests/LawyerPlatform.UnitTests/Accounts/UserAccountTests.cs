@@ -18,6 +18,7 @@ public sealed class UserAccountTests
         Assert.Equal(AccountStatus.Active, result.Value.Status);
         Assert.True(result.Value.IsFirstLogin);
         Assert.Equal(NowUtc, result.Value.PasswordChangedOnUtc);
+        Assert.Equal(1, result.Value.CredentialVersion);
     }
 
     [Fact]
@@ -62,6 +63,7 @@ public sealed class UserAccountTests
         Assert.Equal("new-hash", account.PasswordHash);
         Assert.Equal(changedOnUtc, account.PasswordChangedOnUtc);
         Assert.Equal(changedOnUtc, account.ModifiedOnUtc);
+        Assert.Equal(2, account.CredentialVersion);
     }
 
     [Fact]
@@ -74,6 +76,23 @@ public sealed class UserAccountTests
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, error => error.Code == "Account.PasswordHashRequired");
         Assert.True(account.IsFirstLogin);
+        Assert.Equal(1, account.CredentialVersion);
+    }
+
+    [Fact]
+    public void ChangePassword_DoesNotOverflowCredentialVersion()
+    {
+        var account = CreateSuperAdmin().Value;
+        typeof(UserAccount)
+            .GetField("<CredentialVersion>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(account, int.MaxValue);
+
+        var result = account.ChangePassword("new-hash", NowUtc.AddMinutes(1));
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "Account.CredentialVersionLimitReached");
+        Assert.Equal("hash", account.PasswordHash);
+        Assert.Equal(int.MaxValue, account.CredentialVersion);
     }
 
     [Fact]

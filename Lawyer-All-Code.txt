@@ -22026,6 +22026,7 @@ internal sealed class TestWriteDbContext : DbContext
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Api\Program.cs ==================== 
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Text;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
@@ -22126,6 +22127,41 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
                 NameClaimType = LawyerPlatformClaimTypes.PreferredUserName,
                 RoleClaimType = LawyerPlatformClaimTypes.Role
             };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = async context =>
+                {
+                    var subjectValue = context.Principal?
+                        .FindFirst(LawyerPlatformClaimTypes.Subject)?.Value;
+                    var credentialVersionValue = context.Principal?
+                        .FindFirst(LawyerPlatformClaimTypes.CredentialVersion)?.Value;
+                    if (!Guid.TryParse(subjectValue, out var userAccountId) ||
+                        userAccountId == Guid.Empty ||
+                        !int.TryParse(
+                            credentialVersionValue,
+                            NumberStyles.None,
+                            CultureInfo.InvariantCulture,
+                            out var credentialVersion) ||
+                        credentialVersion <= 0)
+                    {
+                        context.Fail("Invalid access token.");
+                        return;
+                    }
+
+                    var stateReader = context.HttpContext.RequestServices
+                        .GetRequiredService<IUserAuthenticationStateReader>();
+                    var state = await stateReader.ReadAsync(
+                        userAccountId,
+                        context.HttpContext.RequestAborted);
+                    if (state is null ||
+                        state.Status != AccountStatus.Active ||
+                        state.CredentialVersion != credentialVersion)
+                    {
+                        context.Fail("Invalid access token.");
+                    }
+                }
+            };
         });
 
 builder.Services.AddAuthorization(options =>
@@ -22156,6 +22192,42 @@ builder.Services.AddRateLimiter(options =>
         limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
 
+    options.AddPolicy("password-recovery-request", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("password-recovery-verify", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("password-recovery-reset", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
     options.AddFixedWindowLimiter("consultation-guest", limiter =>
     {
         limiter.PermitLimit = 20;
@@ -22183,15 +22255,28 @@ builder.Services.AddRateLimiter(options =>
                 "/api/v1/public/consultation-requests",
                 StringComparison.OrdinalIgnoreCase);
 
-        var error = isConsultationRequest
-            ? Error.RateLimit(
+        var isPasswordRecoveryRequest =
+            context.HttpContext.Request.Path.StartsWithSegments(
+                "/api/v1/auth/forgot-password",
+                StringComparison.OrdinalIgnoreCase);
+
+        var retryAfter = context.Lease.TryGetMetadata(
+            MetadataName.RetryAfter,
+            out TimeSpan retryAfterMetadata)
+            ? retryAfterMetadata
+            : TimeSpan.FromMinutes(15);
+
+        var error = isPasswordRecoveryRequest
+            ? PasswordResetErrors.RateLimitExceeded(retryAfter)
+            : isConsultationRequest
+                ? Error.RateLimit(
                 "ConsultationRequest.RateLimitExceeded",
                 "Too many consultation requests.",
                 TimeSpan.FromMinutes(1))
-            : Error.RateLimit(
-                "Auth.RateLimitExceeded",
-                "Too many authentication attempts.",
-                TimeSpan.FromMinutes(1));
+                : Error.RateLimit(
+                    "Auth.RateLimitExceeded",
+                    "Too many authentication attempts.",
+                    TimeSpan.FromMinutes(1));
 
         await new[] { error }
             .ToProblem(context.HttpContext)
@@ -22606,6 +22691,19 @@ internal sealed class LawyerPlatformCorsOptionsValidator : IValidateOptions<Lawy
 namespace LawyerPlatform.Api.Contracts.Auth;
 
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Api\Contracts\Auth\ForgotPasswordRequests.cs ==================== 
+namespace LawyerPlatform.Api.Contracts.Auth;
+
+public sealed record RequestPasswordResetOtpRequest(string Email);
+
+public sealed record VerifyPasswordResetOtpRequest(Guid RequestId, string Otp);
+
+public sealed record ResetPasswordRequest(
+    Guid RequestId,
+    string ResetToken,
+    string NewPassword,
+    string ConfirmPassword);
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Api\Contracts\Auth\LoginRequest.cs ==================== 
 namespace LawyerPlatform.Api.Contracts.Auth;
@@ -23264,6 +23362,9 @@ using BuildingBlock.Api;
 using LawyerPlatform.Api.Authorization;
 using LawyerPlatform.Api.Contracts.Auth;
 using LawyerPlatform.Application.Features.Auth.ChangePassword;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.ResetPassword;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.VerifyOtp;
 using LawyerPlatform.Application.Features.Auth.Login;
 using LawyerPlatform.Application.Features.Auth.RegisterClient;
 using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
@@ -23319,6 +23420,63 @@ public sealed class AuthController(ISender sender) : ControllerBase
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var result = await sender.Send(new LoginQuery(request.UserNameOrEmail, request.Password), cancellationToken);
+        return result.ToIActionResult(cancellationToken);
+    }
+
+    [HttpPost("forgot-password/request-otp")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-recovery-request")]
+    [ProducesResponseType(typeof(RequestPasswordResetOtpResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> RequestPasswordResetOtp(
+        RequestPasswordResetOtpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new RequestPasswordResetOtpCommand(request.Email),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? StatusCode(StatusCodes.Status202Accepted, result.Value)
+            : result.ToIActionResult(cancellationToken);
+    }
+
+    [HttpPost("forgot-password/verify-otp")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-recovery-verify")]
+    [ProducesResponseType(typeof(VerifyPasswordResetOtpResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> VerifyPasswordResetOtp(
+        VerifyPasswordResetOtpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new VerifyPasswordResetOtpCommand(request.RequestId, request.Otp),
+            cancellationToken);
+        return result.ToIActionResult(cancellationToken);
+    }
+
+    [HttpPost("forgot-password/reset")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-recovery-reset")]
+    [ProducesResponseType(typeof(ResetPasswordResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ResetPassword(
+        ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new ResetPasswordCommand(
+                request.RequestId,
+                request.ResetToken,
+                request.NewPassword,
+                request.ConfirmPassword),
+            cancellationToken);
         return result.ToIActionResult(cancellationToken);
     }
 
@@ -23945,6 +24103,7 @@ public static class DependencyInjection
         services.AddScoped<AdminClientLifecycleService>();
         services.AddScoped<EmailNotificationCoordinator>();
         services.AddSingleton<IEmailNotificationFactory, BilingualEmailNotificationFactory>();
+        services.AddSingleton<IPasswordResetOtpEmailFactory, PasswordResetOtpEmailFactory>();
 
         return services;
     }
@@ -24003,6 +24162,55 @@ public interface IPasswordLifecycleService
     PasswordLifecycleState Evaluate(UserAccount account);
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Authentication\IPasswordResetPolicy.cs ==================== 
+namespace LawyerPlatform.Application.Abstractions.Authentication;
+
+public interface IPasswordResetPolicy
+{
+    int OtpLength { get; }
+    int OtpExpirationMinutes { get; }
+    int MaximumVerificationAttempts { get; }
+    int ResendCooldownSeconds { get; }
+    int ResetTokenExpirationMinutes { get; }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Authentication\IPasswordResetSecretGenerator.cs ==================== 
+namespace LawyerPlatform.Application.Abstractions.Authentication;
+
+public interface IPasswordResetSecretGenerator
+{
+    string GenerateOtp();
+    string GenerateResetToken();
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Authentication\IPasswordResetTokenHasher.cs ==================== 
+namespace LawyerPlatform.Application.Abstractions.Authentication;
+
+public interface IPasswordResetTokenHasher
+{
+    string HashOtp(string otp);
+    bool VerifyOtp(string otp, string otpHash);
+    string HashResetToken(string resetToken);
+    bool VerifyResetToken(string resetToken, string resetTokenHash);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Authentication\IUserAuthenticationStateReader.cs ==================== 
+using LawyerPlatform.Domain.Accounts;
+
+namespace LawyerPlatform.Application.Abstractions.Authentication;
+
+public sealed record UserAuthenticationState(
+    Guid UserAccountId,
+    AccountStatus Status,
+    int CredentialVersion);
+
+public interface IUserAuthenticationStateReader
+{
+    Task<UserAuthenticationState?> ReadAsync(
+        Guid userAccountId,
+        CancellationToken cancellationToken = default);
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Authentication\LawyerPlatformClaimTypes.cs ==================== 
 namespace LawyerPlatform.Application.Abstractions.Authentication;
 
@@ -24014,6 +24222,7 @@ public static class LawyerPlatformClaimTypes
     public const string Role = "role";
     public const string PasswordChangeRequired = "password_change_required";
     public const string PasswordChangeReason = "password_change_reason";
+    public const string CredentialVersion = "credential_version";
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Abstractions\Consultations\IConsultationAggregatePersistence.cs ==================== 
@@ -26779,6 +26988,448 @@ internal sealed class ChangePasswordCommandValidator : AbstractValidator<ChangeP
         RuleFor(command => command.NewPassword)
             .NotEmpty().WithErrorCode("Account.NewPasswordRequired")
             .Must(passwordService.IsStrongPassword).WithErrorCode("Account.NewPasswordInvalid");
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\RequestOtp\RequestPasswordResetOtpCommand.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+
+public sealed record RequestPasswordResetOtpCommand(string Email)
+    : ICommand<RequestPasswordResetOtpResponse>;
+
+public sealed record RequestPasswordResetOtpResponse(
+    Guid RequestId,
+    int ExpiresInSeconds,
+    int ResendAfterSeconds);
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\RequestOtp\RequestPasswordResetOtpCommandHandler.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+using BuildingBlock.Application.Email;
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Application.Time;
+using BuildingBlock.Domain.Results;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using Microsoft.Extensions.Logging;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+
+internal sealed partial class RequestPasswordResetOtpCommandHandler(
+    IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
+    IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
+    IAccountIdentifierNormalizer normalizer,
+    IPasswordResetSecretGenerator secretGenerator,
+    IPasswordResetTokenHasher tokenHasher,
+    IPasswordResetPolicy policy,
+    IDateTimeProvider clock,
+    IPasswordResetOtpEmailFactory emailFactory,
+    IEmailSender emailSender,
+    ILogger<RequestPasswordResetOtpCommandHandler> logger)
+    : ICommandHandler<RequestPasswordResetOtpCommand, RequestPasswordResetOtpResponse>
+{
+    public async Task<Result<RequestPasswordResetOtpResponse>> Handle(
+        RequestPasswordResetOtpCommand command,
+        CancellationToken cancellationToken)
+    {
+        var requestId = Guid.NewGuid();
+        var response = CreateResponse(requestId);
+        var normalizedEmail = normalizer.NormalizeEmail(command.Email);
+        var account = await accountReader.FirstOrDefaultAsync(
+            new PasswordResetAccountByNormalizedEmailSpec(normalizedEmail),
+            cancellationToken);
+
+        if (account is null)
+        {
+            PasswordResetOtpRequested(logger);
+            return Result<RequestPasswordResetOtpResponse>.Ok(response);
+        }
+
+        var nowUtc = clock.UtcNow;
+        var challengeRepository = unitOfWork.WriteRepository<PasswordResetChallenge>();
+        var latestChallenge = await challengeRepository.FirstOrDefaultAsync(
+            new LatestPasswordResetChallengeForAccountSpec(account.Id),
+            cancellationToken);
+        if (latestChallenge is not null &&
+            latestChallenge.CreatedOnUtc.AddSeconds(policy.ResendCooldownSeconds) > nowUtc)
+        {
+            PasswordResetOtpRequested(logger);
+            return Result<RequestPasswordResetOtpResponse>.Ok(response);
+        }
+
+        if (latestChallenge is not null &&
+            !latestChallenge.IsInvalidated &&
+            !latestChallenge.IsConsumed)
+        {
+            var invalidateResult = latestChallenge.Invalidate(nowUtc);
+            if (invalidateResult.IsFailure)
+            {
+                return Result<RequestPasswordResetOtpResponse>.Fail(invalidateResult.Errors);
+            }
+        }
+
+        var otp = secretGenerator.GenerateOtp();
+        var challengeResult = PasswordResetChallenge.Create(
+            requestId,
+            account.Id,
+            tokenHasher.HashOtp(otp),
+            nowUtc,
+            nowUtc.AddMinutes(policy.OtpExpirationMinutes));
+        if (challengeResult.IsFailure)
+        {
+            return Result<RequestPasswordResetOtpResponse>.Fail(challengeResult.Errors);
+        }
+
+        await challengeRepository.AddAsync(challengeResult.Value, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            var email = emailFactory.Create(account.Email, otp, policy.OtpExpirationMinutes);
+            await emailSender.SendAsync(email, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            PasswordResetOtpDeliveryFailed(logger);
+        }
+
+        PasswordResetOtpRequested(logger);
+        return Result<RequestPasswordResetOtpResponse>.Ok(response);
+    }
+
+    private RequestPasswordResetOtpResponse CreateResponse(Guid requestId)
+        => new(
+            requestId,
+            checked(policy.OtpExpirationMinutes * 60),
+            policy.ResendCooldownSeconds);
+
+    [LoggerMessage(
+        EventId = 4400,
+        Level = LogLevel.Information,
+        Message = "Password reset OTP requested.")]
+    private static partial void PasswordResetOtpRequested(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4401,
+        Level = LogLevel.Warning,
+        Message = "Password reset OTP delivery failed.")]
+    private static partial void PasswordResetOtpDeliveryFailed(ILogger logger);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\RequestOtp\RequestPasswordResetOtpCommandValidator.cs ==================== 
+using FluentValidation;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+
+internal sealed class RequestPasswordResetOtpCommandValidator
+    : AbstractValidator<RequestPasswordResetOtpCommand>
+{
+    public RequestPasswordResetOtpCommandValidator()
+    {
+        RuleFor(command => command.Email)
+            .NotEmpty().WithErrorCode("PasswordReset.EmailRequired")
+            .MaximumLength(200).WithErrorCode("PasswordReset.EmailInvalid")
+            .EmailAddress().WithErrorCode("PasswordReset.EmailInvalid");
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\RequestOtp\RequestPasswordResetOtpSpecifications.cs ==================== 
+using BuildingBlock.Domain.Specification;
+using LawyerPlatform.Domain.Accounts;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+
+internal sealed record PasswordResetAccountSnapshot(Guid Id, string Email);
+
+internal sealed class PasswordResetAccountByNormalizedEmailSpec
+    : Specification<UserAccount, PasswordResetAccountSnapshot>
+{
+    public PasswordResetAccountByNormalizedEmailSpec(string normalizedEmail)
+    {
+        AddCriteria(account => account.NormalizedEmail == normalizedEmail);
+        UseNoTracking();
+        Select(account => new PasswordResetAccountSnapshot(account.Id, account.Email));
+    }
+}
+
+internal sealed class LatestPasswordResetChallengeForAccountSpec
+    : Specification<PasswordResetChallenge>
+{
+    public LatestPasswordResetChallengeForAccountSpec(Guid userAccountId)
+    {
+        AddCriteria(challenge => challenge.UserAccountId == userAccountId);
+        AddOrderByDescending(challenge => challenge.CreatedOnUtc);
+        UseTracking();
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\ResetPassword\ResetPasswordCommand.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+using BuildingBlock.Application.Abstraction.Persistence;
+using LawyerPlatform.Application.Persistence;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.ResetPassword;
+
+public sealed record ResetPasswordCommand(
+    Guid RequestId,
+    string ResetToken,
+    string NewPassword,
+    string ConfirmPassword)
+    : ICommand<ResetPasswordResponse>,
+      ITransactionalCommand<LawyerPlatformWritePersistence>;
+
+public sealed record ResetPasswordResponse(bool PasswordReset);
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\ResetPassword\ResetPasswordCommandHandler.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+using BuildingBlock.Application.Abstraction.Encryption;
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Application.Time;
+using BuildingBlock.Domain.Results;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Application.Features.Auth.Common;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using Microsoft.Extensions.Logging;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.ResetPassword;
+
+internal sealed partial class ResetPasswordCommandHandler(
+    IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
+    IPasswordResetTokenHasher tokenHasher,
+    IPasswordService passwordService,
+    IDateTimeProvider clock,
+    ILogger<ResetPasswordCommandHandler> logger)
+    : ICommandHandler<ResetPasswordCommand, ResetPasswordResponse>
+{
+    public async Task<Result<ResetPasswordResponse>> Handle(
+        ResetPasswordCommand command,
+        CancellationToken cancellationToken)
+    {
+        var challenge = await unitOfWork
+            .WriteRepository<PasswordResetChallenge>()
+            .GetByIdAsync(command.RequestId, cancellationToken);
+        var nowUtc = clock.UtcNow;
+        if (challenge is null ||
+            !challenge.CanReset(nowUtc) ||
+            !tokenHasher.VerifyResetToken(command.ResetToken, challenge.ResetTokenHash!))
+        {
+            return Result<ResetPasswordResponse>.Fail(
+                PasswordResetErrors.ResetTokenInvalidOrExpired);
+        }
+
+        var account = await unitOfWork
+            .WriteRepository<UserAccount>()
+            .GetByIdAsync(challenge.UserAccountId, cancellationToken);
+        if (account is null)
+        {
+            return Result<ResetPasswordResponse>.Fail(
+                PasswordResetErrors.ResetTokenInvalidOrExpired);
+        }
+
+        if (!passwordService.IsStrongPassword(command.NewPassword))
+        {
+            return Result<ResetPasswordResponse>.Fail(AccountErrors.NewPasswordInvalid);
+        }
+
+        if (await passwordService.VerifyAsync(
+                command.NewPassword,
+                account.PasswordHash,
+                cancellationToken))
+        {
+            return Result<ResetPasswordResponse>.Fail(
+                PasswordResetErrors.PasswordMustBeDifferent);
+        }
+
+        string passwordHash;
+        try
+        {
+            passwordHash = await passwordService.HashAsync(
+                command.NewPassword,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return Result<ResetPasswordResponse>.Fail(AuthErrors.PasswordHashingFailed);
+        }
+
+        var changeResult = account.ChangePassword(passwordHash, nowUtc);
+        if (changeResult.IsFailure)
+        {
+            return Result<ResetPasswordResponse>.Fail(changeResult.Errors);
+        }
+
+        var consumeResult = challenge.Consume(nowUtc);
+        if (consumeResult.IsFailure)
+        {
+            return Result<ResetPasswordResponse>.Fail(
+                PasswordResetErrors.ResetTokenInvalidOrExpired);
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        PasswordResetCompleted(logger);
+        return Result<ResetPasswordResponse>.Ok(new ResetPasswordResponse(true));
+    }
+
+    [LoggerMessage(
+        EventId = 4403,
+        Level = LogLevel.Information,
+        Message = "Password reset completed.")]
+    private static partial void PasswordResetCompleted(ILogger logger);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\ResetPassword\ResetPasswordCommandValidator.cs ==================== 
+using FluentValidation;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.ResetPassword;
+
+internal sealed class ResetPasswordCommandValidator : AbstractValidator<ResetPasswordCommand>
+{
+    public ResetPasswordCommandValidator()
+    {
+        RuleFor(command => command.RequestId)
+            .NotEmpty().WithErrorCode("PasswordReset.RequestIdRequired");
+
+        RuleFor(command => command.ResetToken)
+            .NotEmpty().WithErrorCode("PasswordReset.ResetTokenRequired")
+            .MaximumLength(1024).WithErrorCode("PasswordReset.ResetTokenInvalid");
+
+        RuleFor(command => command.NewPassword)
+            .NotEmpty().WithErrorCode("Account.NewPasswordRequired")
+            .MaximumLength(1024).WithErrorCode("Account.NewPasswordInvalid");
+
+        RuleFor(command => command.ConfirmPassword)
+            .NotEmpty().WithErrorCode("PasswordReset.ConfirmPasswordRequired")
+            .Equal(command => command.NewPassword)
+            .WithErrorCode("PasswordReset.PasswordConfirmationMismatch");
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\VerifyOtp\VerifyPasswordResetOtpCommand.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.VerifyOtp;
+
+public sealed record VerifyPasswordResetOtpCommand(Guid RequestId, string Otp)
+    : ICommand<VerifyPasswordResetOtpResponse>;
+
+public sealed record VerifyPasswordResetOtpResponse(
+    string ResetToken,
+    int ExpiresInSeconds);
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\VerifyOtp\VerifyPasswordResetOtpCommandHandler.cs ==================== 
+using BuildingBlock.Application.Abstraction;
+using BuildingBlock.Application.Repositories;
+using BuildingBlock.Application.Time;
+using BuildingBlock.Domain.Results;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Application.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using Microsoft.Extensions.Logging;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.VerifyOtp;
+
+internal sealed partial class VerifyPasswordResetOtpCommandHandler(
+    IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
+    IPasswordResetTokenHasher tokenHasher,
+    IPasswordResetSecretGenerator secretGenerator,
+    IPasswordResetPolicy policy,
+    IDateTimeProvider clock,
+    ILogger<VerifyPasswordResetOtpCommandHandler> logger)
+    : ICommandHandler<VerifyPasswordResetOtpCommand, VerifyPasswordResetOtpResponse>
+{
+    public async Task<Result<VerifyPasswordResetOtpResponse>> Handle(
+        VerifyPasswordResetOtpCommand command,
+        CancellationToken cancellationToken)
+    {
+        var challenge = await unitOfWork
+            .WriteRepository<PasswordResetChallenge>()
+            .GetByIdAsync(command.RequestId, cancellationToken);
+        var nowUtc = clock.UtcNow;
+
+        if (challenge is null ||
+            !challenge.CanVerify(nowUtc, policy.MaximumVerificationAttempts))
+        {
+            PasswordResetOtpVerificationFailed(logger);
+            return Result<VerifyPasswordResetOtpResponse>.Fail(
+                PasswordResetErrors.OtpInvalidOrExpired);
+        }
+
+        if (!tokenHasher.VerifyOtp(command.Otp, challenge.OtpHash))
+        {
+            var failedAttempt = challenge.RegisterFailedAttempt(
+                nowUtc,
+                policy.MaximumVerificationAttempts);
+            if (failedAttempt.IsSuccess)
+            {
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            PasswordResetOtpVerificationFailed(logger);
+            return Result<VerifyPasswordResetOtpResponse>.Fail(
+                PasswordResetErrors.OtpInvalidOrExpired);
+        }
+
+        var verifyResult = challenge.Verify(nowUtc, policy.MaximumVerificationAttempts);
+        if (verifyResult.IsFailure)
+        {
+            PasswordResetOtpVerificationFailed(logger);
+            return Result<VerifyPasswordResetOtpResponse>.Fail(
+                PasswordResetErrors.OtpInvalidOrExpired);
+        }
+
+        var resetToken = secretGenerator.GenerateResetToken();
+        var issueResult = challenge.IssueResetToken(
+            tokenHasher.HashResetToken(resetToken),
+            nowUtc.AddMinutes(policy.ResetTokenExpirationMinutes),
+            nowUtc);
+        if (issueResult.IsFailure)
+        {
+            return Result<VerifyPasswordResetOtpResponse>.Fail(
+                PasswordResetErrors.OtpInvalidOrExpired);
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return Result<VerifyPasswordResetOtpResponse>.Ok(new VerifyPasswordResetOtpResponse(
+            resetToken,
+            checked(policy.ResetTokenExpirationMinutes * 60)));
+    }
+
+    [LoggerMessage(
+        EventId = 4402,
+        Level = LogLevel.Information,
+        Message = "Password reset OTP verification failed.")]
+    private static partial void PasswordResetOtpVerificationFailed(ILogger logger);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Features\Auth\ForgotPassword\VerifyOtp\VerifyPasswordResetOtpCommandValidator.cs ==================== 
+using FluentValidation;
+
+namespace LawyerPlatform.Application.Features.Auth.ForgotPassword.VerifyOtp;
+
+internal sealed class VerifyPasswordResetOtpCommandValidator
+    : AbstractValidator<VerifyPasswordResetOtpCommand>
+{
+    public VerifyPasswordResetOtpCommandValidator()
+    {
+        RuleFor(command => command.RequestId)
+            .NotEmpty().WithErrorCode("PasswordReset.RequestIdRequired");
+
+        RuleFor(command => command.Otp)
+            .NotEmpty().WithErrorCode("PasswordReset.OtpRequired")
+            .Length(6).WithErrorCode("PasswordReset.OtpInvalid")
+            .Matches("^[0-9]{6}$").WithErrorCode("PasswordReset.OtpInvalid");
     }
 }
  
@@ -32998,6 +33649,75 @@ public interface IEmailNotificationOutbox
     Task QueueAsync(QueueEmailNotification notification, CancellationToken cancellationToken);
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\IPasswordResetOtpEmailFactory.cs ==================== 
+using BuildingBlock.Application.Email;
+
+namespace LawyerPlatform.Application.Notifications.Email;
+
+public interface IPasswordResetOtpEmailFactory
+{
+    EmailMessage Create(string recipientEmail, string otp, int expirationMinutes);
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\PasswordResetOtpEmailFactory.cs ==================== 
+using System.Globalization;
+using System.Net;
+using System.Text;
+using BuildingBlock.Application.Email;
+using BuildingBlock.Application.Time;
+
+namespace LawyerPlatform.Application.Notifications.Email;
+
+internal sealed class PasswordResetOtpEmailFactory(
+    IDateTimeProvider clock,
+    IEmailBrandingProvider emailBranding)
+    : IPasswordResetOtpEmailFactory
+{
+    public EmailMessage Create(string recipientEmail, string otp, int expirationMinutes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(recipientEmail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(otp);
+
+        var safeOtp = WebUtility.HtmlEncode(otp);
+        var safeFooterUrl = WebUtility.HtmlEncode(emailBranding.FooterImageUrl);
+        var expiration = expirationMinutes.ToString(CultureInfo.InvariantCulture);
+        var html = new StringBuilder(2048)
+            .Append("<!doctype html><html><head><meta charset=\"utf-8\"></head>")
+            .Append("<body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.6\">")
+            .Append("<div style=\"max-width:680px;margin:0 auto\"><h2>Avokatoo</h2>")
+            .Append("<section dir=\"rtl\" lang=\"ar\" style=\"text-align:right\">")
+            .Append("<p>لقد تلقينا طلبًا لإعادة تعيين كلمة المرور الخاصة بحسابك على Avokatoo.</p>")
+            .Append("<p>رمز التحقق:<br><strong style=\"font-size:28px;letter-spacing:6px\">")
+            .Append(safeOtp)
+            .Append("</strong></p><p>صلاحية الرمز: ")
+            .Append(expiration)
+            .Append(" دقائق</p><p>إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة.</p>")
+            .Append("</section><hr style=\"border:0;border-top:1px solid #bbb;margin:28px 0\">")
+            .Append("<section dir=\"ltr\" lang=\"en\" style=\"text-align:left\">")
+            .Append("<p>We received a request to reset your Avokatoo account password.</p>")
+            .Append("<p>Verification code:<br><strong style=\"font-size:28px;letter-spacing:6px\">")
+            .Append(safeOtp)
+            .Append("</strong></p><p>This code expires in ")
+            .Append(expiration)
+            .Append(" minutes.</p><p>If you did not request a password reset, you can safely ignore this email.</p>")
+            .Append("</section><footer style=\"margin-top:28px;color:#666\">Avokatoo<br>&copy; ")
+            .Append(clock.UtcNow.Year)
+            .Append("</footer><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin-top:24px;\">")
+            .Append("<tr><td align=\"center\"><img src=\"")
+            .Append(safeFooterUrl)
+            .Append("\" alt=\"Avokatoo\" width=\"700\" style=\"display:block;width:100%;max-width:700px;height:auto;border:0\"></td></tr>")
+            .Append("</table></div></body></html>")
+            .ToString();
+
+        return new EmailMessage
+        {
+            To = [recipientEmail],
+            Subject = "Avokatoo | رمز إعادة تعيين كلمة المرور | Password Reset Code",
+            HtmlBody = html
+        };
+    }
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Persistence\LawyerPlatformReadPersistence.cs ==================== 
 using BuildingBlock.Application.Abstraction.Persistence;
 
@@ -33054,6 +33774,7 @@ public static class AccountErrors
     public static readonly Error InvalidStatusTransition = Error.Domain("Account.InvalidStatusTransition", "The requested account status transition is not allowed.");
     public static readonly Error InvalidRowVersion = Error.Validation("Account.InvalidRowVersion", "RowVersion must be a valid Base64 value.");
     public static readonly Error ConcurrencyConflict = Error.Conflict("Account.ConcurrencyConflict", "The account was changed by another request.");
+    public static readonly Error CredentialVersionLimitReached = Error.Conflict("Account.CredentialVersionLimitReached", "The account credentials cannot be changed.");
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Accounts\AccountRole.cs ==================== 
@@ -33084,6 +33805,198 @@ public enum PasswordChangeReason
     None = 0,
     FirstLogin = 1,
     Expired = 2
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Accounts\PasswordResetChallenge.cs ==================== 
+using BuildingBlock.Domain.EntitiesHelper;
+using BuildingBlock.Domain.Results;
+
+namespace LawyerPlatform.Domain.Accounts;
+
+public sealed class PasswordResetChallenge : AggregateRoot<Guid>
+{
+    private PasswordResetChallenge()
+    {
+    }
+
+    private PasswordResetChallenge(
+        Guid id,
+        Guid userAccountId,
+        string otpHash,
+        DateTime createdOnUtc,
+        DateTime expiresOnUtc)
+        : base(id)
+    {
+        UserAccountId = userAccountId;
+        OtpHash = otpHash;
+        CreatedOnUtc = createdOnUtc;
+        ExpiresOnUtc = expiresOnUtc;
+    }
+
+    public Guid UserAccountId { get; private set; }
+    public string OtpHash { get; private set; } = string.Empty;
+    public DateTime CreatedOnUtc { get; private set; }
+    public DateTime ExpiresOnUtc { get; private set; }
+    public int FailedAttemptCount { get; private set; }
+    public DateTime? VerifiedOnUtc { get; private set; }
+    public DateTime? InvalidatedOnUtc { get; private set; }
+    public DateTime? ConsumedOnUtc { get; private set; }
+    public string? ResetTokenHash { get; private set; }
+    public DateTime? ResetTokenExpiresOnUtc { get; private set; }
+    public byte[] RowVersion { get; private set; } = [];
+
+    public bool IsVerified => VerifiedOnUtc.HasValue;
+    public bool IsConsumed => ConsumedOnUtc.HasValue;
+    public bool IsInvalidated => InvalidatedOnUtc.HasValue;
+
+    public static Result<PasswordResetChallenge> Create(
+        Guid id,
+        Guid userAccountId,
+        string otpHash,
+        DateTime createdOnUtc,
+        DateTime expiresOnUtc)
+    {
+        if (id == Guid.Empty ||
+            userAccountId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(otpHash) ||
+            expiresOnUtc <= createdOnUtc)
+        {
+            return Result<PasswordResetChallenge>.Fail(PasswordResetErrors.ConfigurationInvalid);
+        }
+
+        return Result<PasswordResetChallenge>.Ok(new PasswordResetChallenge(
+            id,
+            userAccountId,
+            otpHash,
+            createdOnUtc,
+            expiresOnUtc));
+    }
+
+    public bool IsExpired(DateTime nowUtc) => ExpiresOnUtc <= nowUtc;
+
+    public bool CanVerify(DateTime nowUtc, int maximumVerificationAttempts)
+        => maximumVerificationAttempts > 0 &&
+           !IsInvalidated &&
+           !IsConsumed &&
+           !IsVerified &&
+           !IsExpired(nowUtc) &&
+           FailedAttemptCount < maximumVerificationAttempts;
+
+    public Result RegisterFailedAttempt(DateTime nowUtc, int maximumVerificationAttempts)
+    {
+        if (!CanVerify(nowUtc, maximumVerificationAttempts))
+        {
+            return Result.Fail(PasswordResetErrors.OtpInvalidOrExpired);
+        }
+
+        FailedAttemptCount++;
+        if (FailedAttemptCount >= maximumVerificationAttempts)
+        {
+            InvalidatedOnUtc = nowUtc;
+        }
+
+        return Result.Ok();
+    }
+
+    public Result Verify(DateTime nowUtc, int maximumVerificationAttempts)
+    {
+        if (!CanVerify(nowUtc, maximumVerificationAttempts))
+        {
+            return Result.Fail(PasswordResetErrors.OtpInvalidOrExpired);
+        }
+
+        VerifiedOnUtc = nowUtc;
+        return Result.Ok();
+    }
+
+    public Result IssueResetToken(
+        string resetTokenHash,
+        DateTime resetTokenExpiresOnUtc,
+        DateTime nowUtc)
+    {
+        if (!IsVerified ||
+            IsInvalidated ||
+            IsConsumed ||
+            ResetTokenHash is not null ||
+            string.IsNullOrWhiteSpace(resetTokenHash) ||
+            resetTokenExpiresOnUtc <= nowUtc)
+        {
+            return Result.Fail(PasswordResetErrors.ResetTokenInvalidOrExpired);
+        }
+
+        ResetTokenHash = resetTokenHash;
+        ResetTokenExpiresOnUtc = resetTokenExpiresOnUtc;
+        return Result.Ok();
+    }
+
+    public bool CanReset(DateTime nowUtc)
+        => IsVerified &&
+           !IsInvalidated &&
+           !IsConsumed &&
+           ResetTokenHash is not null &&
+           ResetTokenExpiresOnUtc is not null &&
+           ResetTokenExpiresOnUtc > nowUtc;
+
+    public Result Invalidate(DateTime nowUtc)
+    {
+        if (IsConsumed)
+        {
+            return Result.Fail(PasswordResetErrors.ChallengeConsumed);
+        }
+
+        InvalidatedOnUtc ??= nowUtc;
+        return Result.Ok();
+    }
+
+    public Result Consume(DateTime nowUtc)
+    {
+        if (!CanReset(nowUtc))
+        {
+            return Result.Fail(IsConsumed
+                ? PasswordResetErrors.ChallengeConsumed
+                : PasswordResetErrors.ResetTokenInvalidOrExpired);
+        }
+
+        ConsumedOnUtc = nowUtc;
+        return Result.Ok();
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Accounts\PasswordResetErrors.cs ==================== 
+using BuildingBlock.Domain.Results;
+
+namespace LawyerPlatform.Domain.Accounts;
+
+public static class PasswordResetErrors
+{
+    public static readonly Error OtpInvalidOrExpired = Error.Validation(
+        "PasswordReset.OtpInvalidOrExpired",
+        "The verification code is invalid or expired.");
+
+    public static readonly Error ResetTokenInvalidOrExpired = Error.Validation(
+        "PasswordReset.ResetTokenInvalidOrExpired",
+        "The password reset token is invalid or expired.");
+
+    public static readonly Error PasswordMustBeDifferent = Error.Validation(
+        "PasswordReset.PasswordMustBeDifferent",
+        "New password must be different from the current password.");
+
+    public static readonly Error ChallengeConsumed = Error.Validation(
+        "PasswordReset.ChallengeConsumed",
+        "The password reset request can no longer be used.");
+
+    public static readonly Error ConcurrencyConflict = Error.Conflict(
+        "PasswordReset.ConcurrencyConflict",
+        "The password reset request was changed by another operation.");
+
+    public static readonly Error ConfigurationInvalid = Error.Domain(
+        "PasswordReset.ConfigurationInvalid",
+        "Password reset is not configured correctly.");
+
+    public static Error RateLimitExceeded(TimeSpan retryAfter) => Error.RateLimit(
+        "PasswordReset.RateLimitExceeded",
+        "Too many password recovery attempts.",
+        retryAfter);
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Domain\Accounts\UserAccount.cs ==================== 
@@ -33122,6 +34035,7 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
         Status = AccountStatus.Active;
         IsFirstLogin = isFirstLogin;
         PasswordChangedOnUtc = nowUtc;
+        CredentialVersion = 1;
     }
 
     public string UserName { get; private set; } = string.Empty;
@@ -33134,6 +34048,7 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
     public AccountStatus Status { get; private set; }
     public bool IsFirstLogin { get; private set; }
     public DateTime PasswordChangedOnUtc { get; private set; }
+    public int CredentialVersion { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
     public DateTime? ModifiedOnUtc { get; set; }
     public byte[] RowVersion { get; private set; } = [];
@@ -33176,9 +34091,15 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
             return Result.Fail(AccountErrors.PasswordHashRequired);
         }
 
+        if (CredentialVersion == int.MaxValue)
+        {
+            return Result.Fail(AccountErrors.CredentialVersionLimitReached);
+        }
+
         PasswordHash = passwordHash;
         PasswordChangedOnUtc = nowUtc;
         IsFirstLogin = false;
+        CredentialVersion++;
         ModifiedOnUtc = nowUtc;
         return Result.Ok();
     }
@@ -34967,6 +35888,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.Text;
 
 namespace LawyerPlatform.Infrastructure;
 
@@ -35006,6 +35928,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(PasswordLifecycleOptions.SectionName))
             .Validate(options => options.ExpiryDays > 0, "Password expiry days must be greater than zero.")
             .ValidateOnStart();
+        services.AddOptions<PasswordResetOptions>()
+            .Bind(configuration.GetSection(PasswordResetOptions.SectionName))
+            .Validate(ValidatePasswordReset, "Password reset options are invalid.")
+            .ValidateOnStart();
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .Validate(ValidateJwt, "JWT options are invalid.")
@@ -35039,6 +35965,10 @@ public static class DependencyInjection
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
         services.AddSingleton<IJwtProvider, JwtProvider>();
+        services.AddSingleton<IPasswordResetPolicy, PasswordResetPolicy>();
+        services.AddSingleton<IPasswordResetSecretGenerator, PasswordResetSecretGenerator>();
+        services.AddSingleton<IPasswordResetTokenHasher, PasswordResetTokenHasher>();
+        services.AddScoped<IUserAuthenticationStateReader, UserAuthenticationStateReader>();
         services.AddSingleton<ILawyerDocumentPolicy, LawyerDocumentPolicy>();
         services.AddSingleton<IConsultationReferenceNumberGenerator, ConsultationReferenceNumberGenerator>();
         services.AddSingleton<IConsultationSchedulingTimeZone, ConsultationSchedulingTimeZone>();
@@ -35051,10 +35981,10 @@ public static class DependencyInjection
         services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();
-        services.AddScoped<ISeeder, SuperAdminSeeder>();
-        services.AddScoped<ISeeder, GovernorateSeeder>();
-        services.AddScoped<ISeeder, CitySeeder>();
-        services.AddScoped<ISeeder, AreaSeeder>();
+        //services.AddScoped<ISeeder, SuperAdminSeeder>();
+        //services.AddScoped<ISeeder, GovernorateSeeder>();
+        //services.AddScoped<ISeeder, CitySeeder>();
+        //services.AddScoped<ISeeder, AreaSeeder>();
         services.AddScoped<ISeeder, LegalSpecializationSeeder>();
         services.AddScoped<IEnsureSeeding, EnsureSeeding>();
         services.AddSingleton<IDatabaseMigrationService, EfCoreDatabaseMigrationService>();
@@ -35086,6 +36016,15 @@ public static class DependencyInjection
            !string.IsNullOrWhiteSpace(options.Audience) &&
            options.Key.Length >= 64 &&
            options.AccessTokenExpirationMinutes > 0;
+
+    private static bool ValidatePasswordReset(PasswordResetOptions options)
+        => options.OtpLength == 6 &&
+           options.OtpExpirationMinutes is > 0 and <= 30 &&
+           options.MaximumVerificationAttempts is > 0 and <= 10 &&
+           options.ResendCooldownSeconds is >= 30 and <= 3600 &&
+           options.ResetTokenExpirationMinutes is > 0 and <= 60 &&
+           Encoding.UTF8.GetByteCount(options.HmacSecret) >= 32 &&
+           !options.HmacSecret.StartsWith("replace-with", StringComparison.OrdinalIgnoreCase);
 
     private static bool ValidateLawyerDocuments(LawyerDocumentOptions options)
         => options.MaximumFileSizeBytes > 0 &&
@@ -35149,7 +36088,8 @@ internal sealed class JwtProvider(
             new Claim(LawyerPlatformClaimTypes.PreferredUserName, account.UserName),
             new Claim(LawyerPlatformClaimTypes.Role, account.Role.ToString()),
             new Claim(LawyerPlatformClaimTypes.PasswordChangeRequired, passwordLifecycle.PasswordChangeRequired.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()),
-            new Claim(LawyerPlatformClaimTypes.PasswordChangeReason, passwordLifecycle.PasswordChangeReason.ToString())
+            new Claim(LawyerPlatformClaimTypes.PasswordChangeReason, passwordLifecycle.PasswordChangeReason.ToString()),
+            new Claim(LawyerPlatformClaimTypes.CredentialVersion, account.CredentialVersion.ToString(CultureInfo.InvariantCulture))
         };
 
         var credentials = new SigningCredentials(
@@ -35195,6 +36135,132 @@ internal sealed class PasswordLifecycleService(
 
         return new PasswordLifecycleState(expiresOnUtc, expired, account.IsFirstLogin || expired, reason);
     }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Authentication\PasswordResetPolicy.cs ==================== 
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.Infrastructure.Authentication;
+
+internal sealed class PasswordResetPolicy(IOptions<PasswordResetOptions> options)
+    : IPasswordResetPolicy
+{
+    private PasswordResetOptions Value => options.Value;
+
+    public int OtpLength => Value.OtpLength;
+    public int OtpExpirationMinutes => Value.OtpExpirationMinutes;
+    public int MaximumVerificationAttempts => Value.MaximumVerificationAttempts;
+    public int ResendCooldownSeconds => Value.ResendCooldownSeconds;
+    public int ResetTokenExpirationMinutes => Value.ResetTokenExpirationMinutes;
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Authentication\PasswordResetSecretGenerator.cs ==================== 
+using System.Globalization;
+using System.Security.Cryptography;
+using LawyerPlatform.Application.Abstractions.Authentication;
+
+namespace LawyerPlatform.Infrastructure.Authentication;
+
+internal sealed class PasswordResetSecretGenerator : IPasswordResetSecretGenerator
+{
+    public string GenerateOtp()
+        => RandomNumberGenerator
+            .GetInt32(0, 1_000_000)
+            .ToString("D6", CultureInfo.InvariantCulture);
+
+    public string GenerateResetToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Authentication\PasswordResetTokenHasher.cs ==================== 
+using System.Security.Cryptography;
+using System.Text;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.Infrastructure.Authentication;
+
+internal sealed class PasswordResetTokenHasher : IPasswordResetTokenHasher
+{
+    private const string OtpDomain = "otp:";
+    private const string ResetTokenDomain = "reset:";
+    private readonly byte[] _secret;
+
+    public PasswordResetTokenHasher(IOptions<PasswordResetOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _secret = Encoding.UTF8.GetBytes(options.Value.HmacSecret);
+    }
+
+    public string HashOtp(string otp) => Hash(OtpDomain, otp);
+
+    public bool VerifyOtp(string otp, string otpHash) => Verify(OtpDomain, otp, otpHash);
+
+    public string HashResetToken(string resetToken) => Hash(ResetTokenDomain, resetToken);
+
+    public bool VerifyResetToken(string resetToken, string resetTokenHash)
+        => Verify(ResetTokenDomain, resetToken, resetTokenHash);
+
+    private string Hash(string domain, string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        var input = Encoding.UTF8.GetBytes(domain + value);
+        return Convert.ToBase64String(HMACSHA256.HashData(_secret, input));
+    }
+
+    private bool Verify(string domain, string value, string expectedHash)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(expectedHash))
+        {
+            return false;
+        }
+
+        byte[] expectedBytes;
+        try
+        {
+            expectedBytes = Convert.FromBase64String(expectedHash);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var input = Encoding.UTF8.GetBytes(domain + value);
+        var actualBytes = HMACSHA256.HashData(_secret, input);
+        return CryptographicOperations.FixedTimeEquals(actualBytes, expectedBytes);
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Authentication\UserAuthenticationStateReader.cs ==================== 
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace LawyerPlatform.Infrastructure.Authentication;
+
+internal sealed class UserAuthenticationStateReader(LawyerPlatformDbContext dbContext)
+    : IUserAuthenticationStateReader
+{
+    public Task<UserAuthenticationState?> ReadAsync(
+        Guid userAccountId,
+        CancellationToken cancellationToken = default)
+        => dbContext.UserAccounts
+            .AsNoTracking()
+            .Where(account => account.Id == userAccountId)
+            .Select(account => new UserAuthenticationState(
+                account.Id,
+                account.Status,
+                account.CredentialVersion))
+            .SingleOrDefaultAsync(cancellationToken);
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Consultations\ConsultationAggregatePersistence.cs ==================== 
@@ -36047,6 +37113,21 @@ public sealed class PasswordLifecycleOptions
     public int ExpiryDays { get; init; } = 90;
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Options\PasswordResetOptions.cs ==================== 
+namespace LawyerPlatform.Infrastructure.Options;
+
+public sealed class PasswordResetOptions
+{
+    public const string SectionName = "PasswordReset";
+
+    public int OtpLength { get; set; } = 6;
+    public int OtpExpirationMinutes { get; set; } = 5;
+    public int MaximumVerificationAttempts { get; set; } = 5;
+    public int ResendCooldownSeconds { get; set; } = 60;
+    public int ResetTokenExpirationMinutes { get; set; } = 10;
+    public string HmacSecret { get; set; } = string.Empty;
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\DatabaseInitializationHostedService.cs ==================== 
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Options;
@@ -36275,6 +37356,7 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     : DbContext(options)
 {
     public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
+    public DbSet<PasswordResetChallenge> PasswordResetChallenges => Set<PasswordResetChallenge>();
     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
     public DbSet<LawyerProfile> LawyerProfiles => Set<LawyerProfile>();
     public DbSet<Governorate> Governorates => Set<Governorate>();
@@ -36675,7 +37757,9 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
         if (exception is DbUpdateConcurrencyException)
         {
             var concurrencyException = (DbUpdateConcurrencyException)exception;
-            error = concurrencyException.Entries.Any(entry => entry.Entity is LawyerConsultationSettings)
+            error = concurrencyException.Entries.Any(entry => entry.Entity is PasswordResetChallenge)
+                ? PasswordResetErrors.ConcurrencyConflict
+                : concurrencyException.Entries.Any(entry => entry.Entity is LawyerConsultationSettings)
                 ? LawyerErrors.ConsultationSettingsConcurrencyConflict
                 : concurrencyException.Entries.Any(entry => entry.Entity is Governorate)
                 ? GovernorateErrors.ConcurrencyConflict
@@ -36707,6 +37791,7 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_UserAccounts_NormalizedUserName", StringComparison.Ordinal) => AccountErrors.UserNameAlreadyExists,
             var message when message.Contains("UX_UserAccounts_NormalizedEmail", StringComparison.Ordinal) => AccountErrors.EmailAlreadyExists,
             var message when message.Contains("UX_UserAccounts_PhoneNumber", StringComparison.Ordinal) => AccountErrors.PhoneNumberAlreadyExists,
+            var message when message.Contains("UX_PasswordResetChallenges_Current_UserAccountId", StringComparison.Ordinal) => PasswordResetErrors.ConcurrencyConflict,
             var message when message.Contains("UX_ClientProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("ClientProfile.AccountAlreadyLinked", "The account already has a client profile."),
             var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", "The account already has a lawyer profile."),
             var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,
@@ -37237,6 +38322,45 @@ internal sealed class LegalSpecializationConfiguration : IWriteEntityConfigurati
     }
 }
  
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Configurations\PasswordResetChallengeConfiguration.cs ==================== 
+using BuildingBlock.Infrastructure.Persistence;
+using LawyerPlatform.Domain.Accounts;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace LawyerPlatform.Infrastructure.Persistence.Configurations;
+
+internal sealed class PasswordResetChallengeConfiguration
+    : IWriteEntityConfiguration<PasswordResetChallenge>
+{
+    public void ConfigureAggregate(EntityTypeBuilder<PasswordResetChallenge> builder)
+    {
+        builder.ToTable("PasswordResetChallenges");
+        builder.HasKey(challenge => challenge.Id);
+        builder.Property(challenge => challenge.UserAccountId).IsRequired();
+        builder.Property(challenge => challenge.OtpHash).HasMaxLength(128).IsRequired();
+        builder.Property(challenge => challenge.CreatedOnUtc).IsRequired();
+        builder.Property(challenge => challenge.ExpiresOnUtc).IsRequired();
+        builder.Property(challenge => challenge.FailedAttemptCount).IsRequired();
+        builder.Property(challenge => challenge.ResetTokenHash).HasMaxLength(128);
+        builder.Property(challenge => challenge.RowVersion).IsRowVersion().IsConcurrencyToken();
+
+        builder.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(challenge => challenge.UserAccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(challenge => new { challenge.UserAccountId, challenge.CreatedOnUtc })
+            .HasDatabaseName("IX_PasswordResetChallenges_UserAccountId_CreatedOnUtc");
+        builder.HasIndex(challenge => challenge.ExpiresOnUtc)
+            .HasDatabaseName("IX_PasswordResetChallenges_ExpiresOnUtc");
+        builder.HasIndex(challenge => challenge.UserAccountId)
+            .IsUnique()
+            .HasFilter("[InvalidatedOnUtc] IS NULL AND [ConsumedOnUtc] IS NULL")
+            .HasDatabaseName("UX_PasswordResetChallenges_Current_UserAccountId");
+    }
+}
+ 
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Configurations\UserAccountConfiguration.cs ==================== 
 using BuildingBlock.Infrastructure.Persistence;
 using LawyerPlatform.Domain.Accounts;
@@ -37261,6 +38385,7 @@ internal sealed class UserAccountConfiguration : IWriteEntityConfiguration<UserA
         builder.Property(account => account.Status).HasConversion<int>().IsRequired();
         builder.Property(account => account.IsFirstLogin).IsRequired();
         builder.Property(account => account.PasswordChangedOnUtc).IsRequired();
+        builder.Property(account => account.CredentialVersion).HasDefaultValue(1).IsRequired();
         builder.Property(account => account.RowVersion).IsRowVersion().IsConcurrencyToken();
 
         builder.HasIndex(account => account.NormalizedUserName)
@@ -47620,13 +48745,97 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
     }
 }
  
-// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\LawyerPlatformDbContextModelSnapshot.cs ==================== 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260826085508_AddPasswordResetAndCredentialVersion.cs ==================== 
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddPasswordResetAndCredentialVersion : Migration
+    {
+        private static readonly string[] UserAccountCreatedOnUtcColumns =
+            ["UserAccountId", "CreatedOnUtc"];
+
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<int>(
+                name: "CredentialVersion",
+                table: "UserAccounts",
+                type: "int",
+                nullable: false,
+                defaultValue: 1);
+
+            migrationBuilder.CreateTable(
+                name: "PasswordResetChallenges",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserAccountId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    OtpHash = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    CreatedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ExpiresOnUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    FailedAttemptCount = table.Column<int>(type: "int", nullable: false),
+                    VerifiedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    InvalidatedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ConsumedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ResetTokenHash = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    ResetTokenExpiresOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PasswordResetChallenges", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_PasswordResetChallenges_UserAccounts_UserAccountId",
+                        column: x => x.UserAccountId,
+                        principalTable: "UserAccounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PasswordResetChallenges_ExpiresOnUtc",
+                table: "PasswordResetChallenges",
+                column: "ExpiresOnUtc");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PasswordResetChallenges_UserAccountId_CreatedOnUtc",
+                table: "PasswordResetChallenges",
+                columns: UserAccountCreatedOnUtcColumns);
+
+            migrationBuilder.CreateIndex(
+                name: "UX_PasswordResetChallenges_Current_UserAccountId",
+                table: "PasswordResetChallenges",
+                column: "UserAccountId",
+                unique: true,
+                filter: "[InvalidatedOnUtc] IS NULL AND [ConsumedOnUtc] IS NULL");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "PasswordResetChallenges");
+
+            migrationBuilder.DropColumn(
+                name: "CredentialVersion",
+                table: "UserAccounts");
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\20260826085508_AddPasswordResetAndCredentialVersion.Designer.cs ==================== 
 ﻿// <auto-generated />
 using System;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -47634,9 +48843,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(LawyerPlatformDbContext))]
-    partial class LawyerPlatformDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826085508_AddPasswordResetAndCredentialVersion")]
+    partial class AddPasswordResetAndCredentialVersion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -47644,6 +48855,67 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.PasswordResetChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ConsumedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("FailedAttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("InvalidatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OtpHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("ResetTokenExpiresOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResetTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("VerifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresOnUtc")
+                        .HasDatabaseName("IX_PasswordResetChallenges_ExpiresOnUtc");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PasswordResetChallenges_Current_UserAccountId")
+                        .HasFilter("[InvalidatedOnUtc] IS NULL AND [ConsumedOnUtc] IS NULL");
+
+                    b.HasIndex("UserAccountId", "CreatedOnUtc")
+                        .HasDatabaseName("IX_PasswordResetChallenges_UserAccountId_CreatedOnUtc");
+
+                    b.ToTable("PasswordResetChallenges", (string)null);
+                });
 
             modelBuilder.Entity("LawyerPlatform.Domain.Accounts.UserAccount", b =>
                 {
@@ -47653,6 +48925,11 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("CredentialVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -48506,6 +49783,1189 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
 
                     b.ToTable("EmailOutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.PasswordResetChallenge", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Clients.ClientProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Clients.ClientProfile", "ClientProfile")
+                        .WithMany()
+                        .HasForeignKey("ClientProfileId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany()
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ClientProfile");
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Consultations.ConsultationRequest", "ConsultationRequest")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("ConsultationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ConsultationRequest");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("StatusHistory")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerConsultationSettings")
+                        .WithMany("Availability")
+                        .HasForeignKey("LawyerConsultationSettingsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LawyerConsultationSettings");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithOne("ConsultationSettings")
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", "LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Documents")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Area", "Area")
+                        .WithMany()
+                        .HasForeignKey("AreaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Offices")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Area");
+
+                    b.Navigation("City");
+
+                    b.Navigation("Governorate");
+
+                    b.Navigation("LawyerProfile");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", "UserAccount")
+                        .WithOne()
+                        .HasForeignKey("LawyerPlatform.Domain.Lawyers.LawyerProfile", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Lawyers.LawyerProfile", "LawyerProfile")
+                        .WithMany("Specializations")
+                        .HasForeignKey("LawyerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", "LegalSpecialization")
+                        .WithMany()
+                        .HasForeignKey("LegalSpecializationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LawyerProfile");
+
+                    b.Navigation("LegalSpecialization");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("City");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.ReferenceData.Governorate", "Governorate")
+                        .WithMany()
+                        .HasForeignKey("GovernorateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Governorate");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Navigation("StatusHistory");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Navigation("Availability");
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Navigation("ConsultationSettings");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("Offices");
+
+                    b.Navigation("Specializations");
+
+                    b.Navigation("StatusHistory");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+ 
+// ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Infrastructure\Persistence\Migrations\LawyerPlatformDbContextModelSnapshot.cs ==================== 
+﻿// <auto-generated />
+using System;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace LawyerPlatform.Infrastructure.Persistence.Migrations
+{
+    [DbContext(typeof(LawyerPlatformDbContext))]
+    partial class LawyerPlatformDbContextModelSnapshot : ModelSnapshot
+    {
+        protected override void BuildModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.PasswordResetChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ConsumedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("FailedAttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("InvalidatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OtpHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("ResetTokenExpiresOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResetTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("VerifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresOnUtc")
+                        .HasDatabaseName("IX_PasswordResetChallenges_ExpiresOnUtc");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PasswordResetChallenges_Current_UserAccountId")
+                        .HasFilter("[InvalidatedOnUtc] IS NULL AND [ConsumedOnUtc] IS NULL");
+
+                    b.HasIndex("UserAccountId", "CreatedOnUtc")
+                        .HasDatabaseName("IX_PasswordResetChallenges_UserAccountId_CreatedOnUtc");
+
+                    b.ToTable("PasswordResetChallenges", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.UserAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CredentialVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsFirstLogin")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedUserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("PasswordChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedEmail");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_NormalizedUserName");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserAccounts_PhoneNumber");
+
+                    b.HasIndex("Role", "Status")
+                        .HasDatabaseName("IX_UserAccounts_Role_Status");
+
+                    b.ToTable("UserAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ClientProfiles_UserAccountId");
+
+                    b.ToTable("ClientProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClientProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("ConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ConsultationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("GuestEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("GuestFullName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("GuestPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PreferredAppointmentOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LegalSpecializationId");
+
+                    b.HasIndex("ReferenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ConsultationRequests_ReferenceNumber");
+
+                    b.HasIndex("ClientProfileId", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_ClientProfileId_CreatedOnUtc");
+
+                    b.HasIndex("LawyerProfileId", "Status", "CreatedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequests_LawyerProfileId_Status_CreatedOnUtc");
+
+                    b.ToTable("ConsultationRequests", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Consultations.ConsultationRequestStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ConsultationRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByUserId");
+
+                    b.HasIndex("ConsultationRequestId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_ConsultationRequestStatusHistory_ConsultationRequestId_ChangedOnUtc");
+
+                    b.ToTable("ConsultationRequestStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerApprovalStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ChangedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("NewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OldStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "ChangedOnUtc")
+                        .HasDatabaseName("IX_LawyerApprovalStatusHistory_LawyerProfileId_ChangedOnUtc");
+
+                    b.ToTable("LawyerApprovalStatusHistory", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerAvailability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ConsultationType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time");
+
+                    b.Property<Guid>("LawyerConsultationSettingsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerConsultationSettingsId", "ConsultationType", "DayOfWeek")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek");
+
+                    b.ToTable("LawyerAvailabilities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerConsultationSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("OnlineConsultationPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("ConsultationPrice");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerConsultationSettings_LawyerProfileId");
+
+                    b.ToTable("LawyerConsultationSettings", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LawyerProfileId", "DocumentType", "IsDeleted")
+                        .HasDatabaseName("IX_LawyerDocuments_LawyerProfileId_DocumentType_IsDeleted");
+
+                    b.ToTable("LawyerDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerOffice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AreaId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DetailedAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublicPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AreaId");
+
+                    b.HasIndex("CityId");
+
+                    b.HasIndex("LawyerProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerOffices_LawyerProfileId_Primary")
+                        .HasFilter("[IsPrimary] = 1");
+
+                    b.HasIndex("GovernorateId", "CityId", "AreaId")
+                        .HasDatabaseName("IX_LawyerOffices_GovernorateId_CityId_AreaId");
+
+                    b.ToTable("LawyerOffices", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ApprovalStatus")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ApprovedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ApprovedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Biography")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProfessionalRegistrationNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ProfessionalTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProfileImageStorageKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RestoredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("SubmittedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SuspendedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("YearsOfExperience")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessionalRegistrationNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_ProfessionalRegistrationNumber")
+                        .HasFilter("[ProfessionalRegistrationNumber] IS NOT NULL");
+
+                    b.HasIndex("UserAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LawyerProfiles_UserAccountId");
+
+                    b.HasIndex("ApprovalStatus", "SubmittedOnUtc")
+                        .HasDatabaseName("IX_LawyerProfiles_ApprovalStatus_SubmittedOnUtc");
+
+                    b.ToTable("LawyerProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Lawyers.LawyerSpecialization", b =>
+                {
+                    b.Property<Guid>("LawyerProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LegalSpecializationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("LawyerProfileId", "LegalSpecializationId");
+
+                    b.HasIndex("LegalSpecializationId", "LawyerProfileId")
+                        .HasDatabaseName("IX_LawyerSpecializations_LegalSpecializationId_LawyerProfileId");
+
+                    b.ToTable("LawyerSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Area", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CityId")
+                        .HasDatabaseName("IX_Areas_CityId");
+
+                    b.HasIndex("CityId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameAr");
+
+                    b.HasIndex("CityId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Areas_CityId_NameEn");
+
+                    b.HasIndex("CityId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Areas_CityId_IsActive_DisplayOrder");
+
+                    b.ToTable("Areas", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.City", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GovernorateId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GovernorateId")
+                        .HasDatabaseName("IX_Cities_GovernorateId");
+
+                    b.HasIndex("GovernorateId", "NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameAr");
+
+                    b.HasIndex("GovernorateId", "NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Cities_GovernorateId_NameEn");
+
+                    b.HasIndex("GovernorateId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Cities_GovernorateId_IsActive_DisplayOrder");
+
+                    b.ToTable("Cities", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.Governorate", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Governorates_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_Governorates_IsActive_DisplayOrder");
+
+                    b.ToTable("Governorates", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.ReferenceData.LegalSpecialization", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameAr");
+
+                    b.HasIndex("NameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LegalSpecializations_NameEn");
+
+                    b.HasIndex("IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_LegalSpecializations_IsActive_DisplayOrder");
+
+                    b.ToTable("LegalSpecializations", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Infrastructure.Email.EmailOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("NextAttemptOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NotificationType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ProcessedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProcessingToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_CreatedOnUtc");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EmailOutboxMessages_IdempotencyKey");
+
+                    b.HasIndex("Status", "NextAttemptOnUtc")
+                        .HasDatabaseName("IX_EmailOutboxMessages_Status_NextAttemptOnUtc");
+
+                    b.ToTable("EmailOutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("LawyerPlatform.Domain.Accounts.PasswordResetChallenge", b =>
+                {
+                    b.HasOne("LawyerPlatform.Domain.Accounts.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("LawyerPlatform.Domain.Clients.ClientProfile", b =>
@@ -51048,6 +53508,9 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         Assert.True(paths.TryGetProperty("/api/v1/auth/lawyers/register", out _));
         Assert.True(paths.TryGetProperty("/api/v1/auth/login", out _));
         Assert.True(paths.TryGetProperty("/api/v1/auth/change-password", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/auth/forgot-password/request-otp", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/auth/forgot-password/verify-otp", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/auth/forgot-password/reset", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/governorates", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/governorates/{governorateId}/cities", out _));
         Assert.True(paths.TryGetProperty("/api/v1/public/cities/{cityId}/areas", out _));
@@ -51160,6 +53623,12 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
             cancellationToken);
         Assert.Equal(HttpStatusCode.OK, changePassword.StatusCode);
         var unrestrictedToken = await ReadTokenAsync(changePassword, cancellationToken);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", restrictedToken);
+        var revokedTokenResponse = await client.GetAsync(
+            "/api/v1/admin/dashboard",
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, revokedTokenResponse.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", unrestrictedToken);
         var unrestrictedResponse = await client.GetAsync(
@@ -52758,6 +55227,7 @@ public sealed class CorsEndpointsTests(CustomWebApplicationFactory factory)
  
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\CustomWebApplicationFactory.cs ==================== 
 using BuildingBlock.Infrastructure.Bootstrap;
+using BuildingBlock.Application.Email;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -52799,6 +55269,12 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["InitialSuperAdmin:PhoneNumber"] = "01000000000",
                 ["InitialSuperAdmin:Password"] = "InitialPassword1",
                 ["PasswordLifecycle:ExpiryDays"] = "90",
+                ["PasswordReset:OtpLength"] = "6",
+                ["PasswordReset:OtpExpirationMinutes"] = "5",
+                ["PasswordReset:MaximumVerificationAttempts"] = "5",
+                ["PasswordReset:ResendCooldownSeconds"] = "60",
+                ["PasswordReset:ResetTokenExpirationMinutes"] = "10",
+                ["PasswordReset:HmacSecret"] = "integration-test-password-reset-secret-0001",
                 ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
                 ["EmailOutbox:Enabled"] = "false",
@@ -52832,6 +55308,11 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<DbContextOptions<LawyerPlatformDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<LawyerPlatformDbContext>>();
             services.RemoveAll<LawyerPlatformDbContext>();
+            services.RemoveAll<IEmailSender>();
+
+            services.AddSingleton<TestPasswordResetEmailSender>();
+            services.AddSingleton<IEmailSender>(provider =>
+                provider.GetRequiredService<TestPasswordResetEmailSender>());
 
             var connection = new SqliteConnection("Data Source=:memory:");
             connection.Open();
@@ -52849,6 +55330,27 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 .Database
                 .EnsureCreated();
         });
+    }
+}
+
+public sealed class TestPasswordResetEmailSender : IEmailSender
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<EmailMessage> _messages = new();
+
+    public IReadOnlyCollection<EmailMessage> Messages => _messages.ToArray();
+
+    public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        _messages.Enqueue(message);
+        return Task.CompletedTask;
+    }
+
+    public void Clear()
+    {
+        while (_messages.TryDequeue(out _))
+        {
+        }
     }
 }
  
@@ -55309,6 +57811,904 @@ public sealed class LawyerSpecializationRulesTests(CustomWebApplicationFactory f
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\PasswordResetEndpointsTests.cs ==================== 
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using LawyerPlatform.Application.Abstractions.Authentication;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
+
+namespace LawyerPlatform.IntegrationTests;
+
+public sealed class PasswordResetEndpointsTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>
+{
+    [Fact]
+    public async Task PasswordReset_EndToEnd_RevokesOldJwtAndDoesNotPersistPlaintextSecrets()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.reset.client@example.test";
+        const string oldPassword = "OldStrongPassword1!";
+        const string newPassword = "NewStrongPassword2!";
+        await RegisterClientAsync(client, "password.reset.client", email, "01234000001", oldPassword, cancellationToken);
+
+        var login = await LoginAsync(client, email, oldPassword, cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var oldToken = await ReadTokenAsync(login, cancellationToken);
+        Assert.Equal("1", new JwtSecurityTokenHandler().ReadJwtToken(oldToken)
+            .Claims.Single(claim => claim.Type == LawyerPlatformClaimTypes.CredentialVersion).Value);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", oldToken);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.GetAsync("/api/v1/client/profile", cancellationToken)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var existingResponse = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email },
+            cancellationToken);
+        var missingResponse = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email = "missing.password.reset@example.test" },
+            cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Accepted, existingResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, missingResponse.StatusCode);
+        var existingBody = await existingResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var missingBody = await missingResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.Equal(
+            existingBody.EnumerateObject().Select(property => property.Name).Order(),
+            missingBody.EnumerateObject().Select(property => property.Name).Order());
+        Assert.Equal(
+            existingBody.GetProperty("expiresInSeconds").GetInt32(),
+            missingBody.GetProperty("expiresInSeconds").GetInt32());
+        Assert.Equal(
+            existingBody.GetProperty("resendAfterSeconds").GetInt32(),
+            missingBody.GetProperty("resendAfterSeconds").GetInt32());
+
+        var requestId = existingBody.GetProperty("requestId").GetGuid();
+        var missingRequestId = missingBody.GetProperty("requestId").GetGuid();
+        var otp = GetOtpForRecipient(email);
+        PasswordResetChallenge persistedChallenge;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            persistedChallenge = await dbContext.PasswordResetChallenges
+                .AsNoTracking()
+                .SingleAsync(challenge => challenge.Id == requestId, cancellationToken);
+            Assert.False(await dbContext.PasswordResetChallenges
+                .AsNoTracking()
+                .AnyAsync(challenge => challenge.Id == missingRequestId, cancellationToken));
+            Assert.DoesNotContain(otp, persistedChallenge.OtpHash, StringComparison.Ordinal);
+            Assert.Null(persistedChallenge.ResetTokenHash);
+            Assert.DoesNotContain(
+                await dbContext.EmailOutboxMessages.AsNoTracking().ToListAsync(cancellationToken),
+                message => message.HtmlBody.Contains(otp, StringComparison.Ordinal));
+        }
+
+        var verify = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId, otp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
+        var verifyBody = await verify.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var resetToken = verifyBody.GetProperty("resetToken").GetString()!;
+        Assert.Equal(600, verifyBody.GetProperty("expiresInSeconds").GetInt32());
+
+        var otpReuse = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId, otp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, otpReuse.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            persistedChallenge = await scope.ServiceProvider
+                .GetRequiredService<LawyerPlatformDbContext>()
+                .PasswordResetChallenges
+                .AsNoTracking()
+                .SingleAsync(challenge => challenge.Id == requestId, cancellationToken);
+            Assert.True(persistedChallenge.IsVerified);
+            Assert.DoesNotContain(resetToken, persistedChallenge.ResetTokenHash!, StringComparison.Ordinal);
+        }
+
+        var reset = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/reset",
+            new
+            {
+                requestId,
+                resetToken,
+                newPassword,
+                confirmPassword = newPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+        var resetBody = await reset.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.True(resetBody.GetProperty("passwordReset").GetBoolean());
+        Assert.False(resetBody.TryGetProperty("accessToken", out _));
+
+        var resetTokenReuse = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/reset",
+            new
+            {
+                requestId,
+                resetToken,
+                newPassword = "AnotherStrongPassword3!",
+                confirmPassword = "AnotherStrongPassword3!"
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resetTokenReuse.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var account = await dbContext.UserAccounts
+                .AsNoTracking()
+                .SingleAsync(user => user.Email == email, cancellationToken);
+            persistedChallenge = await dbContext.PasswordResetChallenges
+                .AsNoTracking()
+                .SingleAsync(challenge => challenge.Id == requestId, cancellationToken);
+            Assert.Equal(2, account.CredentialVersion);
+            Assert.False(account.IsFirstLogin);
+            Assert.True(persistedChallenge.IsConsumed);
+        }
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", oldToken);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await client.GetAsync("/api/v1/client/profile", cancellationToken)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await LoginAsync(client, email, oldPassword, cancellationToken)).StatusCode);
+        var newLogin = await LoginAsync(client, email, newPassword, cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, newLogin.StatusCode);
+        var newToken = await ReadTokenAsync(newLogin, cancellationToken);
+        Assert.Equal("2", new JwtSecurityTokenHandler().ReadJwtToken(newToken)
+            .Claims.Single(claim => claim.Type == LawyerPlatformClaimTypes.CredentialVersion).Value);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", newToken);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.GetAsync("/api/v1/client/profile", cancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task VerifyOtp_FiveWrongAttemptsInvalidateChallengeAndCorrectOtpThenFails()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.attempts.client@example.test";
+        await RegisterClientAsync(
+            client,
+            "password.attempts.client",
+            email,
+            "01234000002",
+            "OldStrongPassword1!",
+            cancellationToken);
+        var requestId = await RequestOtpAsync(client, email, cancellationToken);
+        var correctOtp = GetOtpForRecipient(email);
+        var wrongOtp = correctOtp == "000000" ? "999999" : "000000";
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var response = await client.PostAsJsonAsync(
+                "/api/v1/auth/forgot-password/verify-otp",
+                new { requestId, otp = wrongOtp },
+                cancellationToken);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            Assert.Equal(
+                "PasswordReset.OtpInvalidOrExpired",
+                await ReadErrorCodeAsync(response, cancellationToken));
+        }
+
+        var correctAfterLock = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId, otp = correctOtp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, correctAfterLock.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var challenge = await scope.ServiceProvider
+            .GetRequiredService<LawyerPlatformDbContext>()
+            .PasswordResetChallenges
+            .AsNoTracking()
+            .SingleAsync(item => item.Id == requestId, cancellationToken);
+        Assert.Equal(5, challenge.FailedAttemptCount);
+        Assert.True(challenge.IsInvalidated);
+    }
+
+    [Fact]
+    public async Task ResendAfterCooldown_InvalidatesPreviousOtp()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.resend.client@example.test";
+        await RegisterClientAsync(
+            client,
+            "password.resend.client",
+            email,
+            "01234000003",
+            "OldStrongPassword1!",
+            cancellationToken);
+
+        var firstRequestId = await RequestOtpAsync(client, email, cancellationToken);
+        var firstOtp = GetOtpForRecipient(email);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var challenge = await dbContext.PasswordResetChallenges
+                .SingleAsync(item => item.Id == firstRequestId, cancellationToken);
+            dbContext.Entry(challenge)
+                .Property(nameof(PasswordResetChallenge.CreatedOnUtc))
+                .CurrentValue = DateTime.UtcNow.AddMinutes(-2);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        var secondRequestId = await RequestOtpAsync(client, email, cancellationToken);
+        var secondOtp = GetOtpForRecipient(email);
+        Assert.NotEqual(firstRequestId, secondRequestId);
+
+        var oldOtpResponse = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId = firstRequestId, otp = firstOtp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, oldOtpResponse.StatusCode);
+
+        var newOtpResponse = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId = secondRequestId, otp = secondOtp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, newOtpResponse.StatusCode);
+    }
+
+    private HttpClient CreateClient()
+        => factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+    private string GetOtpForRecipient(string email, int occurrenceFromEnd = 0)
+    {
+        var messages = factory.Services.GetRequiredService<TestPasswordResetEmailSender>()
+            .Messages
+            .Where(message => message.To.Contains(email, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        var message = messages[^(occurrenceFromEnd + 1)];
+        var match = Regex.Match(message.HtmlBody!, "(?<![0-9])[0-9]{6}(?![0-9])");
+        Assert.True(match.Success);
+        return match.Value;
+    }
+
+    private static async Task RegisterClientAsync(
+        HttpClient client,
+        string userName,
+        string email,
+        string phoneNumber,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = "Password Reset Client",
+                userName,
+                email,
+                phoneNumber,
+                password
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    private static async Task<Guid> RequestOtpAsync(
+        HttpClient client,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        return body.GetProperty("requestId").GetGuid();
+    }
+
+    private static Task<HttpResponseMessage> LoginAsync(
+        HttpClient client,
+        string userNameOrEmail,
+        string password,
+        CancellationToken cancellationToken)
+        => client.PostAsJsonAsync(
+            "/api/v1/auth/login",
+            new { userNameOrEmail, password },
+            cancellationToken);
+
+    private static async Task<string> ReadTokenAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        return body.GetProperty("accessToken").GetString()!;
+    }
+
+    private static async Task<string> ReadErrorCodeAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        return body.GetProperty("errors")[0].GetProperty("code").GetString()!;
+    }
+}
+
+public sealed class PasswordResetAccountStatusTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>
+{
+    [Fact]
+    public async Task SuspendedLawyer_CanResetWithoutChangingAccountOrApprovalStatus()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.reset.suspended.lawyer@example.test";
+        const string oldPassword = "OldStrongPassword1!";
+        const string newPassword = "NewStrongPassword2!";
+        var registration = await client.PostAsJsonAsync(
+            "/api/v1/auth/lawyers/register",
+            new
+            {
+                fullName = "Suspended Reset Lawyer",
+                userName = "password.reset.suspended.lawyer",
+                email,
+                phoneNumber = "01234000004",
+                password = oldPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var account = await dbContext.UserAccounts
+                .SingleAsync(item => item.Email == email, cancellationToken);
+            Assert.True(account.Suspend(DateTime.UtcNow).IsSuccess);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await CompleteResetAsync(client, email, newPassword, cancellationToken);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var account = await dbContext.UserAccounts
+                .AsNoTracking()
+                .SingleAsync(item => item.Email == email, cancellationToken);
+            var profile = await dbContext.LawyerProfiles
+                .AsNoTracking()
+                .SingleAsync(item => item.UserAccountId == account.Id, cancellationToken);
+            Assert.Equal(AccountStatus.Suspended, account.Status);
+            Assert.Equal(2, account.CredentialVersion);
+            Assert.Equal(LawyerApprovalStatus.Draft, profile.ApprovalStatus);
+        }
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await LoginAsync(client, email, newPassword, cancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task InactiveClient_CanResetWithoutReactivatingAccount()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.reset.inactive.client@example.test";
+        const string oldPassword = "OldStrongPassword1!";
+        const string newPassword = "NewStrongPassword2!";
+        var registration = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = "Inactive Reset Client",
+                userName = "password.reset.inactive.client",
+                email,
+                phoneNumber = "01234000005",
+                password = oldPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var account = await dbContext.UserAccounts
+                .SingleAsync(item => item.Email == email, cancellationToken);
+            Assert.True(account.Deactivate(DateTime.UtcNow).IsSuccess);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await CompleteResetAsync(client, email, newPassword, cancellationToken);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var account = await scope.ServiceProvider
+                .GetRequiredService<LawyerPlatformDbContext>()
+                .UserAccounts
+                .AsNoTracking()
+                .SingleAsync(item => item.Email == email, cancellationToken);
+            Assert.Equal(AccountStatus.Inactive, account.Status);
+            Assert.Equal(2, account.CredentialVersion);
+        }
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await LoginAsync(client, email, newPassword, cancellationToken)).StatusCode);
+    }
+
+    private async Task CompleteResetAsync(
+        HttpClient client,
+        string email,
+        string newPassword,
+        CancellationToken cancellationToken)
+    {
+        var request = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Accepted, request.StatusCode);
+        var requestBody = await request.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var requestId = requestBody.GetProperty("requestId").GetGuid();
+        var emailMessage = factory.Services.GetRequiredService<TestPasswordResetEmailSender>()
+            .Messages
+            .Last(message => message.To.Contains(email, StringComparer.OrdinalIgnoreCase));
+        var otp = Regex.Match(emailMessage.HtmlBody!, "(?<![0-9])[0-9]{6}(?![0-9])").Value;
+        var verify = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId, otp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
+        var verifyBody = await verify.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var resetToken = verifyBody.GetProperty("resetToken").GetString();
+        var reset = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/reset",
+            new { requestId, resetToken, newPassword, confirmPassword = newPassword },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+    }
+
+    private HttpClient CreateClient()
+        => factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+    private static Task<HttpResponseMessage> LoginAsync(
+        HttpClient client,
+        string userNameOrEmail,
+        string password,
+        CancellationToken cancellationToken)
+        => client.PostAsJsonAsync(
+            "/api/v1/auth/login",
+            new { userNameOrEmail, password },
+            cancellationToken);
+}
+
+public sealed class PasswordResetRateLimitTests
+{
+    [Fact]
+    public async Task SixthOtpRequestWithinWindow_ReturnsPasswordResetProblemDetails()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var accepted = await client.PostAsJsonAsync(
+                "/api/v1/auth/forgot-password/request-otp",
+                new { email = $"missing-{attempt}@example.test" },
+                cancellationToken);
+            Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        }
+
+        var limited = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email = "missing-limited@example.test" },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.True(limited.Headers.RetryAfter is not null);
+        var problem = await limited.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.Equal(
+            "PasswordReset.RateLimitExceeded",
+            problem.GetProperty("errors")[0].GetProperty("code").GetString());
+    }
+}
+
+public sealed class PasswordResetCooldownTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>
+{
+    [Fact]
+    public async Task ResendBeforeCooldown_IsSafelyThrottledWithoutSendingOrReplacingOtp()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        const string email = "password.cooldown.client@example.test";
+        var registration = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = "Password Cooldown Client",
+                userName = "password.cooldown.client",
+                email,
+                phoneNumber = "01234000008",
+                password = "StrongPassword1!"
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
+
+        var first = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email },
+            cancellationToken);
+        var second = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Accepted, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, second.StatusCode);
+        var firstBody = await first.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var secondBody = await second.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.NotEqual(
+            firstBody.GetProperty("requestId").GetGuid(),
+            secondBody.GetProperty("requestId").GetGuid());
+
+        var sentMessages = factory.Services
+            .GetRequiredService<TestPasswordResetEmailSender>()
+            .Messages
+            .Where(message => message.To.Contains(email, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.Single(sentMessages);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider
+            .GetRequiredService<LawyerPlatformDbContext>()
+            .PasswordResetChallenges
+            .AsNoTracking()
+            .Where(challenge =>
+                challenge.InvalidatedOnUtc == null &&
+                challenge.ConsumedOnUtc == null)
+            .ToListAsync(cancellationToken);
+        Assert.Contains(persisted, challenge => challenge.Id == firstBody.GetProperty("requestId").GetGuid());
+        Assert.DoesNotContain(persisted, challenge => challenge.Id == secondBody.GetProperty("requestId").GetGuid());
+    }
+}
+
+public sealed class PasswordResetFailureTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>
+{
+    [Fact]
+    public async Task WeakAndCurrentPasswordsFailWithoutConsumingChallengeThenDifferentPasswordSucceeds()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.failure.client@example.test";
+        const string currentPassword = "CurrentStrongPassword1!";
+        await RegisterAsync(client, "password.failure.client", email, "01234000009", currentPassword, cancellationToken);
+        var (requestId, resetToken) = await CreateResetTokenAsync(client, email, cancellationToken);
+
+        var weak = await ResetAsync(client, requestId, resetToken, "weak", cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, weak.StatusCode);
+        Assert.Equal("Account.NewPasswordInvalid", await ReadErrorCodeAsync(weak, cancellationToken));
+
+        var same = await ResetAsync(client, requestId, resetToken, currentPassword, cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, same.StatusCode);
+        Assert.Equal(
+            "PasswordReset.PasswordMustBeDifferent",
+            await ReadErrorCodeAsync(same, cancellationToken));
+
+        var successful = await ResetAsync(
+            client,
+            requestId,
+            resetToken,
+            "DifferentStrongPassword2!",
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, successful.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvalidAndExpiredResetTokensReturnSameSafeError()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        const string email = "password.token.failure@example.test";
+        await RegisterAsync(
+            client,
+            "password.token.failure",
+            email,
+            "01234000010",
+            "CurrentStrongPassword1!",
+            cancellationToken);
+        var (requestId, resetToken) = await CreateResetTokenAsync(client, email, cancellationToken);
+
+        var invalid = await ResetAsync(
+            client,
+            requestId,
+            "invalid-reset-token",
+            "DifferentStrongPassword2!",
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalid.StatusCode);
+        Assert.Equal(
+            "PasswordReset.ResetTokenInvalidOrExpired",
+            await ReadErrorCodeAsync(invalid, cancellationToken));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var challenge = await dbContext.PasswordResetChallenges
+                .SingleAsync(item => item.Id == requestId, cancellationToken);
+            dbContext.Entry(challenge)
+                .Property(nameof(PasswordResetChallenge.ResetTokenExpiresOnUtc))
+                .CurrentValue = DateTime.UtcNow.AddMinutes(-1);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        var expired = await ResetAsync(
+            client,
+            requestId,
+            resetToken,
+            "DifferentStrongPassword2!",
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, expired.StatusCode);
+        Assert.Equal(
+            "PasswordReset.ResetTokenInvalidOrExpired",
+            await ReadErrorCodeAsync(expired, cancellationToken));
+    }
+
+    [Fact]
+    public async Task UnknownRequestIdsFailWithSafeStableErrors()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+
+        var verify = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId = Guid.NewGuid(), otp = "123456" },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, verify.StatusCode);
+        Assert.Equal(
+            "PasswordReset.OtpInvalidOrExpired",
+            await ReadErrorCodeAsync(verify, cancellationToken));
+
+        var reset = await ResetAsync(
+            client,
+            Guid.NewGuid(),
+            "unknown-reset-token",
+            "DifferentStrongPassword2!",
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, reset.StatusCode);
+        Assert.Equal(
+            "PasswordReset.ResetTokenInvalidOrExpired",
+            await ReadErrorCodeAsync(reset, cancellationToken));
+    }
+
+    private HttpClient CreateClient()
+        => factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+    private static async Task RegisterAsync(
+        HttpClient client,
+        string userName,
+        string email,
+        string phoneNumber,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new { fullName = "Password Failure Client", userName, email, phoneNumber, password },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    private async Task<(Guid RequestId, string ResetToken)> CreateResetTokenAsync(
+        HttpClient client,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        var request = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/request-otp",
+            new { email },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Accepted, request.StatusCode);
+        var requestBody = await request.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var requestId = requestBody.GetProperty("requestId").GetGuid();
+        var message = factory.Services.GetRequiredService<TestPasswordResetEmailSender>()
+            .Messages
+            .Last(item => item.To.Contains(email, StringComparer.OrdinalIgnoreCase));
+        var otp = Regex.Match(message.HtmlBody!, "(?<![0-9])[0-9]{6}(?![0-9])").Value;
+        var verify = await client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/verify-otp",
+            new { requestId, otp },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
+        var verifyBody = await verify.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        return (requestId, verifyBody.GetProperty("resetToken").GetString()!);
+    }
+
+    private static Task<HttpResponseMessage> ResetAsync(
+        HttpClient client,
+        Guid requestId,
+        string resetToken,
+        string newPassword,
+        CancellationToken cancellationToken)
+        => client.PostAsJsonAsync(
+            "/api/v1/auth/forgot-password/reset",
+            new { requestId, resetToken, newPassword, confirmPassword = newPassword },
+            cancellationToken);
+
+    private static async Task<string> ReadErrorCodeAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        return body.GetProperty("errors")[0].GetProperty("code").GetString()!;
+    }
+}
+
+public sealed class CredentialVersionTokenValidationTests(CustomWebApplicationFactory factory)
+    : IClassFixture<CustomWebApplicationFactory>
+{
+    private const string Issuer = "LawyerPlatform.Api.Tests";
+    private const string Audience = "LawyerPlatform.TestClients";
+    private const string SigningKey = "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk";
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("malformed")]
+    [InlineData("0")]
+    [InlineData("2")]
+    [InlineData("999")]
+    public async Task ProtectedRequest_RejectsMissingMalformedOrMismatchedCredentialVersion(
+        string? credentialVersion)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        const string email = "credential.version.client@example.test";
+        await EnsureClientExistsAsync(client, email, cancellationToken);
+
+        Guid accountId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            accountId = await scope.ServiceProvider
+                .GetRequiredService<LawyerPlatformDbContext>()
+                .UserAccounts
+                .AsNoTracking()
+                .Where(account => account.Email == email)
+                .Select(account => account.Id)
+                .SingleAsync(cancellationToken);
+        }
+
+        var token = CreateToken(accountId, credentialVersion, SigningKey, DateTime.UtcNow.AddMinutes(5));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.GetAsync("/api/v1/client/profile", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProtectedRequest_RejectsExpiredAndBadSignatureTokens()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        const string email = "credential.crypto.client@example.test";
+        await EnsureClientExistsAsync(client, email, cancellationToken, "01234000007");
+
+        Guid accountId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            accountId = await scope.ServiceProvider
+                .GetRequiredService<LawyerPlatformDbContext>()
+                .UserAccounts
+                .AsNoTracking()
+                .Where(account => account.Email == email)
+                .Select(account => account.Id)
+                .SingleAsync(cancellationToken);
+        }
+
+        var expired = CreateToken(accountId, "1", SigningKey, DateTime.UtcNow.AddMinutes(-2));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", expired);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await client.GetAsync("/api/v1/client/profile", cancellationToken)).StatusCode);
+
+        var badSignature = CreateToken(accountId, "1", new string('x', 64), DateTime.UtcNow.AddMinutes(5));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", badSignature);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await client.GetAsync("/api/v1/client/profile", cancellationToken)).StatusCode);
+    }
+
+    private static async Task EnsureClientExistsAsync(
+        HttpClient client,
+        string email,
+        CancellationToken cancellationToken,
+        string phoneNumber = "01234000006")
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = "Credential Version Client",
+                userName = email[..email.IndexOf('@')],
+                email,
+                phoneNumber,
+                password = "StrongPassword1!"
+            },
+            cancellationToken);
+        Assert.True(response.StatusCode is HttpStatusCode.Created or HttpStatusCode.Conflict);
+    }
+
+    private static string CreateToken(
+        Guid accountId,
+        string? credentialVersion,
+        string signingKey,
+        DateTime expiresOnUtc)
+    {
+        var claims = new List<Claim>
+        {
+            new(LawyerPlatformClaimTypes.Subject, accountId.ToString()),
+            new(LawyerPlatformClaimTypes.Email, "credential.version.client@example.test"),
+            new(LawyerPlatformClaimTypes.PreferredUserName, "credential.version.client"),
+            new(LawyerPlatformClaimTypes.Role, AccountRole.Client.ToString()),
+            new(LawyerPlatformClaimTypes.PasswordChangeRequired, "false"),
+            new(LawyerPlatformClaimTypes.PasswordChangeReason, "None")
+        };
+        if (credentialVersion is not null)
+        {
+            claims.Add(new Claim(LawyerPlatformClaimTypes.CredentialVersion, credentialVersion));
+        }
+
+        var token = new JwtSecurityToken(
+            issuer: Issuer,
+            audience: Audience,
+            claims: claims,
+            notBefore: DateTime.UtcNow.AddMinutes(-5),
+            expires: expiresOnUtc,
+            signingCredentials: new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                SecurityAlgorithms.HmacSha256));
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.IntegrationTests\PhaseOneRemainingEndpointsTests.cs ==================== 
 using System.Net;
 using System.Net.Http.Headers;
@@ -57378,6 +60778,139 @@ public sealed class PasswordLifecycleTests
     }
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Accounts\PasswordResetChallengeTests.cs ==================== 
+using LawyerPlatform.Domain.Accounts;
+
+namespace LawyerPlatform.UnitTests.Accounts;
+
+public sealed class PasswordResetChallengeTests
+{
+    private static readonly DateTime NowUtc = new(2026, 8, 26, 8, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void Create_SetsInitialStateAndAllowsVerificationBeforeExpiration()
+    {
+        var challenge = CreateChallenge();
+
+        Assert.Equal(RequestId, challenge.Id);
+        Assert.Equal(UserAccountId, challenge.UserAccountId);
+        Assert.Equal("otp-hash", challenge.OtpHash);
+        Assert.Equal(0, challenge.FailedAttemptCount);
+        Assert.False(challenge.IsVerified);
+        Assert.False(challenge.IsConsumed);
+        Assert.False(challenge.IsInvalidated);
+        Assert.True(challenge.CanVerify(NowUtc.AddMinutes(4), 5));
+    }
+
+    [Fact]
+    public void Otp_CannotBeVerifiedAtOrAfterExpiration()
+    {
+        var challenge = CreateChallenge();
+
+        Assert.True(challenge.IsExpired(NowUtc.AddMinutes(5)));
+        Assert.False(challenge.CanVerify(NowUtc.AddMinutes(5), 5));
+        Assert.True(challenge.Verify(NowUtc.AddMinutes(5), 5).IsFailure);
+    }
+
+    [Fact]
+    public void WrongAttempts_IncrementAndMaximumInvalidatesChallenge()
+    {
+        var challenge = CreateChallenge();
+
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            Assert.True(challenge.RegisterFailedAttempt(NowUtc.AddSeconds(attempt), 5).IsSuccess);
+        }
+
+        Assert.Equal(5, challenge.FailedAttemptCount);
+        Assert.True(challenge.IsInvalidated);
+        Assert.False(challenge.CanVerify(NowUtc.AddMinutes(1), 5));
+        Assert.True(challenge.Verify(NowUtc.AddMinutes(1), 5).IsFailure);
+    }
+
+    [Fact]
+    public void CorrectOtpState_VerifiesAndCanIssueSingleResetToken()
+    {
+        var challenge = CreateChallenge();
+        var verifiedOnUtc = NowUtc.AddMinutes(1);
+
+        Assert.True(challenge.Verify(verifiedOnUtc, 5).IsSuccess);
+        Assert.True(challenge.IsVerified);
+        Assert.False(challenge.CanVerify(verifiedOnUtc, 5));
+        Assert.True(challenge.IssueResetToken(
+            "reset-hash",
+            verifiedOnUtc.AddMinutes(10),
+            verifiedOnUtc).IsSuccess);
+        Assert.True(challenge.CanReset(verifiedOnUtc.AddMinutes(9)));
+        Assert.False(challenge.CanReset(verifiedOnUtc.AddMinutes(10)));
+        Assert.True(challenge.IssueResetToken(
+            "replacement-hash",
+            verifiedOnUtc.AddMinutes(10),
+            verifiedOnUtc).IsFailure);
+    }
+
+    [Fact]
+    public void UnverifiedChallenge_CannotIssueResetToken()
+    {
+        var challenge = CreateChallenge();
+
+        var result = challenge.IssueResetToken(
+            "reset-hash",
+            NowUtc.AddMinutes(10),
+            NowUtc);
+
+        Assert.True(result.IsFailure);
+        Assert.Null(challenge.ResetTokenHash);
+    }
+
+    [Fact]
+    public void ConsumedChallenge_CannotBeReused()
+    {
+        var challenge = CreateVerifiedChallenge();
+
+        Assert.True(challenge.Consume(NowUtc.AddMinutes(2)).IsSuccess);
+        Assert.True(challenge.IsConsumed);
+        Assert.False(challenge.CanReset(NowUtc.AddMinutes(3)));
+        Assert.True(challenge.Consume(NowUtc.AddMinutes(3)).IsFailure);
+        Assert.True(challenge.Verify(NowUtc.AddMinutes(3), 5).IsFailure);
+    }
+
+    [Fact]
+    public void InvalidatedChallenge_CannotBeVerifiedOrConsumed()
+    {
+        var challenge = CreateChallenge();
+
+        Assert.True(challenge.Invalidate(NowUtc.AddMinutes(1)).IsSuccess);
+
+        Assert.True(challenge.IsInvalidated);
+        Assert.False(challenge.CanVerify(NowUtc.AddMinutes(2), 5));
+        Assert.True(challenge.Verify(NowUtc.AddMinutes(2), 5).IsFailure);
+        Assert.True(challenge.Consume(NowUtc.AddMinutes(2)).IsFailure);
+    }
+
+    private static PasswordResetChallenge CreateChallenge()
+        => PasswordResetChallenge.Create(
+            RequestId,
+            UserAccountId,
+            "otp-hash",
+            NowUtc,
+            NowUtc.AddMinutes(5)).Value;
+
+    private static PasswordResetChallenge CreateVerifiedChallenge()
+    {
+        var challenge = CreateChallenge();
+        Assert.True(challenge.Verify(NowUtc.AddMinutes(1), 5).IsSuccess);
+        Assert.True(challenge.IssueResetToken(
+            "reset-hash",
+            NowUtc.AddMinutes(11),
+            NowUtc.AddMinutes(1)).IsSuccess);
+        return challenge;
+    }
+
+    private static readonly Guid RequestId = Guid.Parse("37d7f255-5a77-437f-9941-c67800b93209");
+    private static readonly Guid UserAccountId = Guid.Parse("d44b71a4-4fb5-45c0-bcd0-c79e67c39931");
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Accounts\UserAccountTests.cs ==================== 
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
@@ -57399,6 +60932,7 @@ public sealed class UserAccountTests
         Assert.Equal(AccountStatus.Active, result.Value.Status);
         Assert.True(result.Value.IsFirstLogin);
         Assert.Equal(NowUtc, result.Value.PasswordChangedOnUtc);
+        Assert.Equal(1, result.Value.CredentialVersion);
     }
 
     [Fact]
@@ -57443,6 +60977,7 @@ public sealed class UserAccountTests
         Assert.Equal("new-hash", account.PasswordHash);
         Assert.Equal(changedOnUtc, account.PasswordChangedOnUtc);
         Assert.Equal(changedOnUtc, account.ModifiedOnUtc);
+        Assert.Equal(2, account.CredentialVersion);
     }
 
     [Fact]
@@ -57455,6 +60990,23 @@ public sealed class UserAccountTests
         Assert.True(result.IsFailure);
         Assert.Contains(result.Errors, error => error.Code == "Account.PasswordHashRequired");
         Assert.True(account.IsFirstLogin);
+        Assert.Equal(1, account.CredentialVersion);
+    }
+
+    [Fact]
+    public void ChangePassword_DoesNotOverflowCredentialVersion()
+    {
+        var account = CreateSuperAdmin().Value;
+        typeof(UserAccount)
+            .GetField("<CredentialVersion>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(account, int.MaxValue);
+
+        var result = account.ChangePassword("new-hash", NowUtc.AddMinutes(1));
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(result.Errors, error => error.Code == "Account.CredentialVersionLimitReached");
+        Assert.Equal("hash", account.PasswordHash);
+        Assert.Equal(int.MaxValue, account.CredentialVersion);
     }
 
     [Fact]
@@ -57527,11 +61079,94 @@ public sealed class UserAccountTests
             "01000000000", "hash", NowUtc);
 }
  
+// ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Auth\PasswordResetSecurityTests.cs ==================== 
+using BuildingBlock.Application.Time;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Infrastructure.Authentication;
+using LawyerPlatform.Infrastructure.Options;
+using Microsoft.Extensions.Options;
+
+namespace LawyerPlatform.UnitTests.Auth;
+
+public sealed class PasswordResetSecurityTests
+{
+    private const string Secret = "unit-test-password-reset-hmac-secret-0001";
+
+    [Fact]
+    public void Hasher_UsesDomainSeparatedHmacAndVerifiesValues()
+    {
+        var hasher = CreateHasher();
+        const string value = "483921";
+
+        var otpHash = hasher.HashOtp(value);
+        var resetHash = hasher.HashResetToken(value);
+
+        Assert.NotEqual(value, otpHash);
+        Assert.NotEqual(otpHash, resetHash);
+        Assert.True(hasher.VerifyOtp(value, otpHash));
+        Assert.False(hasher.VerifyOtp("483922", otpHash));
+        Assert.True(hasher.VerifyResetToken(value, resetHash));
+        Assert.False(hasher.VerifyResetToken(value, otpHash));
+        Assert.False(hasher.VerifyOtp(value, "not-base64"));
+    }
+
+    [Fact]
+    public void Generator_CreatesSixDigitOtpAndBase64UrlResetToken()
+    {
+        var generator = new PasswordResetSecretGenerator();
+
+        var otp = generator.GenerateOtp();
+        var firstToken = generator.GenerateResetToken();
+        var secondToken = generator.GenerateResetToken();
+
+        Assert.Matches("^[0-9]{6}$", otp);
+        Assert.Matches("^[A-Za-z0-9_-]{43}$", firstToken);
+        Assert.NotEqual(firstToken, secondToken);
+    }
+
+    [Fact]
+    public void OtpEmail_IsBilingualAvokatooBrandedAndContainsNoResetToken()
+    {
+        var factory = new PasswordResetOtpEmailFactory(
+            new FixedClock(new DateTime(2026, 8, 26, 8, 0, 0, DateTimeKind.Utc)),
+            new FixedBrandingProvider("https://cdn.example.test/avokatoo-footer.png"));
+
+        var message = factory.Create("client@example.test", "000123", 5);
+
+        Assert.Equal(
+            "Avokatoo | رمز إعادة تعيين كلمة المرور | Password Reset Code",
+            message.Subject);
+        Assert.Equal("client@example.test", Assert.Single(message.To));
+        Assert.Contains("000123", message.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("lang=\"ar\"", message.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("lang=\"en\"", message.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Avokatoo", message.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Platform", message.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("resetToken", message.HtmlBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static PasswordResetTokenHasher CreateHasher()
+        => new(Options.Create(new PasswordResetOptions { HmacSecret = Secret }));
+
+    private sealed class FixedClock(DateTime utcNow) : IDateTimeProvider
+    {
+        public DateTime UtcNow { get; } = utcNow;
+    }
+
+    private sealed class FixedBrandingProvider(string footerImageUrl) : IEmailBrandingProvider
+    {
+        public string FooterImageUrl { get; } = footerImageUrl;
+    }
+}
+ 
 // ==================== E:\StarterProject\tests\LawyerPlatform.UnitTests\Auth\ValidatorTests.cs ==================== 
 using BuildingBlock.Application.Abstraction.Encryption;
 using FluentValidation;
 using LawyerPlatform.Application.Features.Auth.ChangePassword;
 using LawyerPlatform.Application.Features.Auth.Login;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.ResetPassword;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.VerifyOtp;
 using LawyerPlatform.Application.Features.Auth.RegisterClient;
 using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
 
@@ -57603,6 +61238,42 @@ public sealed class ValidatorTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.PropertyName == nameof(ChangePasswordCommand.CurrentPassword));
         Assert.Contains(result.Errors, error => error.PropertyName == nameof(ChangePasswordCommand.NewPassword));
+    }
+
+    [Fact]
+    public void RequestPasswordResetOtp_RejectsInvalidEmail()
+    {
+        var result = new RequestPasswordResetOtpCommandValidator()
+            .Validate(new RequestPasswordResetOtpCommand("not-an-email"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(RequestPasswordResetOtpCommand.Email));
+    }
+
+    [Theory]
+    [InlineData("12345")]
+    [InlineData("1234567")]
+    [InlineData("12A456")]
+    public void VerifyPasswordResetOtp_RequiresExactlySixDigits(string otp)
+    {
+        var result = new VerifyPasswordResetOtpCommandValidator()
+            .Validate(new VerifyPasswordResetOtpCommand(Guid.NewGuid(), otp));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(VerifyPasswordResetOtpCommand.Otp));
+    }
+
+    [Fact]
+    public void ResetPassword_RequiresMatchingConfirmation()
+    {
+        var result = new ResetPasswordCommandValidator().Validate(new ResetPasswordCommand(
+            Guid.NewGuid(),
+            "token",
+            "StrongPassword1",
+            "DifferentPassword1"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorCode == "PasswordReset.PasswordConfirmationMismatch");
     }
 
     private static RegisterClientCommand ValidClient()

@@ -21,6 +21,7 @@ internal sealed class UserAccountConfiguration : IWriteEntityConfiguration<UserA
         builder.Property(account => account.Status).HasConversion<int>().IsRequired();
         builder.Property(account => account.IsFirstLogin).IsRequired();
         builder.Property(account => account.PasswordChangedOnUtc).IsRequired();
+        builder.Property(account => account.CredentialVersion).HasDefaultValue(1).IsRequired();
         builder.Property(account => account.RowVersion).IsRowVersion().IsConcurrencyToken();
 
         builder.HasIndex(account => account.NormalizedUserName)

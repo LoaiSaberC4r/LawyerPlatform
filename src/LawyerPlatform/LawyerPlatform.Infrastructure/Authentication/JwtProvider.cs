@@ -35,7 +35,8 @@ internal sealed class JwtProvider(
             new Claim(LawyerPlatformClaimTypes.PreferredUserName, account.UserName),
             new Claim(LawyerPlatformClaimTypes.Role, account.Role.ToString()),
             new Claim(LawyerPlatformClaimTypes.PasswordChangeRequired, passwordLifecycle.PasswordChangeRequired.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()),
-            new Claim(LawyerPlatformClaimTypes.PasswordChangeReason, passwordLifecycle.PasswordChangeReason.ToString())
+            new Claim(LawyerPlatformClaimTypes.PasswordChangeReason, passwordLifecycle.PasswordChangeReason.ToString()),
+            new Claim(LawyerPlatformClaimTypes.CredentialVersion, account.CredentialVersion.ToString(CultureInfo.InvariantCulture))
         };
 
         var credentials = new SigningCredentials(

@@ -8,4 +8,5 @@ public static class LawyerPlatformClaimTypes
     public const string Role = "role";
     public const string PasswordChangeRequired = "password_change_required";
     public const string PasswordChangeReason = "password_change_reason";
+    public const string CredentialVersion = "credential_version";
 }

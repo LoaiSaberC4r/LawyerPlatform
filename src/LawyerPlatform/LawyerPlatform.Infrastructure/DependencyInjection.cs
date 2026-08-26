@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.Text;
 
 namespace LawyerPlatform.Infrastructure;
 
@@ -59,6 +60,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(PasswordLifecycleOptions.SectionName))
             .Validate(options => options.ExpiryDays > 0, "Password expiry days must be greater than zero.")
             .ValidateOnStart();
+        services.AddOptions<PasswordResetOptions>()
+            .Bind(configuration.GetSection(PasswordResetOptions.SectionName))
+            .Validate(ValidatePasswordReset, "Password reset options are invalid.")
+            .ValidateOnStart();
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .Validate(ValidateJwt, "JWT options are invalid.")
@@ -92,6 +97,10 @@ public static class DependencyInjection
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
         services.AddSingleton<IJwtProvider, JwtProvider>();
+        services.AddSingleton<IPasswordResetPolicy, PasswordResetPolicy>();
+        services.AddSingleton<IPasswordResetSecretGenerator, PasswordResetSecretGenerator>();
+        services.AddSingleton<IPasswordResetTokenHasher, PasswordResetTokenHasher>();
+        services.AddScoped<IUserAuthenticationStateReader, UserAuthenticationStateReader>();
         services.AddSingleton<ILawyerDocumentPolicy, LawyerDocumentPolicy>();
         services.AddSingleton<IConsultationReferenceNumberGenerator, ConsultationReferenceNumberGenerator>();
         services.AddSingleton<IConsultationSchedulingTimeZone, ConsultationSchedulingTimeZone>();
@@ -104,10 +113,10 @@ public static class DependencyInjection
         services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();
-        services.AddScoped<ISeeder, SuperAdminSeeder>();
-        services.AddScoped<ISeeder, GovernorateSeeder>();
-        services.AddScoped<ISeeder, CitySeeder>();
-        services.AddScoped<ISeeder, AreaSeeder>();
+        //services.AddScoped<ISeeder, SuperAdminSeeder>();
+        //services.AddScoped<ISeeder, GovernorateSeeder>();
+        //services.AddScoped<ISeeder, CitySeeder>();
+        //services.AddScoped<ISeeder, AreaSeeder>();
         services.AddScoped<ISeeder, LegalSpecializationSeeder>();
         services.AddScoped<IEnsureSeeding, EnsureSeeding>();
         services.AddSingleton<IDatabaseMigrationService, EfCoreDatabaseMigrationService>();
@@ -139,6 +148,15 @@ public static class DependencyInjection
            !string.IsNullOrWhiteSpace(options.Audience) &&
            options.Key.Length >= 64 &&
            options.AccessTokenExpirationMinutes > 0;
+
+    private static bool ValidatePasswordReset(PasswordResetOptions options)
+        => options.OtpLength == 6 &&
+           options.OtpExpirationMinutes is > 0 and <= 30 &&
+           options.MaximumVerificationAttempts is > 0 and <= 10 &&
+           options.ResendCooldownSeconds is >= 30 and <= 3600 &&
+           options.ResetTokenExpirationMinutes is > 0 and <= 60 &&
+           Encoding.UTF8.GetByteCount(options.HmacSecret) >= 32 &&
+           !options.HmacSecret.StartsWith("replace-with", StringComparison.OrdinalIgnoreCase);
 
     private static bool ValidateLawyerDocuments(LawyerDocumentOptions options)
         => options.MaximumFileSizeBytes > 0 &&
