@@ -315,7 +315,10 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             .Where(message => message.AggregateId == pendingRejectedLawyer.LawyerId)
             .ToListAsync(cancellationToken);
 
-        Assert.Equal(6, lifecycleNotifications.Count);
+        Assert.Equal(7, lifecycleNotifications.Count);
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerRegistrationWelcome &&
+            message.RecipientEmail == "ahmed.lifecycle@example.test");
         Assert.Equal(2, lifecycleNotifications.Count(message =>
             message.NotificationType == EmailNotificationType.LawyerSubmittedForApproval &&
             message.RecipientEmail == "admin@lawyerplatform.test"));
@@ -328,9 +331,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             message.NotificationType == EmailNotificationType.LawyerSuspended);
         Assert.Contains(lifecycleNotifications, message =>
             message.NotificationType == EmailNotificationType.LawyerReactivated);
-        Assert.Single(rejectedNotifications);
-        Assert.Equal(EmailNotificationType.LawyerRejected, rejectedNotifications[0].NotificationType);
-        Assert.Equal("rejected.notification@example.test", rejectedNotifications[0].RecipientEmail);
+        var rejectedNotification = Assert.Single(rejectedNotifications);
+        Assert.Equal(EmailNotificationType.LawyerRejected, rejectedNotification.NotificationType);
+        Assert.Equal("rejected.notification@example.test", rejectedNotification.RecipientEmail);
         Assert.All(lifecycleNotifications.Concat(rejectedNotifications), message =>
         {
             Assert.DoesNotContain("Clarified commercial", message.HtmlBody, StringComparison.Ordinal);

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using LawyerPlatform.Application.Abstractions.Seeding;
+using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -62,6 +63,146 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         {
             Assert.True(paths.TryGetProperty(path, out _), $"Swagger path '{path}' is missing.");
         }
+    }
+
+    [Fact]
+    public async Task SuccessfulRegistrations_QueueWelcomeEmails_AndDuplicateDoesNotQueueAnother()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        var cancellationToken = TestContext.Current.CancellationToken;
+        const string clientFullName = "Registration Email Client";
+        const string clientUserName = "registration.email.client";
+        const string clientEmail = "registration.email.client@example.test";
+        const string clientPassword = "ClientWelcomePassword1";
+        const string duplicateEmail = "registration.email.duplicate@example.test";
+        const string lawyerFullName = "Registration Email Lawyer";
+        const string lawyerUserName = "registration.email.lawyer";
+        const string lawyerEmail = "registration.email.lawyer@example.test";
+        const string lawyerPassword = "LawyerWelcomePassword1";
+
+        var clientRegistration = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = clientFullName,
+                userName = clientUserName,
+                email = clientEmail,
+                phoneNumber = "01000000101",
+                password = clientPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, clientRegistration.StatusCode);
+        var clientBody = await clientRegistration.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var clientAccountId = clientBody.GetProperty("userAccountId").GetGuid();
+        var clientProfileId = clientBody.GetProperty("clientProfileId").GetGuid();
+        Assert.Equal(clientUserName, clientBody.GetProperty("userName").GetString());
+        Assert.Equal("Client", clientBody.GetProperty("role").GetString());
+        Assert.Equal("Active", clientBody.GetProperty("status").GetString());
+        Assert.Equal(5, clientBody.EnumerateObject().Count());
+
+        var lawyerRegistration = await client.PostAsJsonAsync(
+            "/api/v1/auth/lawyers/register",
+            new
+            {
+                fullName = lawyerFullName,
+                userName = lawyerUserName,
+                email = lawyerEmail,
+                phoneNumber = "01000000102",
+                password = lawyerPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, lawyerRegistration.StatusCode);
+        var lawyerBody = await lawyerRegistration.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var lawyerAccountId = lawyerBody.GetProperty("userAccountId").GetGuid();
+        var lawyerProfileId = lawyerBody.GetProperty("lawyerProfileId").GetGuid();
+        Assert.Equal(lawyerUserName, lawyerBody.GetProperty("userName").GetString());
+        Assert.Equal("Lawyer", lawyerBody.GetProperty("role").GetString());
+        Assert.Equal("Active", lawyerBody.GetProperty("accountStatus").GetString());
+        Assert.Equal("Draft", lawyerBody.GetProperty("approvalStatus").GetString());
+        Assert.Equal(6, lawyerBody.EnumerateObject().Count());
+
+        var duplicateRegistration = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = "Duplicate Registration Email Client",
+                userName = clientUserName.ToUpperInvariant(),
+                email = duplicateEmail,
+                phoneNumber = "01000000103",
+                password = "DuplicateWelcomePassword1"
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, duplicateRegistration.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        Assert.True(await dbContext.UserAccounts
+            .AsNoTracking()
+            .AnyAsync(account => account.Id == clientAccountId, cancellationToken));
+        Assert.True(await dbContext.ClientProfiles
+            .AsNoTracking()
+            .AnyAsync(profile => profile.Id == clientProfileId, cancellationToken));
+        Assert.True(await dbContext.UserAccounts
+            .AsNoTracking()
+            .AnyAsync(account => account.Id == lawyerAccountId, cancellationToken));
+        Assert.True(await dbContext.LawyerProfiles
+            .AsNoTracking()
+            .AnyAsync(
+                profile => profile.Id == lawyerProfileId &&
+                           profile.ApprovalStatus == LawyerPlatform.Domain.Lawyers.LawyerApprovalStatus.Draft,
+                cancellationToken));
+
+        var clientWelcome = Assert.Single(await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.AggregateId == clientProfileId &&
+                message.NotificationType == EmailNotificationType.ClientRegistrationWelcome)
+            .ToListAsync(cancellationToken));
+        Assert.Equal(clientEmail, clientWelcome.RecipientEmail);
+        Assert.Equal(
+            $"{EmailNotificationType.ClientRegistrationWelcome}:{clientProfileId:N}:registration:{clientAccountId:N}",
+            clientWelcome.IdempotencyKey);
+        Assert.Contains("Welcome to Avokatoo", clientWelcome.Subject, StringComparison.Ordinal);
+        Assert.Contains(clientFullName, clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(clientEmail, clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(clientUserName, clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("searching for Lawyers", clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("consultation requests", clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Submit For Approval", clientWelcome.HtmlBody, StringComparison.Ordinal);
+        AssertDoesNotContainSecrets(clientWelcome.HtmlBody, clientPassword);
+
+        var lawyerWelcome = Assert.Single(await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.AggregateId == lawyerProfileId &&
+                message.NotificationType == EmailNotificationType.LawyerRegistrationWelcome)
+            .ToListAsync(cancellationToken));
+        Assert.Equal(lawyerEmail, lawyerWelcome.RecipientEmail);
+        Assert.Equal(
+            $"{EmailNotificationType.LawyerRegistrationWelcome}:{lawyerProfileId:N}:registration:{lawyerAccountId:N}",
+            lawyerWelcome.IdempotencyKey);
+        Assert.Contains("Welcome to Avokatoo", lawyerWelcome.Subject, StringComparison.Ordinal);
+        Assert.Contains(lawyerFullName, lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(lawyerEmail, lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(lawyerUserName, lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Draft", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Complete your professional profile", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Submit For Approval", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("will not appear in public Lawyer search", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        AssertDoesNotContainSecrets(lawyerWelcome.HtmlBody, lawyerPassword);
+
+        var duplicateAttemptWelcomes = await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.NotificationType == EmailNotificationType.ClientRegistrationWelcome &&
+                (message.RecipientEmail == clientEmail || message.RecipientEmail == duplicateEmail))
+            .ToListAsync(cancellationToken);
+        var originalWelcome = Assert.Single(duplicateAttemptWelcomes);
+        Assert.Equal(clientProfileId, originalWelcome.AggregateId);
+        Assert.Equal(clientEmail, originalWelcome.RecipientEmail);
     }
 
     [Fact]
@@ -175,6 +316,14 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
     {
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         return body.GetProperty("accessToken").GetString()!;
+    }
+
+    private static void AssertDoesNotContainSecrets(string htmlBody, string rawPassword)
+    {
+        Assert.DoesNotContain(rawPassword, htmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("PasswordHash", htmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AccessToken", htmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("RefreshToken", htmlBody, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task VerifySuperAdminSeederIsIdempotentAsync(CancellationToken cancellationToken)

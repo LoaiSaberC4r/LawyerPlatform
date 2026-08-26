@@ -3,6 +3,7 @@ using BuildingBlock.Domain.Specification;
 using System.Globalization;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
@@ -25,6 +26,44 @@ internal sealed class EmailNotificationCoordinator(
     IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
     IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> consultationReader)
 {
+    public Task QueueLawyerRegistrationWelcomeAsync(
+        LawyerProfile profile,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return QueueAsync(
+            EmailNotificationType.LawyerRegistrationWelcome,
+            profile.Id,
+            "registration",
+            profile.UserAccountId.ToString("N"),
+            profile.UserAccount.Email,
+            new RegistrationWelcomeEmailNotificationModel(
+                profile.FullName,
+                profile.UserAccount.Email,
+                profile.UserAccount.UserName),
+            cancellationToken);
+    }
+
+    public Task QueueClientRegistrationWelcomeAsync(
+        ClientProfile profile,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return QueueAsync(
+            EmailNotificationType.ClientRegistrationWelcome,
+            profile.Id,
+            "registration",
+            profile.UserAccountId.ToString("N"),
+            profile.UserAccount.Email,
+            new RegistrationWelcomeEmailNotificationModel(
+                profile.FullName,
+                profile.UserAccount.Email,
+                profile.UserAccount.UserName),
+            cancellationToken);
+    }
+
     public async Task QueueLawyerTransitionAsync(
         LawyerProfile profile,
         LawyerApprovalStatusHistory history,
@@ -182,7 +221,7 @@ internal sealed class EmailNotificationCoordinator(
     }
 
     public Task QueueClientTransitionAsync(
-        LawyerPlatform.Domain.Clients.ClientProfile profile,
+        ClientProfile profile,
         AccountStatus oldStatus,
         AccountStatus newStatus,
         DateTime changedOnUtc,
