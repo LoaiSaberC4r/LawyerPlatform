@@ -29,8 +29,31 @@ public sealed class BilingualEmailNotificationFactoryTests
         { EmailNotificationType.ConsultationRejected, Consultation("سبب آمن"), "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update", "Rejected" },
         { EmailNotificationType.ConsultationCompleted, Consultation(), "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed", "Completed" },
         { EmailNotificationType.ClientSuspended, Client(), "Avokatoo | تم تعليق حسابك | Your Account Has Been Suspended", "Suspended" },
-        { EmailNotificationType.ClientReactivated, Client(), "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" }
+        { EmailNotificationType.ClientReactivated, Client(), "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" },
+        { EmailNotificationType.LawyerRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك كمحامٍ | Welcome to Avokatoo", "Draft" },
+        { EmailNotificationType.ClientRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك | Welcome to Avokatoo", "searching for Lawyers" }
     };
+
+    [Fact]
+    public void EmailNotificationType_PreservesPersistedNumericValues()
+    {
+        Assert.Equal(1, (int)EmailNotificationType.LawyerSubmittedForApproval);
+        Assert.Equal(2, (int)EmailNotificationType.LawyerApproved);
+        Assert.Equal(3, (int)EmailNotificationType.LawyerChangesRequested);
+        Assert.Equal(4, (int)EmailNotificationType.LawyerRejected);
+        Assert.Equal(5, (int)EmailNotificationType.LawyerSuspended);
+        Assert.Equal(6, (int)EmailNotificationType.LawyerReactivated);
+        Assert.Equal(7, (int)EmailNotificationType.ConsultationRequestCreatedForLawyer);
+        Assert.Equal(8, (int)EmailNotificationType.ConsultationRequestCreatedConfirmation);
+        Assert.Equal(9, (int)EmailNotificationType.ConsultationUnderReview);
+        Assert.Equal(10, (int)EmailNotificationType.ConsultationApproved);
+        Assert.Equal(11, (int)EmailNotificationType.ConsultationRejected);
+        Assert.Equal(12, (int)EmailNotificationType.ConsultationCompleted);
+        Assert.Equal(13, (int)EmailNotificationType.ClientSuspended);
+        Assert.Equal(14, (int)EmailNotificationType.ClientReactivated);
+        Assert.Equal(15, (int)EmailNotificationType.LawyerRegistrationWelcome);
+        Assert.Equal(16, (int)EmailNotificationType.ClientRegistrationWelcome);
+    }
 
     [Theory]
     [MemberData(nameof(Templates))]
@@ -126,6 +149,98 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("&lt;script&gt;", lawyer.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("&lt;script&gt;", consultation.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("&amp; injected", consultation.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LawyerRegistrationWelcome_ExplainsDraftOnboardingAndApprovalBeforeVisibility()
+    {
+        var result = _factory.Create(
+            EmailNotificationType.LawyerRegistrationWelcome,
+            Registration());
+
+        Assert.Contains("المستخدم Registrant", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant@example.test", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant.user", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("مسودة", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Draft", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Complete your professional profile", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("office information and location", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("legal specializations", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("required professional documents", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Submit For Approval", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("administration approves it", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("will not appear in public Lawyer search", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientRegistrationWelcome_ExplainsClientServicesWithoutLawyerOnboarding()
+    {
+        var result = _factory.Create(
+            EmailNotificationType.ClientRegistrationWelcome,
+            Registration());
+
+        Assert.Contains("المستخدم Registrant", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant@example.test", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant.user", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Welcome to Avokatoo", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("searching for Lawyers", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("consultation requests", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Submit For Approval", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("professional documents", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("administration approves it", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RegistrationWelcome_HtmlEncodesIdentityValuesAndCannotContainAPassword()
+    {
+        const string unsafeFullName = "<script>alert(1)</script>";
+        const string unsafeEmail = "mail+test<&>\"'@example.test";
+        const string unsafeUserName = "user<&>\"'";
+        const string password = "RegistrationPassword1";
+        var model = new RegistrationWelcomeEmailNotificationModel(
+            unsafeFullName,
+            unsafeEmail,
+            unsafeUserName);
+
+        foreach (var type in new[]
+                 {
+                     EmailNotificationType.LawyerRegistrationWelcome,
+                     EmailNotificationType.ClientRegistrationWelcome
+                 })
+        {
+            var result = _factory.Create(type, model);
+
+            Assert.DoesNotContain("<script>", result.HtmlBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(unsafeEmail, result.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(unsafeUserName, result.HtmlBody, StringComparison.Ordinal);
+            Assert.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", result.HtmlBody, StringComparison.Ordinal);
+            Assert.Contains("mail+test&lt;&amp;&gt;&quot;&#39;@example.test", result.HtmlBody, StringComparison.Ordinal);
+            Assert.Contains("user&lt;&amp;&gt;&quot;&#39;", result.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(password, result.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("PasswordHash", result.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.DoesNotContain(
+            typeof(RegistrationWelcomeEmailNotificationModel).GetProperties(),
+            property => property.Name.Contains("Password", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Create_SharedLayoutUsesLargerTypographyAndPreservesBilingualBranding()
+    {
+        var result = _factory.Create(
+            EmailNotificationType.ClientRegistrationWelcome,
+            Registration());
+
+        Assert.Contains("font-size:20px", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("font-size:28px", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("line-height:1.7", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("dir=\"rtl\"", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("dir=\"ltr\"", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Avokatoo", result.HtmlBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -349,6 +464,8 @@ public sealed class BilingualEmailNotificationFactoryTests
             _factory.Create((EmailNotificationType)999, Client()));
         Assert.Throws<ArgumentException>(() =>
             _factory.Create(EmailNotificationType.LawyerApproved, Client()));
+        Assert.Throws<ArgumentException>(() =>
+            _factory.Create(EmailNotificationType.ClientRegistrationWelcome, Client()));
     }
 
     private static LawyerEmailNotificationModel Lawyer(string? reason = null)
@@ -365,6 +482,9 @@ public sealed class BilingualEmailNotificationFactoryTests
 
     private static ClientEmailNotificationModel Client()
         => new("العميل Client");
+
+    private static RegistrationWelcomeEmailNotificationModel Registration()
+        => new("المستخدم Registrant", "registrant@example.test", "registrant.user");
 
     private static int CountOccurrences(string value, string searchValue)
     {

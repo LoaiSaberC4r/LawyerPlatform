@@ -5,6 +5,7 @@ using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Features.Auth.Common;
+using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
@@ -16,7 +17,8 @@ internal sealed class RegisterClientCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IPasswordService passwordService,
     IAccountIdentifierNormalizer normalizer,
-    IDateTimeProvider clock)
+    IDateTimeProvider clock,
+    EmailNotificationCoordinator emailNotifications)
     : ICommandHandler<RegisterClientCommand, RegisterClientResponse>
 {
     public async Task<Result<RegisterClientResponse>> Handle(RegisterClientCommand command, CancellationToken cancellationToken)
@@ -66,6 +68,7 @@ internal sealed class RegisterClientCommandHandler(
 
         await unitOfWork.WriteRepository<UserAccount>().AddAsync(accountResult.Value, cancellationToken);
         await unitOfWork.WriteRepository<ClientProfile>().AddAsync(profileResult.Value, cancellationToken);
+        await emailNotifications.QueueClientRegistrationWelcomeAsync(profileResult.Value, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<RegisterClientResponse>.Ok(new RegisterClientResponse(

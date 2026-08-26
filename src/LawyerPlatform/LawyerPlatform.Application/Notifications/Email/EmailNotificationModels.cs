@@ -25,6 +25,11 @@ public sealed record ConsultationEmailNotificationModel(
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;
 
+public sealed record RegistrationWelcomeEmailNotificationModel(
+    string FullName,
+    string Email,
+    string UserName) : EmailNotificationModel;
+
 public sealed record EmailNotificationContent(
     string Subject,
     string HtmlBody);

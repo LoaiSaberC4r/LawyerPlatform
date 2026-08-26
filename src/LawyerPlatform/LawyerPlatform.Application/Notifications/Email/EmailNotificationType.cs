@@ -15,5 +15,7 @@ public enum EmailNotificationType
     ConsultationRejected = 11,
     ConsultationCompleted = 12,
     ClientSuspended = 13,
-    ClientReactivated = 14
+    ClientReactivated = 14,
+    LawyerRegistrationWelcome = 15,
+    ClientRegistrationWelcome = 16
 }

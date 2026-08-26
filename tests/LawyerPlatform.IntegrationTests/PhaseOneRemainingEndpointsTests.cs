@@ -222,7 +222,10 @@ public sealed class ClientProfileAndAdminClientManagementEndpointsTests(CustomWe
                 .AsNoTracking()
                 .Where(message => message.AggregateId == first.ClientProfileId)
                 .ToListAsync(cancellationToken);
-            Assert.Equal(2, notifications.Count);
+            Assert.Equal(3, notifications.Count);
+            Assert.Contains(notifications, message =>
+                message.NotificationType == EmailNotificationType.ClientRegistrationWelcome &&
+                message.RecipientEmail == "phase1.client.one@example.test");
             Assert.Contains(notifications, message =>
                 message.NotificationType == EmailNotificationType.ClientSuspended &&
                 message.RecipientEmail == "phase1.client.one@example.test");

@@ -34,9 +34,85 @@ internal sealed class BilingualEmailNotificationFactory(
             EmailNotificationType.ConsultationCompleted => ConsultationCompleted(RequireConsultation(model)),
             EmailNotificationType.ClientSuspended => ClientSuspended(RequireClient(model)),
             EmailNotificationType.ClientReactivated => ClientReactivated(RequireClient(model)),
+            EmailNotificationType.LawyerRegistrationWelcome => LawyerRegistrationWelcome(RequireRegistration(model)),
+            EmailNotificationType.ClientRegistrationWelcome => ClientRegistrationWelcome(RequireRegistration(model)),
             _ => throw new ArgumentOutOfRangeException(nameof(notificationType), notificationType, "Unknown email notification type.")
         };
     }
+
+    private EmailNotificationContent LawyerRegistrationWelcome(RegistrationWelcomeEmailNotificationModel model)
+        => Build(
+            "Avokatoo | مرحبًا بك كمحامٍ | Welcome to Avokatoo",
+            [
+                Lines($"مرحبًا {model.FullName}،"),
+                Lines("أهلًا بك في Avokatoo."),
+                Lines("تم إنشاء حساب المحامي الخاص بك بنجاح."),
+                Lines("بيانات حسابك:"),
+                Lines("البريد الإلكتروني:", model.Email),
+                Lines("اسم المستخدم:", model.UserName),
+                Lines("حالة ملف المحامي الحالية:", "مسودة"),
+                Lines("حتى يظهر ملفك للعملاء على منصة Avokatoo، يجب استكمال ملفك المهني وإرساله للمراجعة والاعتماد."),
+                Lines(
+                    "الخطوات المطلوبة:",
+                    "1. تسجيل الدخول إلى حسابك.",
+                    "2. استكمال بيانات الملف المهني.",
+                    "3. إضافة بيانات وموقع المكتب.",
+                    "4. اختيار التخصصات القانونية.",
+                    "5. رفع المستندات المهنية المطلوبة.",
+                    "6. إرسال الملف للمراجعة من خلال Submit For Approval."),
+                Lines("بعد إرسال الملف، سيقوم فريق الإدارة بمراجعته."),
+                Lines("لن يظهر ملفك في البحث العام ولن يتم اعتباره ملف محامٍ معتمد حتى تتم الموافقة عليه من الإدارة وفقًا لقواعد المنصة."),
+                Lines("نتطلع إلى وجودك معنا على Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
+            ],
+            [
+                Lines($"Hello {model.FullName},"),
+                Lines("Welcome to Avokatoo."),
+                Lines("Your Lawyer account has been created successfully."),
+                Lines("Your account details:"),
+                Lines("Email:", model.Email),
+                Lines("User Name:", model.UserName),
+                Lines("Current Lawyer profile status:", "Draft"),
+                Lines("To make your Lawyer profile available to clients on Avokatoo, you must complete your professional profile and submit it for review and approval."),
+                Lines(
+                    "Next steps:",
+                    "1. Sign in to your account.",
+                    "2. Complete your professional profile.",
+                    "3. Add your office information and location.",
+                    "4. Select your legal specializations.",
+                    "5. Upload the required professional documents.",
+                    "6. Submit your profile using Submit For Approval."),
+                Lines("After submission, the administration team will review your profile."),
+                Lines("Your profile will not appear in public Lawyer search and will not be considered approved until the administration approves it according to the platform rules."),
+                Lines("We look forward to having you on Avokatoo."),
+                Lines("Regards,", "Avokatoo")
+            ]);
+
+    private EmailNotificationContent ClientRegistrationWelcome(RegistrationWelcomeEmailNotificationModel model)
+        => Build(
+            "Avokatoo | مرحبًا بك | Welcome to Avokatoo",
+            [
+                Lines($"مرحبًا {model.FullName}،"),
+                Lines("أهلًا بك في Avokatoo."),
+                Lines("تم إنشاء حسابك بنجاح."),
+                Lines("بيانات حسابك:"),
+                Lines("البريد الإلكتروني:", model.Email),
+                Lines("اسم المستخدم:", model.UserName),
+                Lines("يمكنك الآن تسجيل الدخول إلى حسابك والاستفادة من خدمات المنصة، بما في ذلك البحث عن المحامين، الاطلاع على ملفات المحامين المعتمدين، إرسال طلبات الاستشارة، ومتابعة طلباتك الحالية والسابقة."),
+                Lines("يسعدنا انضمامك إلى Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
+            ],
+            [
+                Lines($"Hello {model.FullName},"),
+                Lines("Welcome to Avokatoo."),
+                Lines("Your account has been created successfully."),
+                Lines("Your account details:"),
+                Lines("Email:", model.Email),
+                Lines("User Name:", model.UserName),
+                Lines("You can now sign in and use Avokatoo services, including searching for Lawyers, viewing approved Lawyer profiles, submitting consultation requests, and following your current and previous requests."),
+                Lines("We are happy to have you with us."),
+                Lines("Regards,", "Avokatoo")
+            ]);
 
     private EmailNotificationContent LawyerSubmitted(LawyerEmailNotificationModel model)
         => Build(
@@ -384,15 +460,15 @@ internal sealed class BilingualEmailNotificationFactory(
     {
         var body = new StringBuilder(2048);
         body.Append("<!doctype html><html><head><meta charset=\"utf-8\"></head>")
-            .Append("<body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.6\">")
+            .Append("<body style=\"font-family:Arial,sans-serif;color:#222;font-size:20px;line-height:1.7\">")
             .Append("<div style=\"max-width:680px;margin:0 auto\">")
-            .Append("<h2 style=\"margin-bottom:24px\">Avokatoo</h2>")
+            .Append("<h2 style=\"font-size:28px;margin-bottom:24px\">Avokatoo</h2>")
             .Append("<section dir=\"rtl\" lang=\"ar\" style=\"text-align:right\">")
             .AppendJoin(string.Empty, arabicParagraphs)
             .Append("</section><hr style=\"border:0;border-top:1px solid #bbb;margin:28px 0\">")
             .Append("<section dir=\"ltr\" lang=\"en\" style=\"text-align:left\">")
             .AppendJoin(string.Empty, englishParagraphs)
-            .Append("</section><footer style=\"margin-top:28px;color:#666\">")
+            .Append("</section><footer style=\"margin-top:28px;color:#666;font-size:20px\">")
             .Append("Avokatoo<br>&copy; ")
             .Append(clock.UtcNow.Year)
             .Append("</footer>")
@@ -515,6 +591,10 @@ internal sealed class BilingualEmailNotificationFactory(
     private static ClientEmailNotificationModel RequireClient(EmailNotificationModel model)
         => model as ClientEmailNotificationModel
            ?? throw new ArgumentException("A client notification model is required.", nameof(model));
+
+    private static RegistrationWelcomeEmailNotificationModel RequireRegistration(EmailNotificationModel model)
+        => model as RegistrationWelcomeEmailNotificationModel
+           ?? throw new ArgumentException("A registration welcome notification model is required.", nameof(model));
 
     private static string RequireReason(LawyerEmailNotificationModel model)
         => !string.IsNullOrWhiteSpace(model.Reason)
