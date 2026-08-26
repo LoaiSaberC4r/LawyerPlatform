@@ -2,6 +2,9 @@ using BuildingBlock.Application.Abstraction.Encryption;
 using FluentValidation;
 using LawyerPlatform.Application.Features.Auth.ChangePassword;
 using LawyerPlatform.Application.Features.Auth.Login;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.RequestOtp;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.ResetPassword;
+using LawyerPlatform.Application.Features.Auth.ForgotPassword.VerifyOtp;
 using LawyerPlatform.Application.Features.Auth.RegisterClient;
 using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
 
@@ -73,6 +76,42 @@ public sealed class ValidatorTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.PropertyName == nameof(ChangePasswordCommand.CurrentPassword));
         Assert.Contains(result.Errors, error => error.PropertyName == nameof(ChangePasswordCommand.NewPassword));
+    }
+
+    [Fact]
+    public void RequestPasswordResetOtp_RejectsInvalidEmail()
+    {
+        var result = new RequestPasswordResetOtpCommandValidator()
+            .Validate(new RequestPasswordResetOtpCommand("not-an-email"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(RequestPasswordResetOtpCommand.Email));
+    }
+
+    [Theory]
+    [InlineData("12345")]
+    [InlineData("1234567")]
+    [InlineData("12A456")]
+    public void VerifyPasswordResetOtp_RequiresExactlySixDigits(string otp)
+    {
+        var result = new VerifyPasswordResetOtpCommandValidator()
+            .Validate(new VerifyPasswordResetOtpCommand(Guid.NewGuid(), otp));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(VerifyPasswordResetOtpCommand.Otp));
+    }
+
+    [Fact]
+    public void ResetPassword_RequiresMatchingConfirmation()
+    {
+        var result = new ResetPasswordCommandValidator().Validate(new ResetPasswordCommand(
+            Guid.NewGuid(),
+            "token",
+            "StrongPassword1",
+            "DifferentPassword1"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorCode == "PasswordReset.PasswordConfirmationMismatch");
     }
 
     private static RegisterClientCommand ValidClient()

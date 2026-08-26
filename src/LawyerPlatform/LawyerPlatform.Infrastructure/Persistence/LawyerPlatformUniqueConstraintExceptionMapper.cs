@@ -18,7 +18,9 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
         if (exception is DbUpdateConcurrencyException)
         {
             var concurrencyException = (DbUpdateConcurrencyException)exception;
-            error = concurrencyException.Entries.Any(entry => entry.Entity is LawyerConsultationSettings)
+            error = concurrencyException.Entries.Any(entry => entry.Entity is PasswordResetChallenge)
+                ? PasswordResetErrors.ConcurrencyConflict
+                : concurrencyException.Entries.Any(entry => entry.Entity is LawyerConsultationSettings)
                 ? LawyerErrors.ConsultationSettingsConcurrencyConflict
                 : concurrencyException.Entries.Any(entry => entry.Entity is Governorate)
                 ? GovernorateErrors.ConcurrencyConflict
@@ -50,6 +52,7 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_UserAccounts_NormalizedUserName", StringComparison.Ordinal) => AccountErrors.UserNameAlreadyExists,
             var message when message.Contains("UX_UserAccounts_NormalizedEmail", StringComparison.Ordinal) => AccountErrors.EmailAlreadyExists,
             var message when message.Contains("UX_UserAccounts_PhoneNumber", StringComparison.Ordinal) => AccountErrors.PhoneNumberAlreadyExists,
+            var message when message.Contains("UX_PasswordResetChallenges_Current_UserAccountId", StringComparison.Ordinal) => PasswordResetErrors.ConcurrencyConflict,
             var message when message.Contains("UX_ClientProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("ClientProfile.AccountAlreadyLinked", "The account already has a client profile."),
             var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", "The account already has a lawyer profile."),
             var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,

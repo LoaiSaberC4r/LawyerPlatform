@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<AdminClientLifecycleService>();
         services.AddScoped<EmailNotificationCoordinator>();
         services.AddSingleton<IEmailNotificationFactory, BilingualEmailNotificationFactory>();
+        services.AddSingleton<IPasswordResetOtpEmailFactory, PasswordResetOtpEmailFactory>();
 
         return services;
     }

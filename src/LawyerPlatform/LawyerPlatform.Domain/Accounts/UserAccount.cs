@@ -33,6 +33,7 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
         Status = AccountStatus.Active;
         IsFirstLogin = isFirstLogin;
         PasswordChangedOnUtc = nowUtc;
+        CredentialVersion = 1;
     }
 
     public string UserName { get; private set; } = string.Empty;
@@ -45,6 +46,7 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
     public AccountStatus Status { get; private set; }
     public bool IsFirstLogin { get; private set; }
     public DateTime PasswordChangedOnUtc { get; private set; }
+    public int CredentialVersion { get; private set; }
     public DateTime CreatedOnUtc { get; set; }
     public DateTime? ModifiedOnUtc { get; set; }
     public byte[] RowVersion { get; private set; } = [];
@@ -87,9 +89,15 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
             return Result.Fail(AccountErrors.PasswordHashRequired);
         }
 
+        if (CredentialVersion == int.MaxValue)
+        {
+            return Result.Fail(AccountErrors.CredentialVersionLimitReached);
+        }
+
         PasswordHash = passwordHash;
         PasswordChangedOnUtc = nowUtc;
         IsFirstLogin = false;
+        CredentialVersion++;
         ModifiedOnUtc = nowUtc;
         return Result.Ok();
     }
