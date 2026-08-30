@@ -27568,6 +27568,7 @@ using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Features.Auth.Common;
+using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
@@ -27579,7 +27580,8 @@ internal sealed class RegisterClientCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IPasswordService passwordService,
     IAccountIdentifierNormalizer normalizer,
-    IDateTimeProvider clock)
+    IDateTimeProvider clock,
+    EmailNotificationCoordinator emailNotifications)
     : ICommandHandler<RegisterClientCommand, RegisterClientResponse>
 {
     public async Task<Result<RegisterClientResponse>> Handle(RegisterClientCommand command, CancellationToken cancellationToken)
@@ -27629,6 +27631,7 @@ internal sealed class RegisterClientCommandHandler(
 
         await unitOfWork.WriteRepository<UserAccount>().AddAsync(accountResult.Value, cancellationToken);
         await unitOfWork.WriteRepository<ClientProfile>().AddAsync(profileResult.Value, cancellationToken);
+        await emailNotifications.QueueClientRegistrationWelcomeAsync(profileResult.Value, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<RegisterClientResponse>.Ok(new RegisterClientResponse(
@@ -27730,6 +27733,7 @@ using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Features.Auth.Common;
+using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Lawyers;
@@ -27741,7 +27745,8 @@ internal sealed class RegisterLawyerCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IPasswordService passwordService,
     IAccountIdentifierNormalizer normalizer,
-    IDateTimeProvider clock)
+    IDateTimeProvider clock,
+    EmailNotificationCoordinator emailNotifications)
     : ICommandHandler<RegisterLawyerCommand, RegisterLawyerResponse>
 {
     public async Task<Result<RegisterLawyerResponse>> Handle(RegisterLawyerCommand command, CancellationToken cancellationToken)
@@ -27791,6 +27796,7 @@ internal sealed class RegisterLawyerCommandHandler(
 
         await unitOfWork.WriteRepository<UserAccount>().AddAsync(accountResult.Value, cancellationToken);
         await unitOfWork.WriteRepository<LawyerProfile>().AddAsync(profileResult.Value, cancellationToken);
+        await emailNotifications.QueueLawyerRegistrationWelcomeAsync(profileResult.Value, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<RegisterLawyerResponse>.Ok(new RegisterLawyerResponse(
@@ -32755,9 +32761,85 @@ internal sealed class BilingualEmailNotificationFactory(
             EmailNotificationType.ConsultationCompleted => ConsultationCompleted(RequireConsultation(model)),
             EmailNotificationType.ClientSuspended => ClientSuspended(RequireClient(model)),
             EmailNotificationType.ClientReactivated => ClientReactivated(RequireClient(model)),
+            EmailNotificationType.LawyerRegistrationWelcome => LawyerRegistrationWelcome(RequireRegistration(model)),
+            EmailNotificationType.ClientRegistrationWelcome => ClientRegistrationWelcome(RequireRegistration(model)),
             _ => throw new ArgumentOutOfRangeException(nameof(notificationType), notificationType, "Unknown email notification type.")
         };
     }
+
+    private EmailNotificationContent LawyerRegistrationWelcome(RegistrationWelcomeEmailNotificationModel model)
+        => Build(
+            "Avokatoo | مرحبًا بك كمحامٍ | Welcome to Avokatoo",
+            [
+                Lines($"مرحبًا {model.FullName}،"),
+                Lines("أهلًا بك في Avokatoo."),
+                Lines("تم إنشاء حساب المحامي الخاص بك بنجاح."),
+                Lines("بيانات حسابك:"),
+                Lines("البريد الإلكتروني:", model.Email),
+                Lines("اسم المستخدم:", model.UserName),
+                Lines("حالة ملف المحامي الحالية:", "مسودة"),
+                Lines("حتى يظهر ملفك للعملاء على منصة Avokatoo، يجب استكمال ملفك المهني وإرساله للمراجعة والاعتماد."),
+                Lines(
+                    "الخطوات المطلوبة:",
+                    "1. تسجيل الدخول إلى حسابك.",
+                    "2. استكمال بيانات الملف المهني.",
+                    "3. إضافة بيانات وموقع المكتب.",
+                    "4. اختيار التخصصات القانونية.",
+                    "5. رفع المستندات المهنية المطلوبة.",
+                    "6. إرسال الملف للمراجعة من خلال Submit For Approval."),
+                Lines("بعد إرسال الملف، سيقوم فريق الإدارة بمراجعته."),
+                Lines("لن يظهر ملفك في البحث العام ولن يتم اعتباره ملف محامٍ معتمد حتى تتم الموافقة عليه من الإدارة وفقًا لقواعد المنصة."),
+                Lines("نتطلع إلى وجودك معنا على Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
+            ],
+            [
+                Lines($"Hello {model.FullName},"),
+                Lines("Welcome to Avokatoo."),
+                Lines("Your Lawyer account has been created successfully."),
+                Lines("Your account details:"),
+                Lines("Email:", model.Email),
+                Lines("User Name:", model.UserName),
+                Lines("Current Lawyer profile status:", "Draft"),
+                Lines("To make your Lawyer profile available to clients on Avokatoo, you must complete your professional profile and submit it for review and approval."),
+                Lines(
+                    "Next steps:",
+                    "1. Sign in to your account.",
+                    "2. Complete your professional profile.",
+                    "3. Add your office information and location.",
+                    "4. Select your legal specializations.",
+                    "5. Upload the required professional documents.",
+                    "6. Submit your profile using Submit For Approval."),
+                Lines("After submission, the administration team will review your profile."),
+                Lines("Your profile will not appear in public Lawyer search and will not be considered approved until the administration approves it according to the platform rules."),
+                Lines("We look forward to having you on Avokatoo."),
+                Lines("Regards,", "Avokatoo")
+            ]);
+
+    private EmailNotificationContent ClientRegistrationWelcome(RegistrationWelcomeEmailNotificationModel model)
+        => Build(
+            "Avokatoo | مرحبًا بك | Welcome to Avokatoo",
+            [
+                Lines($"مرحبًا {model.FullName}،"),
+                Lines("أهلًا بك في Avokatoo."),
+                Lines("تم إنشاء حسابك بنجاح."),
+                Lines("بيانات حسابك:"),
+                Lines("البريد الإلكتروني:", model.Email),
+                Lines("اسم المستخدم:", model.UserName),
+                Lines("يمكنك الآن تسجيل الدخول إلى حسابك والاستفادة من خدمات المنصة، بما في ذلك البحث عن المحامين، الاطلاع على ملفات المحامين المعتمدين، إرسال طلبات الاستشارة، ومتابعة طلباتك الحالية والسابقة."),
+                Lines("يسعدنا انضمامك إلى Avokatoo."),
+                Lines("مع تحيات،", "Avokatoo")
+            ],
+            [
+                Lines($"Hello {model.FullName},"),
+                Lines("Welcome to Avokatoo."),
+                Lines("Your account has been created successfully."),
+                Lines("Your account details:"),
+                Lines("Email:", model.Email),
+                Lines("User Name:", model.UserName),
+                Lines("You can now sign in and use Avokatoo services, including searching for Lawyers, viewing approved Lawyer profiles, submitting consultation requests, and following your current and previous requests."),
+                Lines("We are happy to have you with us."),
+                Lines("Regards,", "Avokatoo")
+            ]);
 
     private EmailNotificationContent LawyerSubmitted(LawyerEmailNotificationModel model)
         => Build(
@@ -33105,15 +33187,15 @@ internal sealed class BilingualEmailNotificationFactory(
     {
         var body = new StringBuilder(2048);
         body.Append("<!doctype html><html><head><meta charset=\"utf-8\"></head>")
-            .Append("<body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.6\">")
+            .Append("<body style=\"font-family:Arial,sans-serif;color:#222;font-size:20px;line-height:1.7\">")
             .Append("<div style=\"max-width:680px;margin:0 auto\">")
-            .Append("<h2 style=\"margin-bottom:24px\">Avokatoo</h2>")
+            .Append("<h2 style=\"font-size:28px;margin-bottom:24px\">Avokatoo</h2>")
             .Append("<section dir=\"rtl\" lang=\"ar\" style=\"text-align:right\">")
             .AppendJoin(string.Empty, arabicParagraphs)
             .Append("</section><hr style=\"border:0;border-top:1px solid #bbb;margin:28px 0\">")
             .Append("<section dir=\"ltr\" lang=\"en\" style=\"text-align:left\">")
             .AppendJoin(string.Empty, englishParagraphs)
-            .Append("</section><footer style=\"margin-top:28px;color:#666\">")
+            .Append("</section><footer style=\"margin-top:28px;color:#666;font-size:20px\">")
             .Append("Avokatoo<br>&copy; ")
             .Append(clock.UtcNow.Year)
             .Append("</footer>")
@@ -33237,6 +33319,10 @@ internal sealed class BilingualEmailNotificationFactory(
         => model as ClientEmailNotificationModel
            ?? throw new ArgumentException("A client notification model is required.", nameof(model));
 
+    private static RegistrationWelcomeEmailNotificationModel RequireRegistration(EmailNotificationModel model)
+        => model as RegistrationWelcomeEmailNotificationModel
+           ?? throw new ArgumentException("A registration welcome notification model is required.", nameof(model));
+
     private static string RequireReason(LawyerEmailNotificationModel model)
         => !string.IsNullOrWhiteSpace(model.Reason)
             ? model.Reason
@@ -33254,6 +33340,7 @@ using BuildingBlock.Domain.Specification;
 using System.Globalization;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 
@@ -33276,6 +33363,44 @@ internal sealed class EmailNotificationCoordinator(
     IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
     IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> consultationReader)
 {
+    public Task QueueLawyerRegistrationWelcomeAsync(
+        LawyerProfile profile,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return QueueAsync(
+            EmailNotificationType.LawyerRegistrationWelcome,
+            profile.Id,
+            "registration",
+            profile.UserAccountId.ToString("N"),
+            profile.UserAccount.Email,
+            new RegistrationWelcomeEmailNotificationModel(
+                profile.FullName,
+                profile.UserAccount.Email,
+                profile.UserAccount.UserName),
+            cancellationToken);
+    }
+
+    public Task QueueClientRegistrationWelcomeAsync(
+        ClientProfile profile,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return QueueAsync(
+            EmailNotificationType.ClientRegistrationWelcome,
+            profile.Id,
+            "registration",
+            profile.UserAccountId.ToString("N"),
+            profile.UserAccount.Email,
+            new RegistrationWelcomeEmailNotificationModel(
+                profile.FullName,
+                profile.UserAccount.Email,
+                profile.UserAccount.UserName),
+            cancellationToken);
+    }
+
     public async Task QueueLawyerTransitionAsync(
         LawyerProfile profile,
         LawyerApprovalStatusHistory history,
@@ -33433,7 +33558,7 @@ internal sealed class EmailNotificationCoordinator(
     }
 
     public Task QueueClientTransitionAsync(
-        LawyerPlatform.Domain.Clients.ClientProfile profile,
+        ClientProfile profile,
         AccountStatus oldStatus,
         AccountStatus newStatus,
         DateTime changedOnUtc,
@@ -33590,6 +33715,11 @@ public sealed record ConsultationEmailNotificationModel(
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;
 
+public sealed record RegistrationWelcomeEmailNotificationModel(
+    string FullName,
+    string Email,
+    string UserName) : EmailNotificationModel;
+
 public sealed record EmailNotificationContent(
     string Subject,
     string HtmlBody);
@@ -33612,7 +33742,9 @@ public enum EmailNotificationType
     ConsultationRejected = 11,
     ConsultationCompleted = 12,
     ClientSuspended = 13,
-    ClientReactivated = 14
+    ClientReactivated = 14,
+    LawyerRegistrationWelcome = 15,
+    ClientRegistrationWelcome = 16
 }
  
 // ==================== E:\StarterProject\src\LawyerPlatform\LawyerPlatform.Application\Notifications\Email\IEmailBrandingProvider.cs ==================== 
@@ -53481,6 +53613,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using LawyerPlatform.Application.Abstractions.Seeding;
+using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -53543,6 +53676,146 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
         {
             Assert.True(paths.TryGetProperty(path, out _), $"Swagger path '{path}' is missing.");
         }
+    }
+
+    [Fact]
+    public async Task SuccessfulRegistrations_QueueWelcomeEmails_AndDuplicateDoesNotQueueAnother()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        var cancellationToken = TestContext.Current.CancellationToken;
+        const string clientFullName = "Registration Email Client";
+        const string clientUserName = "registration.email.client";
+        const string clientEmail = "registration.email.client@example.test";
+        const string clientPassword = "ClientWelcomePassword1";
+        const string duplicateEmail = "registration.email.duplicate@example.test";
+        const string lawyerFullName = "Registration Email Lawyer";
+        const string lawyerUserName = "registration.email.lawyer";
+        const string lawyerEmail = "registration.email.lawyer@example.test";
+        const string lawyerPassword = "LawyerWelcomePassword1";
+
+        var clientRegistration = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = clientFullName,
+                userName = clientUserName,
+                email = clientEmail,
+                phoneNumber = "01000000101",
+                password = clientPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, clientRegistration.StatusCode);
+        var clientBody = await clientRegistration.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var clientAccountId = clientBody.GetProperty("userAccountId").GetGuid();
+        var clientProfileId = clientBody.GetProperty("clientProfileId").GetGuid();
+        Assert.Equal(clientUserName, clientBody.GetProperty("userName").GetString());
+        Assert.Equal("Client", clientBody.GetProperty("role").GetString());
+        Assert.Equal("Active", clientBody.GetProperty("status").GetString());
+        Assert.Equal(5, clientBody.EnumerateObject().Count());
+
+        var lawyerRegistration = await client.PostAsJsonAsync(
+            "/api/v1/auth/lawyers/register",
+            new
+            {
+                fullName = lawyerFullName,
+                userName = lawyerUserName,
+                email = lawyerEmail,
+                phoneNumber = "01000000102",
+                password = lawyerPassword
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, lawyerRegistration.StatusCode);
+        var lawyerBody = await lawyerRegistration.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var lawyerAccountId = lawyerBody.GetProperty("userAccountId").GetGuid();
+        var lawyerProfileId = lawyerBody.GetProperty("lawyerProfileId").GetGuid();
+        Assert.Equal(lawyerUserName, lawyerBody.GetProperty("userName").GetString());
+        Assert.Equal("Lawyer", lawyerBody.GetProperty("role").GetString());
+        Assert.Equal("Active", lawyerBody.GetProperty("accountStatus").GetString());
+        Assert.Equal("Draft", lawyerBody.GetProperty("approvalStatus").GetString());
+        Assert.Equal(6, lawyerBody.EnumerateObject().Count());
+
+        var duplicateRegistration = await client.PostAsJsonAsync(
+            "/api/v1/auth/clients/register",
+            new
+            {
+                fullName = "Duplicate Registration Email Client",
+                userName = clientUserName.ToUpperInvariant(),
+                email = duplicateEmail,
+                phoneNumber = "01000000103",
+                password = "DuplicateWelcomePassword1"
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, duplicateRegistration.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        Assert.True(await dbContext.UserAccounts
+            .AsNoTracking()
+            .AnyAsync(account => account.Id == clientAccountId, cancellationToken));
+        Assert.True(await dbContext.ClientProfiles
+            .AsNoTracking()
+            .AnyAsync(profile => profile.Id == clientProfileId, cancellationToken));
+        Assert.True(await dbContext.UserAccounts
+            .AsNoTracking()
+            .AnyAsync(account => account.Id == lawyerAccountId, cancellationToken));
+        Assert.True(await dbContext.LawyerProfiles
+            .AsNoTracking()
+            .AnyAsync(
+                profile => profile.Id == lawyerProfileId &&
+                           profile.ApprovalStatus == LawyerPlatform.Domain.Lawyers.LawyerApprovalStatus.Draft,
+                cancellationToken));
+
+        var clientWelcome = Assert.Single(await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.AggregateId == clientProfileId &&
+                message.NotificationType == EmailNotificationType.ClientRegistrationWelcome)
+            .ToListAsync(cancellationToken));
+        Assert.Equal(clientEmail, clientWelcome.RecipientEmail);
+        Assert.Equal(
+            $"{EmailNotificationType.ClientRegistrationWelcome}:{clientProfileId:N}:registration:{clientAccountId:N}",
+            clientWelcome.IdempotencyKey);
+        Assert.Contains("Welcome to Avokatoo", clientWelcome.Subject, StringComparison.Ordinal);
+        Assert.Contains(clientFullName, clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(clientEmail, clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(clientUserName, clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("searching for Lawyers", clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("consultation requests", clientWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Submit For Approval", clientWelcome.HtmlBody, StringComparison.Ordinal);
+        AssertDoesNotContainSecrets(clientWelcome.HtmlBody, clientPassword);
+
+        var lawyerWelcome = Assert.Single(await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.AggregateId == lawyerProfileId &&
+                message.NotificationType == EmailNotificationType.LawyerRegistrationWelcome)
+            .ToListAsync(cancellationToken));
+        Assert.Equal(lawyerEmail, lawyerWelcome.RecipientEmail);
+        Assert.Equal(
+            $"{EmailNotificationType.LawyerRegistrationWelcome}:{lawyerProfileId:N}:registration:{lawyerAccountId:N}",
+            lawyerWelcome.IdempotencyKey);
+        Assert.Contains("Welcome to Avokatoo", lawyerWelcome.Subject, StringComparison.Ordinal);
+        Assert.Contains(lawyerFullName, lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(lawyerEmail, lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(lawyerUserName, lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Draft", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Complete your professional profile", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Submit For Approval", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("will not appear in public Lawyer search", lawyerWelcome.HtmlBody, StringComparison.Ordinal);
+        AssertDoesNotContainSecrets(lawyerWelcome.HtmlBody, lawyerPassword);
+
+        var duplicateAttemptWelcomes = await dbContext.EmailOutboxMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.NotificationType == EmailNotificationType.ClientRegistrationWelcome &&
+                (message.RecipientEmail == clientEmail || message.RecipientEmail == duplicateEmail))
+            .ToListAsync(cancellationToken);
+        var originalWelcome = Assert.Single(duplicateAttemptWelcomes);
+        Assert.Equal(clientProfileId, originalWelcome.AggregateId);
+        Assert.Equal(clientEmail, originalWelcome.RecipientEmail);
     }
 
     [Fact]
@@ -53662,6 +53935,14 @@ public sealed class AuthenticationEndpointsTests(CustomWebApplicationFactory fac
     {
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         return body.GetProperty("accessToken").GetString()!;
+    }
+
+    private static void AssertDoesNotContainSecrets(string htmlBody, string rawPassword)
+    {
+        Assert.DoesNotContain(rawPassword, htmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("PasswordHash", htmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AccessToken", htmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("RefreshToken", htmlBody, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task VerifySuperAdminSeederIsIdempotentAsync(CancellationToken cancellationToken)
@@ -57366,7 +57647,10 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             .Where(message => message.AggregateId == pendingRejectedLawyer.LawyerId)
             .ToListAsync(cancellationToken);
 
-        Assert.Equal(6, lifecycleNotifications.Count);
+        Assert.Equal(7, lifecycleNotifications.Count);
+        Assert.Contains(lifecycleNotifications, message =>
+            message.NotificationType == EmailNotificationType.LawyerRegistrationWelcome &&
+            message.RecipientEmail == "ahmed.lifecycle@example.test");
         Assert.Equal(2, lifecycleNotifications.Count(message =>
             message.NotificationType == EmailNotificationType.LawyerSubmittedForApproval &&
             message.RecipientEmail == "admin@lawyerplatform.test"));
@@ -57379,9 +57663,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             message.NotificationType == EmailNotificationType.LawyerSuspended);
         Assert.Contains(lifecycleNotifications, message =>
             message.NotificationType == EmailNotificationType.LawyerReactivated);
-        Assert.Single(rejectedNotifications);
-        Assert.Equal(EmailNotificationType.LawyerRejected, rejectedNotifications[0].NotificationType);
-        Assert.Equal("rejected.notification@example.test", rejectedNotifications[0].RecipientEmail);
+        var rejectedNotification = Assert.Single(rejectedNotifications);
+        Assert.Equal(EmailNotificationType.LawyerRejected, rejectedNotification.NotificationType);
+        Assert.Equal("rejected.notification@example.test", rejectedNotification.RecipientEmail);
         Assert.All(lifecycleNotifications.Concat(rejectedNotifications), message =>
         {
             Assert.DoesNotContain("Clarified commercial", message.HtmlBody, StringComparison.Ordinal);
@@ -58934,7 +59218,10 @@ public sealed class ClientProfileAndAdminClientManagementEndpointsTests(CustomWe
                 .AsNoTracking()
                 .Where(message => message.AggregateId == first.ClientProfileId)
                 .ToListAsync(cancellationToken);
-            Assert.Equal(2, notifications.Count);
+            Assert.Equal(3, notifications.Count);
+            Assert.Contains(notifications, message =>
+                message.NotificationType == EmailNotificationType.ClientRegistrationWelcome &&
+                message.RecipientEmail == "phase1.client.one@example.test");
             Assert.Contains(notifications, message =>
                 message.NotificationType == EmailNotificationType.ClientSuspended &&
                 message.RecipientEmail == "phase1.client.one@example.test");
@@ -62720,8 +63007,31 @@ public sealed class BilingualEmailNotificationFactoryTests
         { EmailNotificationType.ConsultationRejected, Consultation("سبب آمن"), "Avokatoo | تحديث طلب الاستشارة | Consultation Request Update", "Rejected" },
         { EmailNotificationType.ConsultationCompleted, Consultation(), "Avokatoo | تم إكمال طلب الاستشارة | Consultation Completed", "Completed" },
         { EmailNotificationType.ClientSuspended, Client(), "Avokatoo | تم تعليق حسابك | Your Account Has Been Suspended", "Suspended" },
-        { EmailNotificationType.ClientReactivated, Client(), "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" }
+        { EmailNotificationType.ClientReactivated, Client(), "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" },
+        { EmailNotificationType.LawyerRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك كمحامٍ | Welcome to Avokatoo", "Draft" },
+        { EmailNotificationType.ClientRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك | Welcome to Avokatoo", "searching for Lawyers" }
     };
+
+    [Fact]
+    public void EmailNotificationType_PreservesPersistedNumericValues()
+    {
+        Assert.Equal(1, (int)EmailNotificationType.LawyerSubmittedForApproval);
+        Assert.Equal(2, (int)EmailNotificationType.LawyerApproved);
+        Assert.Equal(3, (int)EmailNotificationType.LawyerChangesRequested);
+        Assert.Equal(4, (int)EmailNotificationType.LawyerRejected);
+        Assert.Equal(5, (int)EmailNotificationType.LawyerSuspended);
+        Assert.Equal(6, (int)EmailNotificationType.LawyerReactivated);
+        Assert.Equal(7, (int)EmailNotificationType.ConsultationRequestCreatedForLawyer);
+        Assert.Equal(8, (int)EmailNotificationType.ConsultationRequestCreatedConfirmation);
+        Assert.Equal(9, (int)EmailNotificationType.ConsultationUnderReview);
+        Assert.Equal(10, (int)EmailNotificationType.ConsultationApproved);
+        Assert.Equal(11, (int)EmailNotificationType.ConsultationRejected);
+        Assert.Equal(12, (int)EmailNotificationType.ConsultationCompleted);
+        Assert.Equal(13, (int)EmailNotificationType.ClientSuspended);
+        Assert.Equal(14, (int)EmailNotificationType.ClientReactivated);
+        Assert.Equal(15, (int)EmailNotificationType.LawyerRegistrationWelcome);
+        Assert.Equal(16, (int)EmailNotificationType.ClientRegistrationWelcome);
+    }
 
     [Theory]
     [MemberData(nameof(Templates))]
@@ -62817,6 +63127,98 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("&lt;script&gt;", lawyer.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("&lt;script&gt;", consultation.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("&amp; injected", consultation.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LawyerRegistrationWelcome_ExplainsDraftOnboardingAndApprovalBeforeVisibility()
+    {
+        var result = _factory.Create(
+            EmailNotificationType.LawyerRegistrationWelcome,
+            Registration());
+
+        Assert.Contains("المستخدم Registrant", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant@example.test", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant.user", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("مسودة", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Draft", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Complete your professional profile", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("office information and location", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("legal specializations", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("required professional documents", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Submit For Approval", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("administration approves it", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("will not appear in public Lawyer search", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientRegistrationWelcome_ExplainsClientServicesWithoutLawyerOnboarding()
+    {
+        var result = _factory.Create(
+            EmailNotificationType.ClientRegistrationWelcome,
+            Registration());
+
+        Assert.Contains("المستخدم Registrant", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant@example.test", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("registrant.user", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Welcome to Avokatoo", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("searching for Lawyers", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("consultation requests", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Submit For Approval", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("professional documents", result.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("administration approves it", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, result.HtmlBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RegistrationWelcome_HtmlEncodesIdentityValuesAndCannotContainAPassword()
+    {
+        const string unsafeFullName = "<script>alert(1)</script>";
+        const string unsafeEmail = "mail+test<&>\"'@example.test";
+        const string unsafeUserName = "user<&>\"'";
+        const string password = "RegistrationPassword1";
+        var model = new RegistrationWelcomeEmailNotificationModel(
+            unsafeFullName,
+            unsafeEmail,
+            unsafeUserName);
+
+        foreach (var type in new[]
+                 {
+                     EmailNotificationType.LawyerRegistrationWelcome,
+                     EmailNotificationType.ClientRegistrationWelcome
+                 })
+        {
+            var result = _factory.Create(type, model);
+
+            Assert.DoesNotContain("<script>", result.HtmlBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(unsafeEmail, result.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(unsafeUserName, result.HtmlBody, StringComparison.Ordinal);
+            Assert.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", result.HtmlBody, StringComparison.Ordinal);
+            Assert.Contains("mail+test&lt;&amp;&gt;&quot;&#39;@example.test", result.HtmlBody, StringComparison.Ordinal);
+            Assert.Contains("user&lt;&amp;&gt;&quot;&#39;", result.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(password, result.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("PasswordHash", result.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.DoesNotContain(
+            typeof(RegistrationWelcomeEmailNotificationModel).GetProperties(),
+            property => property.Name.Contains("Password", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Create_SharedLayoutUsesLargerTypographyAndPreservesBilingualBranding()
+    {
+        var result = _factory.Create(
+            EmailNotificationType.ClientRegistrationWelcome,
+            Registration());
+
+        Assert.Contains("font-size:20px", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("font-size:28px", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("line-height:1.7", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("dir=\"rtl\"", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("dir=\"ltr\"", result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, result.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Avokatoo", result.HtmlBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -63040,6 +63442,8 @@ public sealed class BilingualEmailNotificationFactoryTests
             _factory.Create((EmailNotificationType)999, Client()));
         Assert.Throws<ArgumentException>(() =>
             _factory.Create(EmailNotificationType.LawyerApproved, Client()));
+        Assert.Throws<ArgumentException>(() =>
+            _factory.Create(EmailNotificationType.ClientRegistrationWelcome, Client()));
     }
 
     private static LawyerEmailNotificationModel Lawyer(string? reason = null)
@@ -63056,6 +63460,9 @@ public sealed class BilingualEmailNotificationFactoryTests
 
     private static ClientEmailNotificationModel Client()
         => new("العميل Client");
+
+    private static RegistrationWelcomeEmailNotificationModel Registration()
+        => new("المستخدم Registrant", "registrant@example.test", "registrant.user");
 
     private static int CountOccurrences(string value, string searchValue)
     {
