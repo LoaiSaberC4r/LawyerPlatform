@@ -10,6 +10,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Application.Features.Clients.Profile;
 
@@ -24,15 +25,15 @@ internal sealed class UpdateOwnClientProfileCommandValidator
         RuleFor(command => command.FullName)
             .Must(value => !string.IsNullOrWhiteSpace(value))
             .WithErrorCode(AccountErrors.FullNameRequired.Code)
-            .WithMessage(AccountErrors.FullNameRequired.Message);
+            .WithMessage(_ => ErrorMessage.FullNameRequired);
         RuleFor(command => command.FullName)
             .Must(value => string.IsNullOrWhiteSpace(value) || value.Trim().Length <= 200)
             .WithErrorCode(AccountErrors.FullNameTooLong.Code)
-            .WithMessage(AccountErrors.FullNameTooLong.Message);
+            .WithMessage(_ => ErrorMessage.FullNameTooLong);
         RuleFor(command => command.RowVersion)
             .Must(value => RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode(ClientErrors.InvalidRowVersion.Code)
-            .WithMessage(ClientErrors.InvalidRowVersion.Message);
+            .WithMessage(_ => ErrorMessage.InvalidRowVersion);
     }
 }
 

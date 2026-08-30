@@ -17,5 +17,7 @@ public enum EmailNotificationType
     ClientSuspended = 13,
     ClientReactivated = 14,
     LawyerRegistrationWelcome = 15,
-    ClientRegistrationWelcome = 16
+    ClientRegistrationWelcome = 16,
+    ContactInquirySupportNotification = 17,
+    ContactInquiryConfirmation = 18
 }

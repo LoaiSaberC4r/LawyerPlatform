@@ -1,35 +1,36 @@
 using BuildingBlock.Domain.Results;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Domain.Accounts;
 
 public static class PasswordResetErrors
 {
-    public static readonly Error OtpInvalidOrExpired = Error.Validation(
+    public static Error OtpInvalidOrExpired => Error.Validation(
         "PasswordReset.OtpInvalidOrExpired",
-        "The verification code is invalid or expired.");
+        ErrorMessage.OtpInvalidOrExpired);
 
-    public static readonly Error ResetTokenInvalidOrExpired = Error.Validation(
+    public static Error ResetTokenInvalidOrExpired => Error.Validation(
         "PasswordReset.ResetTokenInvalidOrExpired",
-        "The password reset token is invalid or expired.");
+        ErrorMessage.ResetTokenInvalidOrExpired);
 
-    public static readonly Error PasswordMustBeDifferent = Error.Validation(
+    public static Error PasswordMustBeDifferent => Error.Validation(
         "PasswordReset.PasswordMustBeDifferent",
-        "New password must be different from the current password.");
+        ErrorMessage.PasswordMustBeDifferent);
 
-    public static readonly Error ChallengeConsumed = Error.Validation(
+    public static Error ChallengeConsumed => Error.Validation(
         "PasswordReset.ChallengeConsumed",
-        "The password reset request can no longer be used.");
+        ErrorMessage.PasswordResetChallengeConsumed);
 
-    public static readonly Error ConcurrencyConflict = Error.Conflict(
+    public static Error ConcurrencyConflict => Error.Conflict(
         "PasswordReset.ConcurrencyConflict",
-        "The password reset request was changed by another operation.");
+        ErrorMessage.PasswordResetConcurrencyConflict);
 
-    public static readonly Error ConfigurationInvalid = Error.Domain(
+    public static Error ConfigurationInvalid => Error.Domain(
         "PasswordReset.ConfigurationInvalid",
-        "Password reset is not configured correctly.");
+        ErrorMessage.PasswordResetConfigurationInvalid);
 
     public static Error RateLimitExceeded(TimeSpan retryAfter) => Error.RateLimit(
         "PasswordReset.RateLimitExceeded",
-        "Too many password recovery attempts.",
+        ErrorMessage.PasswordRecoveryRateLimitExceeded,
         retryAfter);
 }

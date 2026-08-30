@@ -12,6 +12,7 @@ using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
 
@@ -49,7 +50,7 @@ internal sealed class UpsertPrimaryOfficeCommandValidator : AbstractValidator<Up
         RuleFor(command => command.Latitude)
             .Must((command, _) => command.Latitude.HasValue == command.Longitude.HasValue)
             .WithErrorCode("Lawyer.InvalidOfficeCoordinates")
-            .WithMessage("Latitude and longitude must both be supplied or both be null.");
+            .WithMessage(_ => ErrorMessage.InvalidOfficeCoordinates);
         RuleFor(command => command.RowVersion)
             .Must(value => value is null || RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode("Lawyer.InvalidRowVersion");

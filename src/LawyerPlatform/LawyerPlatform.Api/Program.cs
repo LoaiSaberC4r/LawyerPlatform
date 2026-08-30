@@ -15,14 +15,17 @@ using LawyerPlatform.Api.Authorization;
 using LawyerPlatform.Api.Configuration;
 using LawyerPlatform.Api.Middleware;
 using LawyerPlatform.Api.OpenApi;
+using LawyerPlatform.Api.Errors;
 using LawyerPlatform.Application;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Resources;
 using LawyerPlatform.Infrastructure;
 using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
 EnvironmentFileLoader.LoadIfDevelopment(args);
@@ -66,6 +69,8 @@ builder.Services.AddBuildingBlockSwagger(options =>
 
 builder.Services.AddBuildingBlockLocalization(builder.Configuration);
 builder.Services.AddBuildingBlockProblemDetails();
+builder.Services.Replace(
+    ServiceDescriptor.Singleton<IProblemDetailsMapper, LawyerPlatformProblemDetailsMapper>());
 builder.Services.AddBuildingBlockCurrentUser();
 builder.Services.AddBuildingBlockTokenReader(builder.Configuration);
 
@@ -233,6 +238,11 @@ builder.Services.AddRateLimiter(options =>
                 "/api/v1/auth/forgot-password",
                 StringComparison.OrdinalIgnoreCase);
 
+        var isContactInquiry =
+            context.HttpContext.Request.Path.StartsWithSegments(
+                "/api/v1/public/contact-us",
+                StringComparison.OrdinalIgnoreCase);
+
         var retryAfter = context.Lease.TryGetMetadata(
             MetadataName.RetryAfter,
             out TimeSpan retryAfterMetadata)
@@ -241,14 +251,19 @@ builder.Services.AddRateLimiter(options =>
 
         var error = isPasswordRecoveryRequest
             ? PasswordResetErrors.RateLimitExceeded(retryAfter)
-            : isConsultationRequest
+            : isContactInquiry
                 ? Error.RateLimit(
-                "ConsultationRequest.RateLimitExceeded",
-                "Too many consultation requests.",
-                TimeSpan.FromMinutes(1))
+                    "ContactInquiry.RateLimitExceeded",
+                    ErrorMessage.ContactInquiryRateLimitExceeded,
+                    TimeSpan.FromMinutes(1))
+                : isConsultationRequest
+                ? Error.RateLimit(
+                    "ConsultationRequest.RateLimitExceeded",
+                    ErrorMessage.ConsultationRateLimitExceeded,
+                    TimeSpan.FromMinutes(1))
                 : Error.RateLimit(
                     "Auth.RateLimitExceeded",
-                    "Too many authentication attempts.",
+                    ErrorMessage.AuthenticationRateLimitExceeded,
                     TimeSpan.FromMinutes(1));
 
         await new[] { error }

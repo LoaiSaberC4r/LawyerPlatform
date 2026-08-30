@@ -5,6 +5,7 @@ using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
+using LawyerPlatform.Domain.Resources;
 using Microsoft.EntityFrameworkCore;
 
 namespace LawyerPlatform.Infrastructure.Persistence;
@@ -53,12 +54,12 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_UserAccounts_NormalizedEmail", StringComparison.Ordinal) => AccountErrors.EmailAlreadyExists,
             var message when message.Contains("UX_UserAccounts_PhoneNumber", StringComparison.Ordinal) => AccountErrors.PhoneNumberAlreadyExists,
             var message when message.Contains("UX_PasswordResetChallenges_Current_UserAccountId", StringComparison.Ordinal) => PasswordResetErrors.ConcurrencyConflict,
-            var message when message.Contains("UX_ClientProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("ClientProfile.AccountAlreadyLinked", "The account already has a client profile."),
-            var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", "The account already has a lawyer profile."),
+            var message when message.Contains("UX_ClientProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("ClientProfile.AccountAlreadyLinked", ErrorMessage.ClientProfileAlreadyLinked),
+            var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", ErrorMessage.LawyerProfileAlreadyLinked),
             var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,
             var message when message.Contains("UX_LawyerConsultationSettings_LawyerProfileId", StringComparison.Ordinal) => LawyerErrors.ConsultationSettingsConcurrencyConflict,
             var message when message.Contains("UX_LawyerAvailabilities_SettingsId_DayOfWeek", StringComparison.Ordinal) => LawyerErrors.DuplicateAvailabilityDay,
-            var message when message.Contains("UX_LawyerOffices_LawyerProfileId_Primary", StringComparison.Ordinal) => Error.Conflict("Lawyer.OfficeEditNotAllowed", "A primary office already exists."),
+            var message when message.Contains("UX_LawyerOffices_LawyerProfileId_Primary", StringComparison.Ordinal) => Error.Conflict("Lawyer.OfficeEditNotAllowed", ErrorMessage.PrimaryOfficeAlreadyExists),
             var message when message.Contains("UX_LegalSpecializations_NameAr", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameAr,
             var message when message.Contains("UX_LegalSpecializations_NameEn", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameEn,
             var message when message.Contains("UX_Governorates_NameAr", StringComparison.Ordinal) => GovernorateErrors.DuplicateNameAr,

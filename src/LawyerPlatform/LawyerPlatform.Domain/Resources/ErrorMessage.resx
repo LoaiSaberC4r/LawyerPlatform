@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="ValidationErrorTitle" xml:space="preserve"><value>Validation Error</value></data>
+  <data name="DomainErrorTitle" xml:space="preserve"><value>Domain Error</value></data>
+  <data name="ResourceNotFoundTitle" xml:space="preserve"><value>Resource Not Found</value></data>
+  <data name="ConflictTitle" xml:space="preserve"><value>Conflict</value></data>
+  <data name="UnauthorizedTitle" xml:space="preserve"><value>Unauthorized</value></data>
+  <data name="SecurityErrorTitle" xml:space="preserve"><value>Security Error</value></data>
+  <data name="TooManyRequestsTitle" xml:space="preserve"><value>Too Many Requests</value></data>
+  <data name="InfrastructureErrorTitle" xml:space="preserve"><value>Infrastructure Error</value></data>
+  <data name="UnexpectedErrorTitle" xml:space="preserve"><value>Unexpected Error</value></data>
+  <data name="MethodNotAllowedTitle" xml:space="preserve"><value>Method Not Allowed</value></data>
+  <data name="UnsupportedMediaTypeTitle" xml:space="preserve"><value>Unsupported Media Type</value></data>
+  <data name="AuthenticationRequired" xml:space="preserve"><value>Authentication is required.</value></data>
+  <data name="AccessForbidden" xml:space="preserve"><value>Access is forbidden.</value></data>
+  <data name="RequestedResourceNotFound" xml:space="preserve"><value>The requested resource was not found.</value></data>
+  <data name="HttpMethodNotAllowed" xml:space="preserve"><value>The HTTP method is not allowed for this resource.</value></data>
+  <data name="UnsupportedContentType" xml:space="preserve"><value>The request content type is not supported.</value></data>
+  <data name="TooManyRequests" xml:space="preserve"><value>Too many requests.</value></data>
+  <data name="UnknownErrorOccurred" xml:space="preserve"><value>An unknown error occurred.</value></data>
+  <data name="UnexpectedErrorOccurred" xml:space="preserve"><value>An unexpected error occurred.</value></data>
+  <data name="RequestCouldNotBeCompleted" xml:space="preserve"><value>The request could not be completed.</value></data>
+  <data name="InvalidJson" xml:space="preserve"><value>Request body contains malformed JSON.</value></data>
+  <data name="InvalidInput" xml:space="preserve"><value>The request contains invalid input.</value></data>
+  <data name="ConsultationRateLimitExceeded" xml:space="preserve"><value>Too many consultation requests.</value></data>
+  <data name="AuthenticationRateLimitExceeded" xml:space="preserve"><value>Too many authentication attempts.</value></data>
+  <data name="ContactInquiryRateLimitExceeded" xml:space="preserve"><value>Too many contact inquiries. Please try again later.</value></data>
+  <data name="ValidationNotNull" xml:space="preserve"><value>'{PropertyName}' is required.</value></data>
+  <data name="ValidationNotEmpty" xml:space="preserve"><value>'{PropertyName}' must not be empty.</value></data>
+  <data name="ValidationEmail" xml:space="preserve"><value>'{PropertyName}' is not a valid email address.</value></data>
+  <data name="ValidationMaximumLength" xml:space="preserve"><value>'{PropertyName}' must be {MaxLength} characters or fewer.</value></data>
+  <data name="ValidationMinimumLength" xml:space="preserve"><value>'{PropertyName}' must be at least {MinLength} characters.</value></data>
+  <data name="ValidationExactLength" xml:space="preserve"><value>'{PropertyName}' must be exactly {MaxLength} characters.</value></data>
+  <data name="ValidationLength" xml:space="preserve"><value>'{PropertyName}' must be between {MinLength} and {MaxLength} characters.</value></data>
+  <data name="ValidationGreaterThan" xml:space="preserve"><value>'{PropertyName}' must be greater than '{ComparisonValue}'.</value></data>
+  <data name="ValidationGreaterThanOrEqual" xml:space="preserve"><value>'{PropertyName}' must be greater than or equal to '{ComparisonValue}'.</value></data>
+  <data name="ValidationInclusiveBetween" xml:space="preserve"><value>'{PropertyName}' must be between {From} and {To}.</value></data>
+  <data name="ValidationEqual" xml:space="preserve"><value>'{PropertyName}' must be equal to '{ComparisonValue}'.</value></data>
+  <data name="ValidationRegularExpression" xml:space="preserve"><value>'{PropertyName}' has an invalid format.</value></data>
+  <data name="ValidationPredicate" xml:space="preserve"><value>'{PropertyName}' is invalid.</value></data>
+  <data name="ValidationEnum" xml:space="preserve"><value>'{PropertyName}' has an invalid value.</value></data>
+  <data name="ValidationNull" xml:space="preserve"><value>'{PropertyName}' must be empty.</value></data>
+  <data name="ValidationEmpty" xml:space="preserve"><value>'{PropertyName}' must be empty.</value></data>
+  <data name="AccountIdRequired" xml:space="preserve"><value>Account id is required.</value></data>
+  <data name="UserNameRequired" xml:space="preserve"><value>User name is required.</value></data>
+  <data name="UserNameInvalid" xml:space="preserve"><value>User name format is invalid.</value></data>
+  <data name="UserNameTooShort" xml:space="preserve"><value>User name must be at least 3 characters.</value></data>
+  <data name="UserNameTooLong" xml:space="preserve"><value>User name cannot exceed 50 characters.</value></data>
+  <data name="UserNameAlreadyExists" xml:space="preserve"><value>User name is already in use.</value></data>
+  <data name="EmailRequired" xml:space="preserve"><value>Email is required.</value></data>
+  <data name="EmailInvalid" xml:space="preserve"><value>Email format is invalid.</value></data>
+  <data name="EmailAlreadyExists" xml:space="preserve"><value>Email is already in use.</value></data>
+  <data name="PhoneNumberRequired" xml:space="preserve"><value>Phone number is required.</value></data>
+  <data name="PhoneNumberInvalid" xml:space="preserve"><value>Phone number must be a valid Egyptian mobile number.</value></data>
+  <data name="PhoneNumberAlreadyExists" xml:space="preserve"><value>Phone number is already in use.</value></data>
+  <data name="PasswordRequired" xml:space="preserve"><value>Password is required.</value></data>
+  <data name="PasswordInvalid" xml:space="preserve"><value>Password does not satisfy the configured policy.</value></data>
+  <data name="NewPasswordRequired" xml:space="preserve"><value>New password is required.</value></data>
+  <data name="NewPasswordInvalid" xml:space="preserve"><value>New password does not satisfy the configured policy.</value></data>
+  <data name="FullNameRequired" xml:space="preserve"><value>Full name is required.</value></data>
+  <data name="FullNameTooLong" xml:space="preserve"><value>Full name cannot exceed 200 characters.</value></data>
+  <data name="AccountNotFound" xml:space="preserve"><value>Account was not found.</value></data>
+  <data name="AccountSuspended" xml:space="preserve"><value>The account is suspended.</value></data>
+  <data name="AccountInactive" xml:space="preserve"><value>The account is inactive.</value></data>
+  <data name="CurrentPasswordInvalid" xml:space="preserve"><value>Current password is invalid.</value></data>
+  <data name="PasswordMustBeDifferent" xml:space="preserve"><value>New password must be different from the current password.</value></data>
+  <data name="PasswordChangeRequired" xml:space="preserve"><value>Password change is required before accessing this resource.</value></data>
+  <data name="PasswordHashRequired" xml:space="preserve"><value>Password hash is required.</value></data>
+  <data name="InvalidStatusTransition" xml:space="preserve"><value>The requested account status transition is not allowed.</value></data>
+  <data name="InvalidRowVersion" xml:space="preserve"><value>RowVersion must be a valid Base64 value.</value></data>
+  <data name="AccountConcurrencyConflict" xml:space="preserve"><value>The account was changed by another request.</value></data>
+  <data name="CredentialVersionLimitReached" xml:space="preserve"><value>The account credentials cannot be changed.</value></data>
+  <data name="ClientProfileRequiresClientAccount" xml:space="preserve"><value>A client profile requires a client account.</value></data>
+  <data name="LawyerProfileRequiresLawyerAccount" xml:space="preserve"><value>A lawyer profile requires a lawyer account.</value></data>
+  <data name="ClientProfileAlreadyLinked" xml:space="preserve"><value>The account already has a client profile.</value></data>
+  <data name="LawyerProfileAlreadyLinked" xml:space="preserve"><value>The account already has a lawyer profile.</value></data>
+  <data name="OtpInvalidOrExpired" xml:space="preserve"><value>The verification code is invalid or expired.</value></data>
+  <data name="ResetTokenInvalidOrExpired" xml:space="preserve"><value>The password reset token is invalid or expired.</value></data>
+  <data name="PasswordResetChallengeConsumed" xml:space="preserve"><value>The password reset request can no longer be used.</value></data>
+  <data name="PasswordResetConcurrencyConflict" xml:space="preserve"><value>The password reset request was changed by another operation.</value></data>
+  <data name="PasswordResetConfigurationInvalid" xml:space="preserve"><value>Password reset is not configured correctly.</value></data>
+  <data name="PasswordRecoveryRateLimitExceeded" xml:space="preserve"><value>Too many password recovery attempts.</value></data>
+  <data name="InvalidLogin" xml:space="preserve"><value>Invalid username/email or password.</value></data>
+  <data name="PasswordCouldNotBeProcessed" xml:space="preserve"><value>The password could not be processed.</value></data>
+  <data name="ClientNotFound" xml:space="preserve"><value>The client profile was not found.</value></data>
+  <data name="ClientConcurrencyConflict" xml:space="preserve"><value>The client profile was changed by another request.</value></data>
+  <data name="LawyerNotFound" xml:space="preserve"><value>Lawyer was not found.</value></data>
+  <data name="LawyerProfileIncomplete" xml:space="preserve"><value>The lawyer profile is incomplete.</value></data>
+  <data name="InvalidApprovalStatus" xml:space="preserve"><value>The approval status does not allow this operation.</value></data>
+  <data name="LawyerProfileEditNotAllowed" xml:space="preserve"><value>The lawyer profile cannot be edited in its current status.</value></data>
+  <data name="SensitiveProfileEditNotAllowed" xml:space="preserve"><value>Approved lawyer identity fields cannot be edited.</value></data>
+  <data name="ApprovalReasonRequired" xml:space="preserve"><value>An approval reason is required.</value></data>
+  <data name="SuspensionReasonRequired" xml:space="preserve"><value>A suspension reason is required.</value></data>
+  <data name="RegistrationNumberAlreadyExists" xml:space="preserve"><value>The professional registration number is already in use.</value></data>
+  <data name="OfficeNotFound" xml:space="preserve"><value>The primary office was not found.</value></data>
+  <data name="OfficeEditNotAllowed" xml:space="preserve"><value>The primary office cannot be edited in the current status.</value></data>
+  <data name="PrimaryOfficeAlreadyExists" xml:space="preserve"><value>A primary office already exists.</value></data>
+  <data name="InvalidLatitude" xml:space="preserve"><value>Latitude must be between -90 and 90.</value></data>
+  <data name="InvalidLongitude" xml:space="preserve"><value>Longitude must be between -180 and 180.</value></data>
+  <data name="InvalidOfficeCoordinates" xml:space="preserve"><value>Latitude and longitude must both be supplied or both be null.</value></data>
+  <data name="DuplicateSpecialization" xml:space="preserve"><value>Duplicate specialization identifiers are not allowed.</value></data>
+  <data name="DocumentNotFound" xml:space="preserve"><value>Document was not found.</value></data>
+  <data name="DocumentTypeRequired" xml:space="preserve"><value>Document type is required.</value></data>
+  <data name="InvalidDocumentType" xml:space="preserve"><value>Document type is not configured.</value></data>
+  <data name="InvalidDocument" xml:space="preserve"><value>The uploaded document is invalid.</value></data>
+  <data name="RequiredDocumentCannotBeRemoved" xml:space="preserve"><value>The required document cannot be removed from an approved profile.</value></data>
+  <data name="DocumentRequirementsNotConfigured" xml:space="preserve"><value>Lawyer document requirements are not configured.</value></data>
+  <data name="ProfileImageNotFound" xml:space="preserve"><value>Profile image was not found.</value></data>
+  <data name="LawyerConcurrencyConflict" xml:space="preserve"><value>The lawyer record was changed by another request.</value></data>
+  <data name="ConsultationPriceInvalid" xml:space="preserve"><value>Online consultation price must be greater than zero, within the supported maximum, and contain at most two decimal places.</value></data>
+  <data name="AvailabilityInvalid" xml:space="preserve"><value>Availability must contain at most one valid working period per day and start before end.</value></data>
+  <data name="DuplicateAvailabilityDay" xml:space="preserve"><value>Availability cannot contain duplicate days within the same consultation type.</value></data>
+  <data name="ConsultationSettingsInvalidRowVersion" xml:space="preserve"><value>Consultation settings RowVersion must be a valid Base64 value.</value></data>
+  <data name="ConsultationSettingsConcurrencyConflict" xml:space="preserve"><value>The consultation settings were changed by another request.</value></data>
+  <data name="InvalidProfessionalProfile" xml:space="preserve"><value>The professional profile is invalid.</value></data>
+  <data name="InvalidOffice" xml:space="preserve"><value>The primary office is invalid.</value></data>
+  <data name="ConsultationRequestInvalid" xml:space="preserve"><value>The consultation request is invalid.</value></data>
+  <data name="InvalidConsultationType" xml:space="preserve"><value>Consultation type must be Online or Onsite.</value></data>
+  <data name="ConsultationPriceRequired" xml:space="preserve"><value>An Online consultation requires a valid price snapshot.</value></data>
+  <data name="OnsitePriceNotAllowed" xml:space="preserve"><value>An Onsite consultation cannot contain a price snapshot.</value></data>
+  <data name="InvalidConsultationSource" xml:space="preserve"><value>A consultation request must have exactly one valid requester source.</value></data>
+  <data name="InvalidConsultationStatusTransition" xml:space="preserve"><value>The requested consultation status transition is not allowed.</value></data>
+  <data name="RejectionReasonRequired" xml:space="preserve"><value>A rejection reason is required and cannot exceed 1000 characters.</value></data>
+  <data name="ConsultationRequestNotFound" xml:space="preserve"><value>The consultation request was not found.</value></data>
+  <data name="ConsultationRequestConcurrencyConflict" xml:space="preserve"><value>The consultation request was changed by another request.</value></data>
+  <data name="LawyerUnavailable" xml:space="preserve"><value>The selected lawyer is not currently available for consultation requests.</value></data>
+  <data name="SpecializationNotOfferedByLawyer" xml:space="preserve"><value>The selected specialization is not currently offered by the lawyer.</value></data>
+  <data name="PreferredAppointmentMustBeFuture" xml:space="preserve"><value>The preferred appointment must be a future UTC time.</value></data>
+  <data name="LawyerAvailabilityNotConfigured" xml:space="preserve"><value>The selected lawyer has not configured appointment availability.</value></data>
+  <data name="LawyerNotAvailableOnSelectedDay" xml:space="preserve"><value>The selected lawyer is not available on the appointment day.</value></data>
+  <data name="OutsideLawyerWorkingHours" xml:space="preserve"><value>The preferred appointment is outside the lawyer's working hours.</value></data>
+  <data name="ReferenceNumberConflict" xml:space="preserve"><value>A unique consultation reference could not be allocated. Please retry.</value></data>
+  <data name="ReferenceVerificationFailed" xml:space="preserve"><value>The consultation request reference could not be verified.</value></data>
+  <data name="CurrentClientProfileNotFound" xml:space="preserve"><value>The current client profile was not found.</value></data>
+  <data name="GovernorateInvalid" xml:space="preserve"><value>Governorate data is invalid.</value></data>
+  <data name="GovernorateNotFound" xml:space="preserve"><value>The governorate was not found.</value></data>
+  <data name="GovernorateDuplicateNameAr" xml:space="preserve"><value>The Arabic governorate name already exists.</value></data>
+  <data name="GovernorateDuplicateNameEn" xml:space="preserve"><value>The English governorate name already exists.</value></data>
+  <data name="GovernorateAlreadyActive" xml:space="preserve"><value>The governorate is already active.</value></data>
+  <data name="GovernorateAlreadyInactive" xml:space="preserve"><value>The governorate is already inactive.</value></data>
+  <data name="GovernorateConcurrencyConflict" xml:space="preserve"><value>The governorate was changed by another request.</value></data>
+  <data name="CityInvalid" xml:space="preserve"><value>City data is invalid.</value></data>
+  <data name="CityNotFound" xml:space="preserve"><value>The city was not found.</value></data>
+  <data name="CityDuplicateNameAr" xml:space="preserve"><value>The Arabic city name already exists in this governorate.</value></data>
+  <data name="CityDuplicateNameEn" xml:space="preserve"><value>The English city name already exists in this governorate.</value></data>
+  <data name="InvalidGovernorate" xml:space="preserve"><value>The selected governorate does not exist.</value></data>
+  <data name="CityAlreadyActive" xml:space="preserve"><value>The city is already active.</value></data>
+  <data name="CityAlreadyInactive" xml:space="preserve"><value>The city is already inactive.</value></data>
+  <data name="CityConcurrencyConflict" xml:space="preserve"><value>The city was changed by another request.</value></data>
+  <data name="AreaInvalid" xml:space="preserve"><value>Area data is invalid.</value></data>
+  <data name="AreaNotFound" xml:space="preserve"><value>The area was not found.</value></data>
+  <data name="AreaDuplicateNameAr" xml:space="preserve"><value>The Arabic area name already exists in this city.</value></data>
+  <data name="AreaDuplicateNameEn" xml:space="preserve"><value>The English area name already exists in this city.</value></data>
+  <data name="InvalidCity" xml:space="preserve"><value>The selected city does not exist.</value></data>
+  <data name="AreaAlreadyActive" xml:space="preserve"><value>The area is already active.</value></data>
+  <data name="AreaAlreadyInactive" xml:space="preserve"><value>The area is already inactive.</value></data>
+  <data name="AreaConcurrencyConflict" xml:space="preserve"><value>The area was changed by another request.</value></data>
+  <data name="ActiveLocationNotFound" xml:space="preserve"><value>The active location was not found.</value></data>
+  <data name="InvalidLocationHierarchy" xml:space="preserve"><value>The location hierarchy is invalid or inactive.</value></data>
+  <data name="LegalSpecializationInvalid" xml:space="preserve"><value>The legal specialization is invalid.</value></data>
+  <data name="LegalSpecializationNotFound" xml:space="preserve"><value>The legal specialization was not found.</value></data>
+  <data name="LegalSpecializationDuplicateNameAr" xml:space="preserve"><value>A legal specialization with the same Arabic name already exists.</value></data>
+  <data name="LegalSpecializationDuplicateNameEn" xml:space="preserve"><value>A legal specialization with the same English name already exists.</value></data>
+  <data name="LegalSpecializationAlreadyActive" xml:space="preserve"><value>The legal specialization is already active.</value></data>
+  <data name="LegalSpecializationAlreadyInactive" xml:space="preserve"><value>The legal specialization is already inactive.</value></data>
+  <data name="LegalSpecializationConcurrencyConflict" xml:space="preserve"><value>The legal specialization was changed by another request.</value></data>
+  <data name="LegalSpecializationInactive" xml:space="preserve"><value>A requested legal specialization is inactive.</value></data>
+  <data name="ContactInquiryInvalid" xml:space="preserve"><value>The contact inquiry is invalid.</value></data>
+  <data name="ContactInquiryNotFound" xml:space="preserve"><value>The contact inquiry was not found.</value></data>
+  <data name="InquiryTypeRequired" xml:space="preserve"><value>Inquiry type is required.</value></data>
+  <data name="InquiryTypeTooLong" xml:space="preserve"><value>Inquiry type cannot exceed 150 characters.</value></data>
+  <data name="MessageRequired" xml:space="preserve"><value>Message is required.</value></data>
+  <data name="MessageTooLong" xml:space="preserve"><value>Message cannot exceed 4000 characters.</value></data>
+  <data name="PaginationPageNumberInvalid" xml:space="preserve"><value>Page number must be greater than zero.</value></data>
+  <data name="PaginationPageSizeInvalid" xml:space="preserve"><value>Page size must be between 1 and 100.</value></data>
+</root>

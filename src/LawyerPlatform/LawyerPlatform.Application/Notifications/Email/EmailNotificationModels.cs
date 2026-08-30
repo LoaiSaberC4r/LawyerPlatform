@@ -30,6 +30,14 @@ public sealed record RegistrationWelcomeEmailNotificationModel(
     string Email,
     string UserName) : EmailNotificationModel;
 
+public sealed record ContactInquiryEmailNotificationModel(
+    string FullName,
+    string PhoneNumber,
+    string Email,
+    string InquiryType,
+    string Message,
+    DateTime CreatedOnUtc) : EmailNotificationModel;
+
 public sealed record EmailNotificationContent(
     string Subject,
     string HtmlBody);

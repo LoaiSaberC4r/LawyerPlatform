@@ -1,21 +1,16 @@
-using System.Text.RegularExpressions;
 using FluentValidation;
 
 namespace LawyerPlatform.Application.Common.Validation;
 
-internal static partial class EgyptianMobileNumberValidatorExtensions
+internal static class EgyptianMobileNumberValidatorExtensions
 {
-    private const string EgyptianMobileNumberPattern = "^01[0125][0-9]{8}$";
-
     public static IRuleBuilderOptions<T, string?> EgyptianMobileNumber<T>(
         this IRuleBuilder<T, string?> ruleBuilder)
     {
         ArgumentNullException.ThrowIfNull(ruleBuilder);
 
         return ruleBuilder.Must(phoneNumber =>
-            phoneNumber is null || EgyptianMobileNumberRegex().IsMatch(phoneNumber));
+            phoneNumber is null ||
+            LawyerPlatform.Domain.Common.EgyptianMobileNumber.IsValid(phoneNumber));
     }
-
-    [GeneratedRegex(EgyptianMobileNumberPattern, RegexOptions.CultureInvariant)]
-    private static partial Regex EgyptianMobileNumberRegex();
 }

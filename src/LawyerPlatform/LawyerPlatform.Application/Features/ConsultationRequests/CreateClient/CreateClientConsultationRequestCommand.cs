@@ -9,6 +9,7 @@ using LawyerPlatform.Application.Features.ConsultationRequests.Create;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Application.Features.ConsultationRequests.CreateClient;
 
@@ -60,7 +61,7 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
         if (currentUser.UserId is not { } userId)
         {
             return Result<CreateConsultationRequestResponse>.Fail(
-                Error.NotFound("ClientProfile.NotFound", "The current Client profile was not found."));
+                Error.NotFound("ClientProfile.NotFound", ErrorMessage.CurrentClientProfileNotFound));
         }
 
         var client = await clientReader.FirstOrDefaultAsync(
@@ -69,7 +70,7 @@ internal sealed class CreateClientConsultationRequestCommandHandler(
         if (client is null)
         {
             return Result<CreateConsultationRequestResponse>.Fail(
-                Error.NotFound("ClientProfile.NotFound", "The current Client profile was not found."));
+                Error.NotFound("ClientProfile.NotFound", ErrorMessage.CurrentClientProfileNotFound));
         }
 
         return await service.CreateClientAsync(
