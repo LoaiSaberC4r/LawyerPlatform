@@ -31,7 +31,9 @@ public sealed class BilingualEmailNotificationFactoryTests
         { EmailNotificationType.ClientSuspended, Client(), "Avokatoo | تم تعليق حسابك | Your Account Has Been Suspended", "Suspended" },
         { EmailNotificationType.ClientReactivated, Client(), "Avokatoo | تمت إعادة تفعيل حسابك | Your Account Has Been Reactivated", "Active" },
         { EmailNotificationType.LawyerRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك كمحامٍ | Welcome to Avokatoo", "Draft" },
-        { EmailNotificationType.ClientRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك | Welcome to Avokatoo", "searching for Lawyers" }
+        { EmailNotificationType.ClientRegistrationWelcome, Registration(), "Avokatoo | مرحبًا بك | Welcome to Avokatoo", "searching for Lawyers" },
+        { EmailNotificationType.ContactInquirySupportNotification, ContactInquiry(), "Avokatoo | استفسار تواصل جديد | New Contact Inquiry", "Technical Support" },
+        { EmailNotificationType.ContactInquiryConfirmation, ContactInquiry(), "Avokatoo | تم استلام استفسارك | Inquiry Received", "successfully received your inquiry" }
     };
 
     [Fact]
@@ -53,6 +55,8 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Equal(14, (int)EmailNotificationType.ClientReactivated);
         Assert.Equal(15, (int)EmailNotificationType.LawyerRegistrationWelcome);
         Assert.Equal(16, (int)EmailNotificationType.ClientRegistrationWelcome);
+        Assert.Equal(17, (int)EmailNotificationType.ContactInquirySupportNotification);
+        Assert.Equal(18, (int)EmailNotificationType.ContactInquiryConfirmation);
     }
 
     [Theory]
@@ -225,6 +229,42 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.DoesNotContain(
             typeof(RegistrationWelcomeEmailNotificationModel).GetProperties(),
             property => property.Name.Contains("Password", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ContactInquiryTemplates_RenderRequiredBilingualContentAndEncodeAllUserInput()
+    {
+        const string unsafeText = "<script>alert('x')</script> & value";
+        var model = new ContactInquiryEmailNotificationModel(
+            unsafeText,
+            unsafeText,
+            "unsafe@example.test",
+            unsafeText,
+            $"first line\n{unsafeText}",
+            new DateTime(2026, 8, 30, 12, 30, 0, DateTimeKind.Utc));
+
+        var support = _factory.Create(
+            EmailNotificationType.ContactInquirySupportNotification,
+            model);
+        var confirmation = _factory.Create(
+            EmailNotificationType.ContactInquiryConfirmation,
+            model);
+
+        Assert.Contains("Full Name:", support.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Phone Number:", support.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Email:", support.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Inquiry Type:", support.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Message / Details:", support.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("first line<br>&lt;script&gt;", support.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("<script>", support.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<script>", confirmation.HtmlBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(unsafeText, support.Subject, StringComparison.Ordinal);
+        Assert.Contains("تم استلام استفسارك بنجاح", confirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("successfully received your inquiry", confirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, support.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(FooterImageUrl, confirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Platform", support.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lawyer Platform", confirmation.HtmlBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -485,6 +525,15 @@ public sealed class BilingualEmailNotificationFactoryTests
 
     private static RegistrationWelcomeEmailNotificationModel Registration()
         => new("المستخدم Registrant", "registrant@example.test", "registrant.user");
+
+    private static ContactInquiryEmailNotificationModel ContactInquiry()
+        => new(
+            "أحمد Ahmed",
+            "01012345678",
+            "ahmed@example.test",
+            "Technical Support",
+            "Details التفاصيل",
+            new DateTime(2026, 8, 30, 12, 0, 0, DateTimeKind.Utc));
 
     private static int CountOccurrences(string value, string searchValue)
     {

@@ -1,34 +1,35 @@
 using BuildingBlock.Domain.Results;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Domain.Accounts;
 
 public static class AccountErrors
 {
-    public static readonly Error UserNameRequired = Error.Validation("Account.UserNameRequired", "User name is required.");
-    public static readonly Error UserNameInvalid = Error.Validation("Account.UserNameInvalid", "User name format is invalid.");
-    public static readonly Error UserNameTooShort = Error.Validation("Account.UserNameTooShort", "User name must be at least 3 characters.");
-    public static readonly Error UserNameTooLong = Error.Validation("Account.UserNameTooLong", "User name cannot exceed 50 characters.");
-    public static readonly Error UserNameAlreadyExists = Error.Conflict("Account.UserNameAlreadyExists", "User name is already in use.");
-    public static readonly Error EmailRequired = Error.Validation("Account.EmailRequired", "Email is required.");
-    public static readonly Error EmailInvalid = Error.Validation("Account.EmailInvalid", "Email format is invalid.");
-    public static readonly Error EmailAlreadyExists = Error.Conflict("Account.EmailAlreadyExists", "Email is already in use.");
-    public static readonly Error PhoneNumberRequired = Error.Validation("Account.PhoneNumberRequired", "Phone number is required.");
-    public static readonly Error PhoneNumberAlreadyExists = Error.Conflict("Account.PhoneNumberAlreadyExists", "Phone number is already in use.");
-    public static readonly Error PasswordRequired = Error.Validation("Account.PasswordRequired", "Password is required.");
-    public static readonly Error PasswordInvalid = Error.Validation("Account.PasswordInvalid", "Password does not satisfy the configured policy.");
-    public static readonly Error NewPasswordRequired = Error.Validation("Account.NewPasswordRequired", "New password is required.");
-    public static readonly Error NewPasswordInvalid = Error.Validation("Account.NewPasswordInvalid", "New password does not satisfy the configured policy.");
-    public static readonly Error FullNameRequired = Error.Validation("Account.FullNameRequired", "Full name is required.");
-    public static readonly Error NotFound = Error.NotFound("Account.NotFound", "Account was not found.");
-    public static readonly Error Suspended = Error.Security("Account.Suspended", "The account is suspended.");
-    public static readonly Error Inactive = Error.Security("Account.Inactive", "The account is inactive.");
-    public static readonly Error CurrentPasswordInvalid = Error.Unauthorized("Account.CurrentPasswordInvalid", "Current password is invalid.");
-    public static readonly Error PasswordMustBeDifferent = Error.Validation("Account.PasswordMustBeDifferent", "New password must be different from the current password.");
-    public static readonly Error PasswordChangeRequired = Error.Security("Account.PasswordChangeRequired", "Password change is required before accessing this resource.");
-    public static readonly Error PasswordHashRequired = Error.Domain("Account.PasswordHashRequired", "Password hash is required.");
-    public static readonly Error FullNameTooLong = Error.Validation("Account.FullNameTooLong", "Full name cannot exceed 200 characters.");
-    public static readonly Error InvalidStatusTransition = Error.Domain("Account.InvalidStatusTransition", "The requested account status transition is not allowed.");
-    public static readonly Error InvalidRowVersion = Error.Validation("Account.InvalidRowVersion", "RowVersion must be a valid Base64 value.");
-    public static readonly Error ConcurrencyConflict = Error.Conflict("Account.ConcurrencyConflict", "The account was changed by another request.");
-    public static readonly Error CredentialVersionLimitReached = Error.Conflict("Account.CredentialVersionLimitReached", "The account credentials cannot be changed.");
+    public static Error UserNameRequired => Error.Validation("Account.UserNameRequired", ErrorMessage.UserNameRequired);
+    public static Error UserNameInvalid => Error.Validation("Account.UserNameInvalid", ErrorMessage.UserNameInvalid);
+    public static Error UserNameTooShort => Error.Validation("Account.UserNameTooShort", ErrorMessage.UserNameTooShort);
+    public static Error UserNameTooLong => Error.Validation("Account.UserNameTooLong", ErrorMessage.UserNameTooLong);
+    public static Error UserNameAlreadyExists => Error.Conflict("Account.UserNameAlreadyExists", ErrorMessage.UserNameAlreadyExists);
+    public static Error EmailRequired => Error.Validation("Account.EmailRequired", ErrorMessage.EmailRequired);
+    public static Error EmailInvalid => Error.Validation("Account.EmailInvalid", ErrorMessage.EmailInvalid);
+    public static Error EmailAlreadyExists => Error.Conflict("Account.EmailAlreadyExists", ErrorMessage.EmailAlreadyExists);
+    public static Error PhoneNumberRequired => Error.Validation("Account.PhoneNumberRequired", ErrorMessage.PhoneNumberRequired);
+    public static Error PhoneNumberAlreadyExists => Error.Conflict("Account.PhoneNumberAlreadyExists", ErrorMessage.PhoneNumberAlreadyExists);
+    public static Error PasswordRequired => Error.Validation("Account.PasswordRequired", ErrorMessage.PasswordRequired);
+    public static Error PasswordInvalid => Error.Validation("Account.PasswordInvalid", ErrorMessage.PasswordInvalid);
+    public static Error NewPasswordRequired => Error.Validation("Account.NewPasswordRequired", ErrorMessage.NewPasswordRequired);
+    public static Error NewPasswordInvalid => Error.Validation("Account.NewPasswordInvalid", ErrorMessage.NewPasswordInvalid);
+    public static Error FullNameRequired => Error.Validation("Account.FullNameRequired", ErrorMessage.FullNameRequired);
+    public static Error NotFound => Error.NotFound("Account.NotFound", ErrorMessage.AccountNotFound);
+    public static Error Suspended => Error.Security("Account.Suspended", ErrorMessage.AccountSuspended);
+    public static Error Inactive => Error.Security("Account.Inactive", ErrorMessage.AccountInactive);
+    public static Error CurrentPasswordInvalid => Error.Unauthorized("Account.CurrentPasswordInvalid", ErrorMessage.CurrentPasswordInvalid);
+    public static Error PasswordMustBeDifferent => Error.Validation("Account.PasswordMustBeDifferent", ErrorMessage.PasswordMustBeDifferent);
+    public static Error PasswordChangeRequired => Error.Security("Account.PasswordChangeRequired", ErrorMessage.PasswordChangeRequired);
+    public static Error PasswordHashRequired => Error.Domain("Account.PasswordHashRequired", ErrorMessage.PasswordHashRequired);
+    public static Error FullNameTooLong => Error.Validation("Account.FullNameTooLong", ErrorMessage.FullNameTooLong);
+    public static Error InvalidStatusTransition => Error.Domain("Account.InvalidStatusTransition", ErrorMessage.InvalidStatusTransition);
+    public static Error InvalidRowVersion => Error.Validation("Account.InvalidRowVersion", ErrorMessage.InvalidRowVersion);
+    public static Error ConcurrencyConflict => Error.Conflict("Account.ConcurrencyConflict", ErrorMessage.AccountConcurrencyConflict);
+    public static Error CredentialVersionLimitReached => Error.Conflict("Account.CredentialVersionLimitReached", ErrorMessage.CredentialVersionLimitReached);
 }

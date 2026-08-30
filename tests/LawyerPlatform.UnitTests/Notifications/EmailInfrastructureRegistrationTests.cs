@@ -48,6 +48,7 @@ public sealed class EmailInfrastructureRegistrationTests
                 ["EmailOutbox:BatchSize"] = "20",
                 ["EmailOutbox:MaxAttempts"] = "5",
                 ["EmailOutbox:ClaimLeaseSeconds"] = "300",
+                ["ContactUs:SupportEmail"] = "support@example.test",
                 ["EmailBranding:FooterImageUrl"] = "https://cdn.example.test/email-assets/avokatoo-email-footer.png"
             })
             .Build();

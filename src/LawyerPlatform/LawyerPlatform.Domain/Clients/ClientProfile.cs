@@ -2,6 +2,7 @@ using BuildingBlock.Domain.EntitiesHelper;
 using BuildingBlock.Domain.Primitive;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Domain.Clients;
 
@@ -35,7 +36,9 @@ public sealed class ClientProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
 
         if (userAccount.Role != AccountRole.Client)
         {
-            return Result<ClientProfile>.Fail(Error.Domain("ClientProfile.InvalidAccountRole", "A client profile requires a client account."));
+            return Result<ClientProfile>.Fail(Error.Domain(
+                "ClientProfile.InvalidAccountRole",
+                ErrorMessage.ClientProfileRequiresClientAccount));
         }
 
         if (string.IsNullOrWhiteSpace(fullName))

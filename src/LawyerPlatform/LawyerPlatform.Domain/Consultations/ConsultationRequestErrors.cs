@@ -1,78 +1,79 @@
 using BuildingBlock.Domain.Results;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Domain.Consultations;
 
 public static class ConsultationRequestErrors
 {
-    public static readonly Error Invalid = Error.Validation(
+    public static Error Invalid => Error.Validation(
         "ConsultationRequest.Invalid",
-        "The consultation request is invalid.");
+        ErrorMessage.ConsultationRequestInvalid);
 
-    public static readonly Error InvalidConsultationType = Error.Validation(
+    public static Error InvalidConsultationType => Error.Validation(
         "ConsultationRequest.InvalidConsultationType",
-        "Consultation type must be Online or Onsite.");
+        ErrorMessage.InvalidConsultationType);
 
-    public static readonly Error ConsultationPriceRequired = Error.Validation(
+    public static Error ConsultationPriceRequired => Error.Validation(
         "ConsultationRequest.ConsultationPriceRequired",
-        "An Online consultation requires a valid price snapshot.");
+        ErrorMessage.ConsultationPriceRequired);
 
-    public static readonly Error OnsitePriceNotAllowed = Error.Validation(
+    public static Error OnsitePriceNotAllowed => Error.Validation(
         "ConsultationRequest.OnsitePriceNotAllowed",
-        "An Onsite consultation cannot contain a price snapshot.");
+        ErrorMessage.OnsitePriceNotAllowed);
 
-    public static readonly Error InvalidSource = Error.Domain(
+    public static Error InvalidSource => Error.Domain(
         "ConsultationRequest.InvalidSource",
-        "A consultation request must have exactly one valid requester source.");
+        ErrorMessage.InvalidConsultationSource);
 
-    public static readonly Error InvalidStatusTransition = Error.Domain(
+    public static Error InvalidStatusTransition => Error.Domain(
         "ConsultationRequest.InvalidStatusTransition",
-        "The requested consultation status transition is not allowed.");
+        ErrorMessage.InvalidConsultationStatusTransition);
 
-    public static readonly Error RejectionReasonRequired = Error.Validation(
+    public static Error RejectionReasonRequired => Error.Validation(
         "ConsultationRequest.RejectionReasonRequired",
-        "A rejection reason is required and cannot exceed 1000 characters.");
+        ErrorMessage.RejectionReasonRequired);
 
-    public static readonly Error NotFound = Error.NotFound(
+    public static Error NotFound => Error.NotFound(
         "ConsultationRequest.NotFound",
-        "The consultation request was not found.");
+        ErrorMessage.ConsultationRequestNotFound);
 
-    public static readonly Error ConcurrencyConflict = Error.Conflict(
+    public static Error ConcurrencyConflict => Error.Conflict(
         "ConsultationRequest.ConcurrencyConflict",
-        "The consultation request was changed by another request.");
+        ErrorMessage.ConsultationRequestConcurrencyConflict);
 
-    public static readonly Error InvalidRowVersion = Error.Validation(
+    public static Error InvalidRowVersion => Error.Validation(
         "ConsultationRequest.InvalidRowVersion",
-        "RowVersion must be a valid Base64 value.");
+        ErrorMessage.InvalidRowVersion);
 
-    public static readonly Error LawyerUnavailable = Error.Domain(
+    public static Error LawyerUnavailable => Error.Domain(
         "ConsultationRequest.LawyerUnavailable",
-        "The selected lawyer is not currently available for consultation requests.");
+        ErrorMessage.LawyerUnavailable);
 
-    public static readonly Error SpecializationNotOfferedByLawyer = Error.Domain(
+    public static Error SpecializationNotOfferedByLawyer => Error.Domain(
         "ConsultationRequest.SpecializationNotOfferedByLawyer",
-        "The selected specialization is not currently offered by the lawyer.");
+        ErrorMessage.SpecializationNotOfferedByLawyer);
 
-    public static readonly Error PreferredAppointmentMustBeFuture = Error.Validation(
+    public static Error PreferredAppointmentMustBeFuture => Error.Validation(
         "ConsultationRequest.PreferredAppointmentMustBeFuture",
-        "The preferred appointment must be a future UTC time.");
+        ErrorMessage.PreferredAppointmentMustBeFuture);
 
-    public static readonly Error LawyerAvailabilityNotConfigured = Error.Domain(
+    public static Error LawyerAvailabilityNotConfigured => Error.Domain(
         "ConsultationRequest.LawyerAvailabilityNotConfigured",
-        "The selected lawyer has not configured appointment availability.");
+        ErrorMessage.LawyerAvailabilityNotConfigured);
 
-    public static readonly Error LawyerNotAvailableOnSelectedDay = Error.Domain(
+    public static Error LawyerNotAvailableOnSelectedDay => Error.Domain(
         "ConsultationRequest.LawyerNotAvailableOnSelectedDay",
-        "The selected lawyer is not available on the appointment day.");
+        ErrorMessage.LawyerNotAvailableOnSelectedDay);
 
-    public static readonly Error OutsideLawyerWorkingHours = Error.Domain(
+    public static Error OutsideLawyerWorkingHours => Error.Domain(
         "ConsultationRequest.OutsideLawyerWorkingHours",
-        "The preferred appointment is outside the lawyer's working hours.");
+        ErrorMessage.OutsideLawyerWorkingHours);
 
-    public static readonly Error ReferenceNumberConflict = Error.Conflict(
+    public static Error ReferenceNumberConflict => Error.Conflict(
         "ConsultationRequest.ReferenceNumberConflict",
-        "A unique consultation reference could not be allocated. Please retry.");
+        ErrorMessage.ReferenceNumberConflict);
 
-    public static readonly Error ReferenceVerificationFailed = Error.NotFound(
+    public static Error ReferenceVerificationFailed => Error.NotFound(
         "ConsultationRequest.ReferenceVerificationFailed",
-        "The consultation request reference could not be verified.");
+        ErrorMessage.ReferenceVerificationFailed);
 }

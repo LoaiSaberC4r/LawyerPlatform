@@ -7,6 +7,7 @@ using LawyerPlatform.Application.Features.AdminLawyers.Common;
 using LawyerPlatform.Application.Features.ConsultationRequests.Create;
 using LawyerPlatform.Application.Features.AdminClients.Common;
 using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Application.Common.Validation;
 
 namespace LawyerPlatform.Application;
 
@@ -14,6 +15,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddLawyerPlatformApplication(this IServiceCollection services)
     {
+        ValidatorOptions.Global.LanguageManager = new ErrorMessageLanguageManager();
+
         services.AddMediatR(configuration =>
             configuration.RegisterServicesFromAssembly(AssemblyReference.Assembly));
 

@@ -6,6 +6,7 @@ using LawyerPlatform.Application.Features.AdminClients.Common;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Application.Features.AdminClients.SuspendClient;
 
@@ -20,7 +21,7 @@ internal sealed class SuspendClientCommandValidator : AbstractValidator<SuspendC
         RuleFor(command => command.RowVersion)
             .Must(value => RowVersionCodec.TryDecode(value, out _))
             .WithErrorCode(AccountErrors.InvalidRowVersion.Code)
-            .WithMessage(AccountErrors.InvalidRowVersion.Message);
+            .WithMessage(_ => ErrorMessage.InvalidRowVersion);
     }
 }
 

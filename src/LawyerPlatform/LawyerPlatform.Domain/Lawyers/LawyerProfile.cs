@@ -2,6 +2,7 @@ using BuildingBlock.Domain.EntitiesHelper;
 using BuildingBlock.Domain.Primitive;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Domain.Lawyers;
 
@@ -58,7 +59,9 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
 
         if (userAccount.Role != AccountRole.Lawyer)
         {
-            return Result<LawyerProfile>.Fail(Error.Domain("LawyerProfile.InvalidAccountRole", "A lawyer profile requires a lawyer account."));
+            return Result<LawyerProfile>.Fail(Error.Domain(
+                "LawyerProfile.InvalidAccountRole",
+                ErrorMessage.LawyerProfileRequiresLawyerAccount));
         }
 
         if (string.IsNullOrWhiteSpace(fullName))
@@ -99,7 +102,7 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
             normalizedTitle?.Length > 200 || normalizedBiography?.Length > 4000 ||
             yearsOfExperience < 0 || normalizedRegistrationNumber?.Length > 100)
         {
-            return Result.Fail(Error.Validation("Lawyer.InvalidProfessionalProfile", "The professional profile is invalid."));
+            return Result.Fail(Error.Validation("Lawyer.InvalidProfessionalProfile", ErrorMessage.InvalidProfessionalProfile));
         }
 
         FullName = normalizedFullName;
@@ -146,7 +149,7 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
             string.IsNullOrWhiteSpace(detailedAddress) || detailedAddress.Trim().Length > 500 ||
             Normalize(publicPhoneNumber)?.Length > 30)
         {
-            return Result<LawyerOffice>.Fail(Error.Validation("Lawyer.InvalidOffice", "The primary office is invalid."));
+            return Result<LawyerOffice>.Fail(Error.Validation("Lawyer.InvalidOffice", ErrorMessage.InvalidOffice));
         }
 
         if (latitude.HasValue != longitude.HasValue)
@@ -273,7 +276,7 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
 
         if (!accountIsActive)
         {
-            return Result.Fail(Error.Domain("Account.Inactive", "The account is not active."));
+            return Result.Fail(Error.Domain("Account.Inactive", ErrorMessage.AccountInactive));
         }
 
         if (!profileIsComplete)

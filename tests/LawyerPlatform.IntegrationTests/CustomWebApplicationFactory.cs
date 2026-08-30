@@ -2,6 +2,7 @@ using BuildingBlock.Infrastructure.Bootstrap;
 using BuildingBlock.Application.Email;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -48,6 +49,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["PasswordReset:ResetTokenExpirationMinutes"] = "10",
                 ["PasswordReset:HmacSecret"] = "integration-test-password-reset-secret-0001",
                 ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
+                ["ContactUs:SupportEmail"] = "Support@avokatoo.com",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
                 ["EmailOutbox:Enabled"] = "false",
                 ["Cors:AllowAnyOrigin"] = "false",
@@ -85,6 +87,10 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton<TestPasswordResetEmailSender>();
             services.AddSingleton<IEmailSender>(provider =>
                 provider.GetRequiredService<TestPasswordResetEmailSender>());
+            services.AddScoped<ISeeder, SuperAdminSeeder>();
+            services.AddScoped<ISeeder, GovernorateSeeder>();
+            services.AddScoped<ISeeder, CitySeeder>();
+            services.AddScoped<ISeeder, AreaSeeder>();
 
             var connection = new SqliteConnection("Data Source=:memory:");
             connection.Open();
@@ -110,10 +116,16 @@ public sealed class TestPasswordResetEmailSender : IEmailSender
     private readonly System.Collections.Concurrent.ConcurrentQueue<EmailMessage> _messages = new();
 
     public IReadOnlyCollection<EmailMessage> Messages => _messages.ToArray();
+    public bool FailSending { get; set; }
 
     public Task SendAsync(EmailMessage message, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        if (FailSending)
+        {
+            throw new IOException("Simulated SMTP provider failure.");
+        }
+
         _messages.Enqueue(message);
         return Task.CompletedTask;
     }

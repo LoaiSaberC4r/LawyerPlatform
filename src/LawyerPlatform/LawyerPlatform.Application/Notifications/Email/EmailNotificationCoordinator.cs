@@ -5,6 +5,7 @@ using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Domain.ContactInquiries;
 using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Notifications.Email;
@@ -26,6 +27,49 @@ internal sealed class EmailNotificationCoordinator(
     IReadRepository<UserAccount, LawyerPlatformReadPersistence> accountReader,
     IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> consultationReader)
 {
+    public async Task QueueContactInquiryAsync(
+        ContactInquiry inquiry,
+        string supportEmail,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(inquiry);
+        ArgumentException.ThrowIfNullOrWhiteSpace(supportEmail);
+
+        var model = new ContactInquiryEmailNotificationModel(
+            inquiry.FullName,
+            inquiry.PhoneNumber,
+            inquiry.Email,
+            inquiry.InquiryType,
+            inquiry.Message,
+            inquiry.CreatedOnUtc);
+
+        var supportContent = factory.Create(
+            EmailNotificationType.ContactInquirySupportNotification,
+            model);
+        await outbox.QueueAsync(
+            new QueueEmailNotification(
+                EmailNotificationType.ContactInquirySupportNotification,
+                inquiry.Id,
+                $"ContactInquirySupport:{inquiry.Id:N}",
+                supportEmail,
+                supportContent.Subject,
+                supportContent.HtmlBody),
+            cancellationToken);
+
+        var confirmationContent = factory.Create(
+            EmailNotificationType.ContactInquiryConfirmation,
+            model);
+        await outbox.QueueAsync(
+            new QueueEmailNotification(
+                EmailNotificationType.ContactInquiryConfirmation,
+                inquiry.Id,
+                $"ContactInquiryConfirmation:{inquiry.Id:N}",
+                inquiry.Email,
+                confirmationContent.Subject,
+                confirmationContent.HtmlBody),
+            cancellationToken);
+    }
+
     public Task QueueLawyerRegistrationWelcomeAsync(
         LawyerProfile profile,
         CancellationToken cancellationToken)

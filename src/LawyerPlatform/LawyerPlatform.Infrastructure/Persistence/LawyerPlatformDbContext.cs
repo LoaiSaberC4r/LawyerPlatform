@@ -3,6 +3,7 @@ using BuildingBlock.Infrastructure.Persistence;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
 using LawyerPlatform.Domain.Consultations;
+using LawyerPlatform.Domain.ContactInquiries;
 using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
 using LawyerPlatform.Infrastructure.Email;
@@ -30,6 +31,7 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
     public DbSet<LawyerAvailability> LawyerAvailabilities => Set<LawyerAvailability>();
     public DbSet<ConsultationRequest> ConsultationRequests => Set<ConsultationRequest>();
     public DbSet<ConsultationRequestStatusHistory> ConsultationRequestStatusHistory => Set<ConsultationRequestStatusHistory>();
+    public DbSet<ContactInquiry> ContactInquiries => Set<ContactInquiry>();
     public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

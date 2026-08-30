@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="ValidationErrorTitle" xml:space="preserve"><value>خطأ في التحقق</value></data>
+  <data name="DomainErrorTitle" xml:space="preserve"><value>خطأ في قواعد العمل</value></data>
+  <data name="ResourceNotFoundTitle" xml:space="preserve"><value>المورد غير موجود</value></data>
+  <data name="ConflictTitle" xml:space="preserve"><value>تعارض</value></data>
+  <data name="UnauthorizedTitle" xml:space="preserve"><value>غير مصرح</value></data>
+  <data name="SecurityErrorTitle" xml:space="preserve"><value>خطأ أمني</value></data>
+  <data name="TooManyRequestsTitle" xml:space="preserve"><value>طلبات كثيرة جدًا</value></data>
+  <data name="InfrastructureErrorTitle" xml:space="preserve"><value>خطأ في البنية التحتية</value></data>
+  <data name="UnexpectedErrorTitle" xml:space="preserve"><value>خطأ غير متوقع</value></data>
+  <data name="MethodNotAllowedTitle" xml:space="preserve"><value>الطريقة غير مسموح بها</value></data>
+  <data name="UnsupportedMediaTypeTitle" xml:space="preserve"><value>نوع المحتوى غير مدعوم</value></data>
+  <data name="AuthenticationRequired" xml:space="preserve"><value>المصادقة مطلوبة.</value></data>
+  <data name="AccessForbidden" xml:space="preserve"><value>الوصول غير مسموح به.</value></data>
+  <data name="RequestedResourceNotFound" xml:space="preserve"><value>المورد المطلوب غير موجود.</value></data>
+  <data name="HttpMethodNotAllowed" xml:space="preserve"><value>طريقة HTTP غير مسموح بها لهذا المورد.</value></data>
+  <data name="UnsupportedContentType" xml:space="preserve"><value>نوع محتوى الطلب غير مدعوم.</value></data>
+  <data name="TooManyRequests" xml:space="preserve"><value>تم إرسال طلبات كثيرة جدًا.</value></data>
+  <data name="UnknownErrorOccurred" xml:space="preserve"><value>حدث خطأ غير معروف.</value></data>
+  <data name="UnexpectedErrorOccurred" xml:space="preserve"><value>حدث خطأ غير متوقع.</value></data>
+  <data name="RequestCouldNotBeCompleted" xml:space="preserve"><value>تعذر إكمال الطلب.</value></data>
+  <data name="InvalidJson" xml:space="preserve"><value>يحتوي نص الطلب على JSON غير صالح.</value></data>
+  <data name="InvalidInput" xml:space="preserve"><value>يحتوي الطلب على بيانات إدخال غير صالحة.</value></data>
+  <data name="ConsultationRateLimitExceeded" xml:space="preserve"><value>تم إرسال طلبات استشارة كثيرة جدًا.</value></data>
+  <data name="AuthenticationRateLimitExceeded" xml:space="preserve"><value>تم إجراء محاولات مصادقة كثيرة جدًا.</value></data>
+  <data name="ContactInquiryRateLimitExceeded" xml:space="preserve"><value>تم إرسال استفسارات تواصل كثيرة جدًا. يرجى المحاولة لاحقًا.</value></data>
+  <data name="ValidationNotNull" xml:space="preserve"><value>الحقل '{PropertyName}' مطلوب.</value></data>
+  <data name="ValidationNotEmpty" xml:space="preserve"><value>يجب ألا يكون الحقل '{PropertyName}' فارغًا.</value></data>
+  <data name="ValidationEmail" xml:space="preserve"><value>الحقل '{PropertyName}' ليس عنوان بريد إلكتروني صالحًا.</value></data>
+  <data name="ValidationMaximumLength" xml:space="preserve"><value>يجب ألا يزيد الحقل '{PropertyName}' عن {MaxLength} حرفًا.</value></data>
+  <data name="ValidationMinimumLength" xml:space="preserve"><value>يجب ألا يقل الحقل '{PropertyName}' عن {MinLength} أحرف.</value></data>
+  <data name="ValidationExactLength" xml:space="preserve"><value>يجب أن يتكون الحقل '{PropertyName}' من {MaxLength} أحرف بالضبط.</value></data>
+  <data name="ValidationLength" xml:space="preserve"><value>يجب أن يتراوح طول الحقل '{PropertyName}' بين {MinLength} و{MaxLength} حرفًا.</value></data>
+  <data name="ValidationGreaterThan" xml:space="preserve"><value>يجب أن يكون الحقل '{PropertyName}' أكبر من '{ComparisonValue}'.</value></data>
+  <data name="ValidationGreaterThanOrEqual" xml:space="preserve"><value>يجب أن يكون الحقل '{PropertyName}' أكبر من أو يساوي '{ComparisonValue}'.</value></data>
+  <data name="ValidationInclusiveBetween" xml:space="preserve"><value>يجب أن يكون الحقل '{PropertyName}' بين {From} و{To}.</value></data>
+  <data name="ValidationEqual" xml:space="preserve"><value>يجب أن يساوي الحقل '{PropertyName}' القيمة '{ComparisonValue}'.</value></data>
+  <data name="ValidationRegularExpression" xml:space="preserve"><value>تنسيق الحقل '{PropertyName}' غير صالح.</value></data>
+  <data name="ValidationPredicate" xml:space="preserve"><value>الحقل '{PropertyName}' غير صالح.</value></data>
+  <data name="ValidationEnum" xml:space="preserve"><value>قيمة الحقل '{PropertyName}' غير صالحة.</value></data>
+  <data name="ValidationNull" xml:space="preserve"><value>يجب أن يكون الحقل '{PropertyName}' فارغًا.</value></data>
+  <data name="ValidationEmpty" xml:space="preserve"><value>يجب أن يكون الحقل '{PropertyName}' فارغًا.</value></data>
+  <data name="AccountIdRequired" xml:space="preserve"><value>معرّف الحساب مطلوب.</value></data>
+  <data name="UserNameRequired" xml:space="preserve"><value>اسم المستخدم مطلوب.</value></data>
+  <data name="UserNameInvalid" xml:space="preserve"><value>تنسيق اسم المستخدم غير صالح.</value></data>
+  <data name="UserNameTooShort" xml:space="preserve"><value>يجب ألا يقل اسم المستخدم عن 3 أحرف.</value></data>
+  <data name="UserNameTooLong" xml:space="preserve"><value>يجب ألا يزيد اسم المستخدم عن 50 حرفًا.</value></data>
+  <data name="UserNameAlreadyExists" xml:space="preserve"><value>اسم المستخدم مستخدم بالفعل.</value></data>
+  <data name="EmailRequired" xml:space="preserve"><value>البريد الإلكتروني مطلوب.</value></data>
+  <data name="EmailInvalid" xml:space="preserve"><value>تنسيق البريد الإلكتروني غير صالح.</value></data>
+  <data name="EmailAlreadyExists" xml:space="preserve"><value>البريد الإلكتروني مستخدم بالفعل.</value></data>
+  <data name="PhoneNumberRequired" xml:space="preserve"><value>رقم الهاتف مطلوب.</value></data>
+  <data name="PhoneNumberInvalid" xml:space="preserve"><value>يجب أن يكون رقم الهاتف رقم محمول مصريًا صالحًا.</value></data>
+  <data name="PhoneNumberAlreadyExists" xml:space="preserve"><value>رقم الهاتف مستخدم بالفعل.</value></data>
+  <data name="PasswordRequired" xml:space="preserve"><value>كلمة المرور مطلوبة.</value></data>
+  <data name="PasswordInvalid" xml:space="preserve"><value>كلمة المرور لا تستوفي السياسة المعتمدة.</value></data>
+  <data name="NewPasswordRequired" xml:space="preserve"><value>كلمة المرور الجديدة مطلوبة.</value></data>
+  <data name="NewPasswordInvalid" xml:space="preserve"><value>كلمة المرور الجديدة لا تستوفي السياسة المعتمدة.</value></data>
+  <data name="FullNameRequired" xml:space="preserve"><value>الاسم الكامل مطلوب.</value></data>
+  <data name="FullNameTooLong" xml:space="preserve"><value>يجب ألا يزيد الاسم الكامل عن 200 حرف.</value></data>
+  <data name="AccountNotFound" xml:space="preserve"><value>الحساب غير موجود.</value></data>
+  <data name="AccountSuspended" xml:space="preserve"><value>الحساب موقوف.</value></data>
+  <data name="AccountInactive" xml:space="preserve"><value>الحساب غير نشط.</value></data>
+  <data name="CurrentPasswordInvalid" xml:space="preserve"><value>كلمة المرور الحالية غير صحيحة.</value></data>
+  <data name="PasswordMustBeDifferent" xml:space="preserve"><value>يجب أن تختلف كلمة المرور الجديدة عن كلمة المرور الحالية.</value></data>
+  <data name="PasswordChangeRequired" xml:space="preserve"><value>يجب تغيير كلمة المرور قبل الوصول إلى هذا المورد.</value></data>
+  <data name="PasswordHashRequired" xml:space="preserve"><value>قيمة تجزئة كلمة المرور مطلوبة.</value></data>
+  <data name="InvalidStatusTransition" xml:space="preserve"><value>تغيير حالة الحساب المطلوب غير مسموح به.</value></data>
+  <data name="InvalidRowVersion" xml:space="preserve"><value>يجب أن تكون RowVersion قيمة Base64 صالحة.</value></data>
+  <data name="AccountConcurrencyConflict" xml:space="preserve"><value>تم تغيير الحساب بواسطة طلب آخر.</value></data>
+  <data name="CredentialVersionLimitReached" xml:space="preserve"><value>يتعذر تغيير بيانات اعتماد الحساب.</value></data>
+  <data name="ClientProfileRequiresClientAccount" xml:space="preserve"><value>يتطلب ملف العميل حسابًا بدور العميل.</value></data>
+  <data name="LawyerProfileRequiresLawyerAccount" xml:space="preserve"><value>يتطلب ملف المحامي حسابًا بدور المحامي.</value></data>
+  <data name="ClientProfileAlreadyLinked" xml:space="preserve"><value>الحساب مرتبط بالفعل بملف عميل.</value></data>
+  <data name="LawyerProfileAlreadyLinked" xml:space="preserve"><value>الحساب مرتبط بالفعل بملف محامٍ.</value></data>
+  <data name="OtpInvalidOrExpired" xml:space="preserve"><value>رمز التحقق غير صالح أو منتهي الصلاحية.</value></data>
+  <data name="ResetTokenInvalidOrExpired" xml:space="preserve"><value>رمز إعادة تعيين كلمة المرور غير صالح أو منتهي الصلاحية.</value></data>
+  <data name="PasswordResetChallengeConsumed" xml:space="preserve"><value>لم يعد من الممكن استخدام طلب إعادة تعيين كلمة المرور.</value></data>
+  <data name="PasswordResetConcurrencyConflict" xml:space="preserve"><value>تم تغيير طلب إعادة تعيين كلمة المرور بواسطة عملية أخرى.</value></data>
+  <data name="PasswordResetConfigurationInvalid" xml:space="preserve"><value>إعدادات إعادة تعيين كلمة المرور غير صحيحة.</value></data>
+  <data name="PasswordRecoveryRateLimitExceeded" xml:space="preserve"><value>تم إجراء محاولات كثيرة جدًا لاستعادة كلمة المرور.</value></data>
+  <data name="InvalidLogin" xml:space="preserve"><value>اسم المستخدم/البريد الإلكتروني أو كلمة المرور غير صحيحة.</value></data>
+  <data name="PasswordCouldNotBeProcessed" xml:space="preserve"><value>تعذرت معالجة كلمة المرور.</value></data>
+  <data name="ClientNotFound" xml:space="preserve"><value>ملف العميل غير موجود.</value></data>
+  <data name="ClientConcurrencyConflict" xml:space="preserve"><value>تم تغيير ملف العميل بواسطة طلب آخر.</value></data>
+  <data name="LawyerNotFound" xml:space="preserve"><value>المحامي غير موجود.</value></data>
+  <data name="LawyerProfileIncomplete" xml:space="preserve"><value>ملف المحامي غير مكتمل.</value></data>
+  <data name="InvalidApprovalStatus" xml:space="preserve"><value>حالة الاعتماد لا تسمح بهذه العملية.</value></data>
+  <data name="LawyerProfileEditNotAllowed" xml:space="preserve"><value>لا يمكن تعديل ملف المحامي في حالته الحالية.</value></data>
+  <data name="SensitiveProfileEditNotAllowed" xml:space="preserve"><value>لا يمكن تعديل بيانات هوية المحامي بعد اعتماده.</value></data>
+  <data name="ApprovalReasonRequired" xml:space="preserve"><value>سبب قرار الاعتماد مطلوب.</value></data>
+  <data name="SuspensionReasonRequired" xml:space="preserve"><value>سبب الإيقاف مطلوب.</value></data>
+  <data name="RegistrationNumberAlreadyExists" xml:space="preserve"><value>رقم القيد المهني مستخدم بالفعل.</value></data>
+  <data name="OfficeNotFound" xml:space="preserve"><value>المكتب الرئيسي غير موجود.</value></data>
+  <data name="OfficeEditNotAllowed" xml:space="preserve"><value>لا يمكن تعديل المكتب الرئيسي في الحالة الحالية.</value></data>
+  <data name="PrimaryOfficeAlreadyExists" xml:space="preserve"><value>يوجد مكتب رئيسي بالفعل.</value></data>
+  <data name="InvalidLatitude" xml:space="preserve"><value>يجب أن يكون خط العرض بين -90 و90.</value></data>
+  <data name="InvalidLongitude" xml:space="preserve"><value>يجب أن يكون خط الطول بين -180 و180.</value></data>
+  <data name="InvalidOfficeCoordinates" xml:space="preserve"><value>يجب إدخال خط العرض وخط الطول معًا أو تركهما فارغين معًا.</value></data>
+  <data name="DuplicateSpecialization" xml:space="preserve"><value>لا يُسمح بتكرار معرّفات التخصصات.</value></data>
+  <data name="DocumentNotFound" xml:space="preserve"><value>المستند غير موجود.</value></data>
+  <data name="DocumentTypeRequired" xml:space="preserve"><value>نوع المستند مطلوب.</value></data>
+  <data name="InvalidDocumentType" xml:space="preserve"><value>نوع المستند غير مُعد.</value></data>
+  <data name="InvalidDocument" xml:space="preserve"><value>المستند المرفوع غير صالح.</value></data>
+  <data name="RequiredDocumentCannotBeRemoved" xml:space="preserve"><value>لا يمكن حذف المستند المطلوب من ملف معتمد.</value></data>
+  <data name="DocumentRequirementsNotConfigured" xml:space="preserve"><value>متطلبات مستندات المحامي غير مُعدة.</value></data>
+  <data name="ProfileImageNotFound" xml:space="preserve"><value>صورة الملف الشخصي غير موجودة.</value></data>
+  <data name="LawyerConcurrencyConflict" xml:space="preserve"><value>تم تغيير سجل المحامي بواسطة طلب آخر.</value></data>
+  <data name="ConsultationPriceInvalid" xml:space="preserve"><value>يجب أن يكون سعر الاستشارة عن بُعد أكبر من صفر وضمن الحد الأقصى المدعوم وبمنزلتين عشريتين كحد أقصى.</value></data>
+  <data name="AvailabilityInvalid" xml:space="preserve"><value>يجب أن يتضمن التوفر فترة عمل صالحة واحدة كحد أقصى لكل يوم وأن يكون وقت البدء قبل وقت الانتهاء.</value></data>
+  <data name="DuplicateAvailabilityDay" xml:space="preserve"><value>لا يمكن أن يتضمن التوفر أيامًا مكررة لنوع الاستشارة نفسه.</value></data>
+  <data name="ConsultationSettingsInvalidRowVersion" xml:space="preserve"><value>يجب أن تكون RowVersion لإعدادات الاستشارة قيمة Base64 صالحة.</value></data>
+  <data name="ConsultationSettingsConcurrencyConflict" xml:space="preserve"><value>تم تغيير إعدادات الاستشارة بواسطة طلب آخر.</value></data>
+  <data name="InvalidProfessionalProfile" xml:space="preserve"><value>الملف المهني غير صالح.</value></data>
+  <data name="InvalidOffice" xml:space="preserve"><value>بيانات المكتب الرئيسي غير صالحة.</value></data>
+  <data name="ConsultationRequestInvalid" xml:space="preserve"><value>طلب الاستشارة غير صالح.</value></data>
+  <data name="InvalidConsultationType" xml:space="preserve"><value>يجب أن يكون نوع الاستشارة عن بُعد أو في المكتب.</value></data>
+  <data name="ConsultationPriceRequired" xml:space="preserve"><value>تتطلب الاستشارة عن بُعد نسخة سعر صالحة.</value></data>
+  <data name="OnsitePriceNotAllowed" xml:space="preserve"><value>لا يمكن أن تتضمن الاستشارة في المكتب نسخة سعر.</value></data>
+  <data name="InvalidConsultationSource" xml:space="preserve"><value>يجب أن يكون لطلب الاستشارة مصدر طالب واحد صالح فقط.</value></data>
+  <data name="InvalidConsultationStatusTransition" xml:space="preserve"><value>تغيير حالة طلب الاستشارة المطلوب غير مسموح به.</value></data>
+  <data name="RejectionReasonRequired" xml:space="preserve"><value>سبب الرفض مطلوب ويجب ألا يزيد عن 1000 حرف.</value></data>
+  <data name="ConsultationRequestNotFound" xml:space="preserve"><value>طلب الاستشارة غير موجود.</value></data>
+  <data name="ConsultationRequestConcurrencyConflict" xml:space="preserve"><value>تم تغيير طلب الاستشارة بواسطة طلب آخر.</value></data>
+  <data name="LawyerUnavailable" xml:space="preserve"><value>المحامي المحدد غير متاح حاليًا لاستقبال طلبات الاستشارة.</value></data>
+  <data name="SpecializationNotOfferedByLawyer" xml:space="preserve"><value>التخصص المحدد غير متاح حاليًا لدى المحامي.</value></data>
+  <data name="PreferredAppointmentMustBeFuture" xml:space="preserve"><value>يجب أن يكون الموعد المفضل وقتًا مستقبليًا بتوقيت UTC.</value></data>
+  <data name="LawyerAvailabilityNotConfigured" xml:space="preserve"><value>لم يُعد المحامي المحدد مواعيد التوفر.</value></data>
+  <data name="LawyerNotAvailableOnSelectedDay" xml:space="preserve"><value>المحامي المحدد غير متاح في يوم الموعد.</value></data>
+  <data name="OutsideLawyerWorkingHours" xml:space="preserve"><value>الموعد المفضل خارج ساعات عمل المحامي.</value></data>
+  <data name="ReferenceNumberConflict" xml:space="preserve"><value>تعذر تخصيص رقم مرجعي فريد للاستشارة. يرجى إعادة المحاولة.</value></data>
+  <data name="ReferenceVerificationFailed" xml:space="preserve"><value>تعذر التحقق من الرقم المرجعي لطلب الاستشارة.</value></data>
+  <data name="CurrentClientProfileNotFound" xml:space="preserve"><value>ملف العميل الحالي غير موجود.</value></data>
+  <data name="GovernorateInvalid" xml:space="preserve"><value>بيانات المحافظة غير صالحة.</value></data>
+  <data name="GovernorateNotFound" xml:space="preserve"><value>المحافظة غير موجودة.</value></data>
+  <data name="GovernorateDuplicateNameAr" xml:space="preserve"><value>اسم المحافظة باللغة العربية موجود بالفعل.</value></data>
+  <data name="GovernorateDuplicateNameEn" xml:space="preserve"><value>اسم المحافظة باللغة الإنجليزية موجود بالفعل.</value></data>
+  <data name="GovernorateAlreadyActive" xml:space="preserve"><value>المحافظة نشطة بالفعل.</value></data>
+  <data name="GovernorateAlreadyInactive" xml:space="preserve"><value>المحافظة غير نشطة بالفعل.</value></data>
+  <data name="GovernorateConcurrencyConflict" xml:space="preserve"><value>تم تغيير المحافظة بواسطة طلب آخر.</value></data>
+  <data name="CityInvalid" xml:space="preserve"><value>بيانات المدينة غير صالحة.</value></data>
+  <data name="CityNotFound" xml:space="preserve"><value>المدينة غير موجودة.</value></data>
+  <data name="CityDuplicateNameAr" xml:space="preserve"><value>اسم المدينة باللغة العربية موجود بالفعل في هذه المحافظة.</value></data>
+  <data name="CityDuplicateNameEn" xml:space="preserve"><value>اسم المدينة باللغة الإنجليزية موجود بالفعل في هذه المحافظة.</value></data>
+  <data name="InvalidGovernorate" xml:space="preserve"><value>المحافظة المحددة غير موجودة.</value></data>
+  <data name="CityAlreadyActive" xml:space="preserve"><value>المدينة نشطة بالفعل.</value></data>
+  <data name="CityAlreadyInactive" xml:space="preserve"><value>المدينة غير نشطة بالفعل.</value></data>
+  <data name="CityConcurrencyConflict" xml:space="preserve"><value>تم تغيير المدينة بواسطة طلب آخر.</value></data>
+  <data name="AreaInvalid" xml:space="preserve"><value>بيانات المنطقة غير صالحة.</value></data>
+  <data name="AreaNotFound" xml:space="preserve"><value>المنطقة غير موجودة.</value></data>
+  <data name="AreaDuplicateNameAr" xml:space="preserve"><value>اسم المنطقة باللغة العربية موجود بالفعل في هذه المدينة.</value></data>
+  <data name="AreaDuplicateNameEn" xml:space="preserve"><value>اسم المنطقة باللغة الإنجليزية موجود بالفعل في هذه المدينة.</value></data>
+  <data name="InvalidCity" xml:space="preserve"><value>المدينة المحددة غير موجودة.</value></data>
+  <data name="AreaAlreadyActive" xml:space="preserve"><value>المنطقة نشطة بالفعل.</value></data>
+  <data name="AreaAlreadyInactive" xml:space="preserve"><value>المنطقة غير نشطة بالفعل.</value></data>
+  <data name="AreaConcurrencyConflict" xml:space="preserve"><value>تم تغيير المنطقة بواسطة طلب آخر.</value></data>
+  <data name="ActiveLocationNotFound" xml:space="preserve"><value>الموقع النشط غير موجود.</value></data>
+  <data name="InvalidLocationHierarchy" xml:space="preserve"><value>التسلسل الهرمي للموقع غير صالح أو غير نشط.</value></data>
+  <data name="LegalSpecializationInvalid" xml:space="preserve"><value>التخصص القانوني غير صالح.</value></data>
+  <data name="LegalSpecializationNotFound" xml:space="preserve"><value>التخصص القانوني غير موجود.</value></data>
+  <data name="LegalSpecializationDuplicateNameAr" xml:space="preserve"><value>يوجد تخصص قانوني بالاسم العربي نفسه.</value></data>
+  <data name="LegalSpecializationDuplicateNameEn" xml:space="preserve"><value>يوجد تخصص قانوني بالاسم الإنجليزي نفسه.</value></data>
+  <data name="LegalSpecializationAlreadyActive" xml:space="preserve"><value>التخصص القانوني نشط بالفعل.</value></data>
+  <data name="LegalSpecializationAlreadyInactive" xml:space="preserve"><value>التخصص القانوني غير نشط بالفعل.</value></data>
+  <data name="LegalSpecializationConcurrencyConflict" xml:space="preserve"><value>تم تغيير التخصص القانوني بواسطة طلب آخر.</value></data>
+  <data name="LegalSpecializationInactive" xml:space="preserve"><value>أحد التخصصات القانونية المطلوبة غير نشط.</value></data>
+  <data name="ContactInquiryInvalid" xml:space="preserve"><value>استفسار التواصل غير صالح.</value></data>
+  <data name="ContactInquiryNotFound" xml:space="preserve"><value>استفسار التواصل غير موجود.</value></data>
+  <data name="InquiryTypeRequired" xml:space="preserve"><value>نوع الاستفسار مطلوب.</value></data>
+  <data name="InquiryTypeTooLong" xml:space="preserve"><value>يجب ألا يزيد نوع الاستفسار عن 150 حرفًا.</value></data>
+  <data name="MessageRequired" xml:space="preserve"><value>الرسالة مطلوبة.</value></data>
+  <data name="MessageTooLong" xml:space="preserve"><value>يجب ألا تزيد الرسالة عن 4000 حرف.</value></data>
+  <data name="PaginationPageNumberInvalid" xml:space="preserve"><value>يجب أن يكون رقم الصفحة أكبر من صفر.</value></data>
+  <data name="PaginationPageSizeInvalid" xml:space="preserve"><value>يجب أن يكون حجم الصفحة بين 1 و100.</value></data>
+</root>

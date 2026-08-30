@@ -36,9 +36,60 @@ internal sealed class BilingualEmailNotificationFactory(
             EmailNotificationType.ClientReactivated => ClientReactivated(RequireClient(model)),
             EmailNotificationType.LawyerRegistrationWelcome => LawyerRegistrationWelcome(RequireRegistration(model)),
             EmailNotificationType.ClientRegistrationWelcome => ClientRegistrationWelcome(RequireRegistration(model)),
+            EmailNotificationType.ContactInquirySupportNotification => ContactInquirySupportNotification(RequireContactInquiry(model)),
+            EmailNotificationType.ContactInquiryConfirmation => ContactInquiryConfirmation(RequireContactInquiry(model)),
             _ => throw new ArgumentOutOfRangeException(nameof(notificationType), notificationType, "Unknown email notification type.")
         };
     }
+
+    private EmailNotificationContent ContactInquirySupportNotification(
+        ContactInquiryEmailNotificationModel model)
+    {
+        var createdOnUtc = model.CreatedOnUtc
+            .ToUniversalTime()
+            .ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
+
+        return Build(
+            "Avokatoo | استفسار تواصل جديد | New Contact Inquiry",
+            [
+                Lines("مرحبًا فريق الدعم،"),
+                Lines("تم استلام استفسار تواصل جديد."),
+                Lines("الاسم الكامل:", model.FullName),
+                Lines("رقم الهاتف:", model.PhoneNumber),
+                Lines("البريد الإلكتروني:", model.Email),
+                Lines("نوع الاستفسار:", model.InquiryType),
+                MessageLines("الرسالة / التفاصيل:", model.Message),
+                Lines("وقت الإنشاء:", createdOnUtc),
+                Lines("Avokatoo")
+            ],
+            [
+                Lines("A new contact inquiry has been received."),
+                Lines("Full Name:", model.FullName),
+                Lines("Phone Number:", model.PhoneNumber),
+                Lines("Email:", model.Email),
+                Lines("Inquiry Type:", model.InquiryType),
+                MessageLines("Message / Details:", model.Message),
+                Lines("Created On:", createdOnUtc),
+                Lines("Avokatoo")
+            ]);
+    }
+
+    private EmailNotificationContent ContactInquiryConfirmation(
+        ContactInquiryEmailNotificationModel model)
+        => Build(
+            "Avokatoo | تم استلام استفسارك | Inquiry Received",
+            [
+                Lines($"مرحبًا {model.FullName}،"),
+                Lines("تم استلام استفسارك بنجاح."),
+                Lines("سيقوم فريق Avokatoo بمراجعة رسالتك والتواصل معك عند الحاجة."),
+                Lines("مع تحيات،", "Avokatoo")
+            ],
+            [
+                Lines($"Hello {model.FullName},"),
+                Lines("We have successfully received your inquiry."),
+                Lines("The Avokatoo team will review your message and contact you when needed."),
+                Lines("Regards,", "Avokatoo")
+            ]);
 
     private EmailNotificationContent LawyerRegistrationWelcome(RegistrationWelcomeEmailNotificationModel model)
         => Build(
@@ -510,6 +561,15 @@ internal sealed class BilingualEmailNotificationFactory(
     private static string Lines(params string[] values)
         => $"<p>{string.Join("<br>", values.Select(WebUtility.HtmlEncode))}</p>";
 
+    private static string MessageLines(string label, string message)
+    {
+        var lines = message
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+        return Lines([label, .. lines]);
+    }
+
     private static void AddPreferredAppointment(
         ConsultationEmailNotificationModel model,
         List<string> arabic,
@@ -595,6 +655,10 @@ internal sealed class BilingualEmailNotificationFactory(
     private static RegistrationWelcomeEmailNotificationModel RequireRegistration(EmailNotificationModel model)
         => model as RegistrationWelcomeEmailNotificationModel
            ?? throw new ArgumentException("A registration welcome notification model is required.", nameof(model));
+
+    private static ContactInquiryEmailNotificationModel RequireContactInquiry(EmailNotificationModel model)
+        => model as ContactInquiryEmailNotificationModel
+           ?? throw new ArgumentException("A contact inquiry notification model is required.", nameof(model));
 
     private static string RequireReason(LawyerEmailNotificationModel model)
         => !string.IsNullOrWhiteSpace(model.Reason)

@@ -1,6 +1,7 @@
 using BuildingBlock.Domain.EntitiesHelper;
 using BuildingBlock.Domain.Primitive;
 using BuildingBlock.Domain.Results;
+using LawyerPlatform.Domain.Resources;
 
 namespace LawyerPlatform.Domain.Accounts;
 
@@ -153,7 +154,7 @@ public sealed class UserAccount : AggregateRoot<Guid>, IAuditableEntity
         var errors = new List<Error>();
         if (id == Guid.Empty)
         {
-            errors.Add(Error.Validation("Account.IdRequired", "Account id is required."));
+            errors.Add(Error.Validation("Account.IdRequired", ErrorMessage.AccountIdRequired));
         }
 
         if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(normalizedUserName))

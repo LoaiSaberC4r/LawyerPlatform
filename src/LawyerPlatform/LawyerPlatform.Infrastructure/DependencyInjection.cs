@@ -4,11 +4,13 @@ using BuildingBlock.Infrastructure.Bootstrap;
 using BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Abstractions.Consultations;
+using LawyerPlatform.Application.Abstractions.ContactInquiries;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Application.Features.Auth.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Infrastructure.Authentication;
 using LawyerPlatform.Infrastructure.Consultations;
+using LawyerPlatform.Infrastructure.ContactInquiries;
 using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
@@ -93,6 +95,12 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(EmailBrandingOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<EmailBrandingOptions>, EmailBrandingOptionsValidator>();
+        services.AddOptions<ContactUsOptions>()
+            .Bind(configuration.GetSection(ContactUsOptions.SectionName))
+            .Validate(
+                options => IsValidEmail(options.SupportEmail),
+                "Contact Us options are invalid.")
+            .ValidateOnStart();
 
         services.AddSingleton<IAccountIdentifierNormalizer, AccountIdentifierNormalizer>();
         services.AddSingleton<IPasswordLifecycleService, PasswordLifecycleService>();
@@ -104,6 +112,7 @@ public static class DependencyInjection
         services.AddSingleton<ILawyerDocumentPolicy, LawyerDocumentPolicy>();
         services.AddSingleton<IConsultationReferenceNumberGenerator, ConsultationReferenceNumberGenerator>();
         services.AddSingleton<IConsultationSchedulingTimeZone, ConsultationSchedulingTimeZone>();
+        services.AddSingleton<IContactUsRecipientProvider, ContactUsRecipientProvider>();
         services.AddScoped<IConsultationAggregatePersistence, ConsultationAggregatePersistence>();
         services.AddSingleton<IStoredFileReader, StoredFileReader>();
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
@@ -166,4 +175,12 @@ public static class DependencyInjection
            options.AllowedExtensions.All(value => value.StartsWith('.') && !value.Contains('/') && !value.Contains('\\')) &&
            options.AllowedContentTypes.Length > 0 &&
            options.AllowedContentTypes.All(value => !string.IsNullOrWhiteSpace(value));
+
+    private static bool IsValidEmail(string value)
+        => !string.IsNullOrWhiteSpace(value) &&
+           value.Length <= 320 &&
+           !value.Contains('\r', StringComparison.Ordinal) &&
+           !value.Contains('\n', StringComparison.Ordinal) &&
+           MailAddress.TryCreate(value.Trim(), out var address) &&
+           string.Equals(address.Address, value.Trim(), StringComparison.OrdinalIgnoreCase);
 }
