@@ -7,8 +7,8 @@ using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.Lawyers.GetOwnProfile;
 
@@ -36,6 +36,7 @@ internal sealed class GetOwnProfileQueryHandler(
     ICurrentUser currentUser,
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
     ILawyerDocumentPolicy documentPolicy,
+    IStoredFileAvailability storedFileAvailability,
     IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<GetOwnProfileQuery, LawyerOwnProfileResponse>
 {
@@ -47,12 +48,21 @@ internal sealed class GetOwnProfileQueryHandler(
         }
 
         var snapshot = await repository.FirstOrDefaultAsync(new OwnProfileSpecification(userId), cancellationToken);
-        return snapshot is null
-            ? Result<LawyerOwnProfileResponse>.Fail(LawyerErrors.NotFound)
-            : Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(
-                snapshot,
-                documentPolicy,
-                profileImagePathResolver));
+        if (snapshot is null)
+        {
+            return Result<LawyerOwnProfileResponse>.Fail(LawyerErrors.NotFound);
+        }
+
+        var availableDocumentTypes = await RequiredDocumentAvailability.GetAvailableTypesAsync(
+            snapshot.ActiveDocuments,
+            documentPolicy,
+            storedFileAvailability,
+            cancellationToken);
+        return Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(
+            snapshot,
+            availableDocumentTypes,
+            documentPolicy,
+            profileImagePathResolver));
     }
 }
 
@@ -60,6 +70,7 @@ internal static class OwnProfileMapper
 {
     public static LawyerOwnProfileResponse Map(
         OwnProfileSnapshot snapshot,
+        IReadOnlyCollection<string> availableDocumentTypes,
         ILawyerDocumentPolicy documentPolicy,
         IProfileImagePathResolver profileImagePathResolver)
     {
@@ -71,7 +82,7 @@ internal static class OwnProfileMapper
             snapshot.ProfessionalRegistrationNumber,
             snapshot.OfficeComplete,
             snapshot.Specializations.Any(item => item.IsActive),
-            snapshot.ActiveDocumentTypes,
+            availableDocumentTypes,
             snapshot.AccountStatus == AccountStatus.Active,
             documentPolicy);
         var profileImagePath = profileImagePathResolver.Resolve(snapshot.ProfileImageStorageKey);
@@ -163,7 +174,9 @@ internal sealed class OwnProfileSpecification : Specification<LawyerProfile, Own
                     item.LegalSpecialization.IsActive))
                 .ToArray(),
             profile.Documents.Count(document => !document.IsDeleted),
-            profile.Documents.Where(document => !document.IsDeleted).Select(document => document.DocumentType).ToArray(),
+            profile.Documents.Where(document => !document.IsDeleted)
+                .Select(document => new StoredDocumentReference(document.DocumentType, document.StorageKey))
+                .ToArray(),
             profile.RowVersion));
     }
 }
@@ -183,7 +196,7 @@ internal sealed record OwnProfileSnapshot(
     bool OfficeComplete,
     IReadOnlyList<OwnSpecializationSnapshot> Specializations,
     int DocumentCount,
-    IReadOnlyList<string> ActiveDocumentTypes,
+    IReadOnlyList<StoredDocumentReference> ActiveDocuments,
     byte[] RowVersion);
 
 internal sealed record OwnOfficeSnapshot(

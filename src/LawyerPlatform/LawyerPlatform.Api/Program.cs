@@ -1,5 +1,5 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Globalization;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
@@ -13,14 +13,15 @@ using BuildingBlock.Domain.Results;
 using BuildingBlock.Infrastructure.Bootstrap;
 using LawyerPlatform.Api.Authorization;
 using LawyerPlatform.Api.Configuration;
+using LawyerPlatform.Api.Errors;
 using LawyerPlatform.Api.Middleware;
 using LawyerPlatform.Api.OpenApi;
-using LawyerPlatform.Api.Errors;
 using LawyerPlatform.Application;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Resources;
 using LawyerPlatform.Infrastructure;
+using LawyerPlatform.Infrastructure.Media;
 using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -293,21 +294,16 @@ app.UseBuildingBlockLocalization();
 var profileImagesOptions = app.Services
     .GetRequiredService<IOptions<ProfileImagesOptions>>()
     .Value;
-var webRootPath = app.Environment.WebRootPath ?? Path.Combine(
-    app.Environment.ContentRootPath,
-    "wwwroot");
-var profileImagesRoot = Path.GetFullPath(Path.Combine(
-    webRootPath,
-    profileImagesOptions.PublicPathBase.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-Directory.CreateDirectory(profileImagesRoot);
-var profileImagesFileProvider = new PhysicalFileProvider(profileImagesRoot);
+var mediaStorageRoot = app.Services.GetLawyerPlatformMediaStorageRoot();
+Directory.CreateDirectory(mediaStorageRoot);
+var profileImagesFileProvider = new PhysicalFileProvider(mediaStorageRoot);
 app.Lifetime.ApplicationStopped.Register(profileImagesFileProvider.Dispose);
 
 app.Map(profileImagesOptions.PublicPathBase, profileImageFiles =>
 {
     profileImageFiles.Use(async (context, next) =>
     {
-        if (!ProfileImageStaticPathPolicy.IsAllowed(context.Request.Path))
+        if (!ProfileImageStaticPathPolicy.IsAllowed(context.Request.Path.Value))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;

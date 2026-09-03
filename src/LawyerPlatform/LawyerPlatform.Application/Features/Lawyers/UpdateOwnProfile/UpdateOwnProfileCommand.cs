@@ -44,6 +44,7 @@ internal sealed class UpdateOwnProfileCommandHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> reader,
     IConcurrencyTokenManager concurrencyTokenManager,
     ILawyerDocumentPolicy documentPolicy,
+    IStoredFileAvailability storedFileAvailability,
     IProfileImagePathResolver profileImagePathResolver,
     IDateTimeProvider clock)
     : ICommandHandler<UpdateOwnProfileCommand, LawyerOwnProfileResponse>
@@ -93,11 +94,20 @@ internal sealed class UpdateOwnProfileCommandHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var snapshot = await reader.FirstOrDefaultAsync(new OwnProfileSpecification(userId), cancellationToken);
-        return snapshot is null
-            ? Result<LawyerOwnProfileResponse>.Fail(LawyerErrors.NotFound)
-            : Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(
-                snapshot,
-                documentPolicy,
-                profileImagePathResolver));
+        if (snapshot is null)
+        {
+            return Result<LawyerOwnProfileResponse>.Fail(LawyerErrors.NotFound);
+        }
+
+        var availableDocumentTypes = await RequiredDocumentAvailability.GetAvailableTypesAsync(
+            snapshot.ActiveDocuments,
+            documentPolicy,
+            storedFileAvailability,
+            cancellationToken);
+        return Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(
+            snapshot,
+            availableDocumentTypes,
+            documentPolicy,
+            profileImagePathResolver));
     }
 }

@@ -1,5 +1,4 @@
-using BuildingBlock.Infrastructure.Options;
-using Microsoft.AspNetCore.Hosting;
+using LawyerPlatform.Infrastructure.Media;
 using Microsoft.Extensions.Options;
 
 namespace LawyerPlatform.Infrastructure.Options;
@@ -11,9 +10,7 @@ public sealed class ProfileImagesOptions
     public string PublicPathBase { get; set; } = "/uploads";
 }
 
-internal sealed class ProfileImagesOptionsValidator(
-    IWebHostEnvironment environment,
-    IOptions<MediaStorageOptions> mediaStorageOptions)
+internal sealed class ProfileImagesOptionsValidator(IMediaStoragePathResolver mediaStoragePathResolver)
     : IValidateOptions<ProfileImagesOptions>
 {
     public ValidateOptionsResult Validate(string? name, ProfileImagesOptions options)
@@ -26,17 +23,15 @@ internal sealed class ProfileImagesOptionsValidator(
                 "ProfileImages PublicPathBase must be a canonical root-relative path without traversal, a query string, or a fragment.");
         }
 
-        var webRoot = Path.GetFullPath(
-            environment.WebRootPath ?? Path.Combine(environment.ContentRootPath, "wwwroot"));
-        var expectedStorageRoot = Path.GetFullPath(Path.Combine(
-            webRoot,
-            options.PublicPathBase.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-        var configuredStorageRoot = ProfileImagePathRules.ResolveStorageRoot(mediaStorageOptions.Value);
-
-        if (!ProfileImagePathRules.PathsEqual(configuredStorageRoot, expectedStorageRoot))
+        var physicalRoot = mediaStoragePathResolver.RootPath;
+        if (!Path.IsPathFullyQualified(physicalRoot) ||
+            !string.Equals(
+                Path.GetFullPath(physicalRoot),
+                physicalRoot,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
             return ValidateOptionsResult.Fail(
-                "MediaStorage RootPath must match the ProfileImages public directory inside the application web root.");
+                "MediaStorage RootPath must resolve to a canonical absolute physical path.");
         }
 
         return ValidateOptionsResult.Success;
@@ -83,7 +78,8 @@ internal static class ProfileImagePathRules
         var segments = normalized.Split('/');
         if (segments.Length != 4 ||
             !string.Equals(segments[0], "lawyers", StringComparison.Ordinal) ||
-            !Guid.TryParseExact(segments[1], "N", out _) ||
+            !Guid.TryParseExact(segments[1], "N", out var lawyerId) ||
+            lawyerId == Guid.Empty ||
             !string.Equals(segments[2], "profile", StringComparison.Ordinal) ||
             segments.Any(segment => !IsSafeSegment(segment)) ||
             !AllowedExtensions.Contains(Path.GetExtension(segments[3]), StringComparer.OrdinalIgnoreCase))
@@ -93,21 +89,6 @@ internal static class ProfileImagePathRules
 
         return string.Join('/', segments);
     }
-
-    public static string ResolveStorageRoot(MediaStorageOptions options)
-    {
-        var root = Path.IsPathRooted(options.RootPath)
-            ? options.RootPath
-            : Path.Combine(options.ContentRootPath ?? AppContext.BaseDirectory, options.RootPath);
-
-        return Path.GetFullPath(root);
-    }
-
-    public static bool PathsEqual(string left, string right)
-        => string.Equals(
-            left.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            right.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static bool IsSafeSegment(string segment)
         => !string.IsNullOrWhiteSpace(segment) &&

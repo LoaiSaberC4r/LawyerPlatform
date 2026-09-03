@@ -40,6 +40,8 @@ public sealed class ProfileImagePathResolverTests
         Assert.Equal($"/uploads/lawyers/{LawyerId}/profile/{FileName}", result);
         Assert.StartsWith("/", result, StringComparison.Ordinal);
         Assert.DoesNotContain("//", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("App_Data", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(":\\", result, StringComparison.Ordinal);
     }
 
     [Theory]

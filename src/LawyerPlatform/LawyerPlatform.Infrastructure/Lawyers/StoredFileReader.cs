@@ -1,19 +1,20 @@
-using BuildingBlock.Infrastructure.Options;
+using BuildingBlock.Domain.Results;
+using BuildingBlock.Infrastructure.Exceptions;
 using LawyerPlatform.Application.Abstractions.Lawyers;
-using Microsoft.Extensions.Options;
+using LawyerPlatform.Infrastructure.Media;
 
 namespace LawyerPlatform.Infrastructure.Lawyers;
 
-internal sealed class StoredFileReader : IStoredFileReader
+internal sealed class StoredFileReader(IMediaStoragePathResolver pathResolver)
+    : IStoredFileReader, IStoredFileAvailability
 {
-    private readonly string _root;
-
-    public StoredFileReader(IOptions<MediaStorageOptions> options)
+    public Task<bool> ExistsAsync(
+        string storageKey,
+        CancellationToken cancellationToken = default)
     {
-        var value = options.Value;
-        _root = Path.GetFullPath(Path.IsPathRooted(value.RootPath)
-            ? value.RootPath
-            : Path.Combine(value.ContentRootPath ?? AppContext.BaseDirectory, value.RootPath));
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(
+            pathResolver.TryResolveStorageKey(storageKey, out var path) && File.Exists(path));
     }
 
     public Task<StoredFileContent?> OpenReadAsync(
@@ -23,35 +24,37 @@ internal sealed class StoredFileReader : IStoredFileReader
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrWhiteSpace(storageKey))
+        if (!pathResolver.TryResolveStorageKey(storageKey, out var path) || !File.Exists(path))
         {
             return Task.FromResult<StoredFileContent?>(null);
         }
 
-        var normalized = storageKey.Trim().Replace('\\', '/').Trim('/');
-        if (Path.IsPathRooted(normalized) || normalized.Contains(':', StringComparison.Ordinal) ||
-            normalized.Split('/').Any(segment => string.IsNullOrWhiteSpace(segment) || segment is "." or ".."))
+        try
+        {
+            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            var safeName = Path.GetFileName(downloadFileName);
+            var detectedContentType = contentType == "application/octet-stream"
+                ? GetContentType(Path.GetExtension(path))
+                : contentType;
+            return Task.FromResult<StoredFileContent?>(new StoredFileContent(
+                stream,
+                detectedContentType,
+                string.IsNullOrWhiteSpace(safeName) ? "download" : safeName,
+                stream.Length));
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return Task.FromResult<StoredFileContent?>(null);
         }
-
-        var path = Path.GetFullPath(Path.Combine(_root, normalized.Replace('/', Path.DirectorySeparatorChar)));
-        var rootPrefix = _root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!path.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return Task.FromResult<StoredFileContent?>(null);
+            throw new MediaServiceException(
+                Error.Infra(
+                    ExternalServiceErrorCodes.Media.StorageUnavailable,
+                    "Stored media content is unavailable.",
+                    source: "Media"),
+                exception);
         }
-
-        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-        var safeName = Path.GetFileName(downloadFileName);
-        var detectedContentType = contentType == "application/octet-stream"
-            ? GetContentType(Path.GetExtension(path))
-            : contentType;
-        return Task.FromResult<StoredFileContent?>(new StoredFileContent(
-            stream,
-            detectedContentType,
-            string.IsNullOrWhiteSpace(safeName) ? "download" : safeName,
-            stream.Length));
     }
 
     private static string GetContentType(string extension) => extension.ToLowerInvariant() switch
