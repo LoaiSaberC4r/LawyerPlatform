@@ -5,6 +5,7 @@ using BuildingBlock.Domain.Results;
 using FluentValidation;
 using LawyerPlatform.Application.Features.AdminLegalSpecializations.Common;
 using LawyerPlatform.Application.Features.Lawyers.Common;
+using LawyerPlatform.Application.Abstractions.ReferenceData;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.ReferenceData;
 
@@ -26,6 +27,7 @@ internal sealed class CreateLegalSpecializationCommandValidator
 
 internal sealed class CreateLegalSpecializationCommandHandler(
     IReadRepository<LegalSpecialization, LawyerPlatformReadPersistence> reader,
+    IReferenceDataIdGenerator idGenerator,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork)
     : ICommandHandler<CreateLegalSpecializationCommand, AdminLegalSpecializationResponse>
 {
@@ -44,8 +46,7 @@ internal sealed class CreateLegalSpecializationCommandHandler(
             return Result<AdminLegalSpecializationResponse>.Fail(conflict);
         }
 
-        var ids = await reader.ListAsync(new LegalSpecializationIdsSpecification(), cancellationToken);
-        var id = ids.Count == 0 ? 1 : checked(ids.Max() + 1);
+        var id = await idGenerator.NextLegalSpecializationIdAsync(cancellationToken);
         var creation = LegalSpecialization.Create(id, command.NameAr, command.NameEn, command.DisplayOrder);
         if (creation.IsFailure)
         {

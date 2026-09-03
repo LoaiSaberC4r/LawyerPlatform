@@ -17,13 +17,78 @@ public sealed class DatabaseInitializationTests
         "Server=localhost;Database=LawyerPlatformTests;Integrated Security=True;TrustServerCertificate=True";
 
     [Fact]
+    public void OptionsDefaultToNoStartupDatabaseMutation()
+    {
+        var options = new DatabaseInitializationOptions();
+
+        Assert.False(options.ApplyMigrationsOnStartup);
+        Assert.False(options.ApplySeedingOnStartup);
+    }
+
+    [Fact]
+    public async Task MigrationsAndSeedingAreBothSkippedWhenBothSwitchesAreDisabled()
+    {
+        var operations = new List<string>();
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var logger = new ListLogger<DatabaseInitializationHostedService>();
+        var service = CreateHostedService(
+            dbContext,
+            new RecordingMigrationService(operations),
+            new RecordingEnsureSeeding(operations),
+            applyMigrations: false,
+            applySeeding: false,
+            logger);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(operations);
+        Assert.Contains("Database migration skipped.", logger.Messages);
+        Assert.Contains("Database seeding skipped.", logger.Messages);
+    }
+
+    [Fact]
+    public async Task MigrationCanRunWithoutSeeding()
+    {
+        var operations = new List<string>();
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var service = CreateHostedService(
+            dbContext,
+            new RecordingMigrationService(operations),
+            new RecordingEnsureSeeding(operations),
+            applyMigrations: true,
+            applySeeding: false);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["compiled", "pending", "migrate"], operations);
+    }
+
+    [Fact]
+    public async Task SeedingCanRunWithoutMigration()
+    {
+        var operations = new List<string>();
+        await using var dbContext = CreateDbContext(SafeConnectionString);
+        var service = CreateHostedService(
+            dbContext,
+            new RecordingMigrationService(operations),
+            new RecordingEnsureSeeding(operations),
+            applyMigrations: false,
+            applySeeding: true);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["seed"], operations);
+    }
+
+    [Fact]
     public async Task SeedingExecutesAfterSuccessfulMigration()
     {
         var operations = new List<string>();
         var migration = new RecordingMigrationService(operations);
         var seeding = new RecordingEnsureSeeding(operations);
         await using var dbContext = CreateDbContext(SafeConnectionString);
-        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+        var service = CreateHostedService(
+            dbContext, migration, seeding, applyMigrations: true, applySeeding: true);
 
         await service.StartAsync(TestContext.Current.CancellationToken);
 
@@ -40,7 +105,8 @@ public sealed class DatabaseInitializationTests
         var migration = new RecordingMigrationService(operations, expected);
         var seeding = new RecordingEnsureSeeding(operations);
         await using var dbContext = CreateDbContext(SafeConnectionString);
-        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+        var service = CreateHostedService(
+            dbContext, migration, seeding, applyMigrations: true, applySeeding: true);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.StartAsync(TestContext.Current.CancellationToken));
@@ -58,7 +124,8 @@ public sealed class DatabaseInitializationTests
         var migration = new RecordingMigrationService(operations);
         var seeding = new RecordingEnsureSeeding(operations, expected);
         await using var dbContext = CreateDbContext(SafeConnectionString);
-        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+        var service = CreateHostedService(
+            dbContext, migration, seeding, applyMigrations: true, applySeeding: true);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.StartAsync(TestContext.Current.CancellationToken));
@@ -74,7 +141,8 @@ public sealed class DatabaseInitializationTests
         var migration = new RecordingMigrationService(operations);
         var seeding = new RecordingEnsureSeeding(operations);
         await using var dbContext = CreateDbContext(SafeConnectionString);
-        var service = CreateHostedService(dbContext, migration, seeding, applyMigrations: true);
+        var service = CreateHostedService(
+            dbContext, migration, seeding, applyMigrations: true, applySeeding: true);
         using var cancellation = new CancellationTokenSource();
 
         await service.StartAsync(cancellation.Token);
@@ -97,6 +165,7 @@ public sealed class DatabaseInitializationTests
             migration,
             seeding,
             applyMigrations: false,
+            applySeeding: false,
             logger);
 
         await service.StartAsync(TestContext.Current.CancellationToken);
@@ -105,7 +174,10 @@ public sealed class DatabaseInitializationTests
         Assert.False(seeding.WasCalled);
         Assert.Contains(
             logger.Messages,
-            message => message == "Database migration and seeding skipped because ApplyMigrationsOnStartup is disabled.");
+            message => message == "Database migration skipped.");
+        Assert.Contains(
+            logger.Messages,
+            message => message == "Database seeding skipped.");
     }
 
     [Fact]
@@ -123,6 +195,7 @@ public sealed class DatabaseInitializationTests
             migration,
             seeding,
             applyMigrations: false,
+            applySeeding: false,
             logger);
 
         await service.StartAsync(TestContext.Current.CancellationToken);
@@ -233,6 +306,7 @@ public sealed class DatabaseInitializationTests
         IDatabaseMigrationService migration,
         IEnsureSeeding seeding,
         bool applyMigrations,
+        bool applySeeding,
         ILogger<DatabaseInitializationHostedService>? logger = null)
     {
         var provider = new DictionaryServiceProvider(
@@ -247,7 +321,8 @@ public sealed class DatabaseInitializationTests
             new TestScopeFactory(provider),
             Options.Create(new DatabaseInitializationOptions
             {
-                ApplyMigrationsOnStartup = applyMigrations
+                ApplyMigrationsOnStartup = applyMigrations,
+                ApplySeedingOnStartup = applySeeding
             }),
             new TestHostEnvironment(),
             logger ?? new ListLogger<DatabaseInitializationHostedService>());

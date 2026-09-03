@@ -50,6 +50,25 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         Assert.Equal(JsonValueKind.Null, ownDetails.GetProperty("consultationPrice").ValueKind);
         AssertNoPrivateLocationFields(ownDetails.GetRawText());
 
+        client.DefaultRequestHeaders.Authorization = null;
+        var trackedClientResponse = await client.PostAsJsonAsync(
+            "/api/v1/public/consultation-requests/track",
+            new { referenceNumber = firstRequest.ReferenceNumber, phoneNumber = "01087111111" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, trackedClientResponse.StatusCode);
+        var trackedClientText = await trackedClientResponse.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(firstClient.ToString(), trackedClientText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("01087111111", trackedClientText, StringComparison.Ordinal);
+        Assert.DoesNotContain("description", trackedClientText, StringComparison.OrdinalIgnoreCase);
+        AssertNoPrivateLocationFields(trackedClientText);
+
+        var wrongClientPhone = await client.PostAsJsonAsync(
+            "/api/v1/public/consultation-requests/track",
+            new { referenceNumber = firstRequest.ReferenceNumber, phoneNumber = "01087999999" },
+            TestContext.Current.CancellationToken);
+        await AssertVerificationFailureAsync(wrongClientPhone);
+
         await RegisterAndLoginClientAsync(
             client,
             "history.client.two",
@@ -90,7 +109,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
 
         var wrongReference = await client.PostAsJsonAsync(
             "/api/v1/public/consultation-requests/track",
-            new { referenceNumber = "CR-NOT-FOUND", phoneNumber = "01087333333" },
+            new { referenceNumber = "AV-NOTFND", phoneNumber = "01087333333" },
             TestContext.Current.CancellationToken);
         var wrongPhone = await client.PostAsJsonAsync(
             "/api/v1/public/consultation-requests/track",
@@ -107,7 +126,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
     }
 
     [Fact]
-    public async Task GuestTrackingHasDedicatedRateLimit()
+    public async Task PublicConsultationTrackingHasDedicatedRateLimit()
     {
         await using var factory = await CreateFactoryAsync();
         using var client = CreateClient(factory);
@@ -116,7 +135,7 @@ public sealed class ClientAndGuestConsultationReadEndpointsTests
         {
             var response = await client.PostAsJsonAsync(
                 "/api/v1/public/consultation-requests/track",
-                new { referenceNumber = $"CR-MISSING-{index}", phoneNumber = "01087333333" },
+                new { referenceNumber = $"AV-{index:000000}", phoneNumber = "01087333333" },
                 TestContext.Current.CancellationToken);
             statuses.Add(response.StatusCode);
         }

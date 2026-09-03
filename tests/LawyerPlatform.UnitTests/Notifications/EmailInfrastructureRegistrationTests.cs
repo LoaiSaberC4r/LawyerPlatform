@@ -49,7 +49,8 @@ public sealed class EmailInfrastructureRegistrationTests
                 ["EmailOutbox:MaxAttempts"] = "5",
                 ["EmailOutbox:ClaimLeaseSeconds"] = "300",
                 ["ContactUs:SupportEmail"] = "support@example.test",
-                ["EmailBranding:FooterImageUrl"] = "https://cdn.example.test/email-assets/avokatoo-email-footer.png"
+                ["EmailBranding:FooterImageUrl"] = "https://cdn.example.test/email-assets/avokatoo-email-footer.png",
+                ["FrontendUrls:ConsultationTrackingUrl"] = "https://frontend.example.test/consultation/track"
             })
             .Build();
         var services = new ServiceCollection();
@@ -67,6 +68,9 @@ public sealed class EmailInfrastructureRegistrationTests
         Assert.Equal(
             "https://cdn.example.test/email-assets/avokatoo-email-footer.png",
             scope.ServiceProvider.GetRequiredService<IEmailBrandingProvider>().FooterImageUrl);
+        Assert.Equal(
+            "https://frontend.example.test/consultation/track",
+            scope.ServiceProvider.GetRequiredService<IFrontendUrlsProvider>().ConsultationTrackingUrl);
         Assert.Equal("smtp.example.test", smtp.Host);
         Assert.Equal(2525, smtp.Port);
         Assert.Equal("configured-user", smtp.UserName);

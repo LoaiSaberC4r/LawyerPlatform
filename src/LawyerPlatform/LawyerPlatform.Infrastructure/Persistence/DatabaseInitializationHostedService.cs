@@ -23,6 +23,7 @@ internal sealed partial class DatabaseInitializationHostedService(
         var migrationService = scope.ServiceProvider.GetRequiredService<IDatabaseMigrationService>();
         var connection = DatabaseConnectionDetails.From(dbContext);
         var applyMigrationsOnStartup = options.Value.ApplyMigrationsOnStartup;
+        var applySeedingOnStartup = options.Value.ApplySeedingOnStartup;
         var aspNetCoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "<not set>";
         var dotNetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "<not set>";
 
@@ -30,47 +31,58 @@ internal sealed partial class DatabaseInitializationHostedService(
         AspNetCoreEnvironment(logger, aspNetCoreEnvironment);
         DotNetEnvironment(logger, dotNetEnvironment);
         ApplyMigrationsOnStartupResolved(logger, applyMigrationsOnStartup);
+        ApplySeedingOnStartupResolved(logger, applySeedingOnStartup);
         DatabaseServer(logger, connection.DataSource);
         DatabaseName(logger, connection.Database);
         IntegratedSecurity(logger, connection.IntegratedSecurity);
 
-        if (!applyMigrationsOnStartup)
+        if (applyMigrationsOnStartup)
         {
-            InitializationSkipped(logger);
-            return;
+            try
+            {
+                var compiledMigrations = migrationService.GetCompiledMigrations(dbContext);
+                CompiledMigrationsDiscovered(logger, compiledMigrations.Count);
+
+                var pendingMigrations = await migrationService.GetPendingMigrationsAsync(dbContext, cancellationToken);
+                PendingMigrationsDiscovered(logger, pendingMigrations.Count);
+
+                MigrationStarted(logger);
+                await migrationService.MigrateAsync(dbContext, cancellationToken);
+                MigrationCompleted(logger);
+            }
+            catch (Exception)
+            {
+                MigrationFailed(logger);
+                SeedingWillNotRun(logger);
+                throw;
+            }
+        }
+        else
+        {
+            MigrationSkipped(logger);
         }
 
-        try
+        if (applySeedingOnStartup)
         {
-            var compiledMigrations = migrationService.GetCompiledMigrations(dbContext);
-            CompiledMigrationsDiscovered(logger, compiledMigrations.Count);
+            DatabaseSeedingStarted(logger);
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<IEnsureSeeding>()
+                    .SeedDatabaseAsync(cancellationToken);
+            }
+            catch (Exception)
+            {
+                DatabaseSeedingFailed(logger);
+                throw;
+            }
 
-            var pendingMigrations = await migrationService.GetPendingMigrationsAsync(dbContext, cancellationToken);
-            PendingMigrationsDiscovered(logger, pendingMigrations.Count);
-
-            MigrationStarted(logger);
-            await migrationService.MigrateAsync(dbContext, cancellationToken);
-            MigrationCompleted(logger);
+            DatabaseSeedingCompleted(logger);
         }
-        catch (Exception)
+        else
         {
-            MigrationFailed(logger);
-            SeedingWillNotRun(logger);
-            throw;
-        }
-
-        DatabaseSeedingStarted(logger);
-        try
-        {
-            await scope.ServiceProvider.GetRequiredService<IEnsureSeeding>().SeedDatabaseAsync(cancellationToken);
-        }
-        catch (Exception)
-        {
-            DatabaseSeedingFailed(logger);
-            throw;
+            DatabaseSeedingSkipped(logger);
         }
 
-        DatabaseSeedingCompleted(logger);
         InitializationCompleted(logger);
     }
 
@@ -95,6 +107,9 @@ internal sealed partial class DatabaseInitializationHostedService(
     [LoggerMessage(EventId = 4125, Level = LogLevel.Information, Message = "ApplyMigrationsOnStartup resolved to {ApplyMigrationsOnStartup}.")]
     private static partial void ApplyMigrationsOnStartupResolved(ILogger logger, bool applyMigrationsOnStartup);
 
+    [LoggerMessage(EventId = 4139, Level = LogLevel.Information, Message = "ApplySeedingOnStartup resolved to {ApplySeedingOnStartup}.")]
+    private static partial void ApplySeedingOnStartupResolved(ILogger logger, bool applySeedingOnStartup);
+
     [LoggerMessage(EventId = 4126, Level = LogLevel.Information, Message = "Database server: {DataSource}.")]
     private static partial void DatabaseServer(ILogger logger, string dataSource);
 
@@ -104,8 +119,8 @@ internal sealed partial class DatabaseInitializationHostedService(
     [LoggerMessage(EventId = 4128, Level = LogLevel.Information, Message = "Integrated security enabled: {IntegratedSecurity}.")]
     private static partial void IntegratedSecurity(ILogger logger, bool integratedSecurity);
 
-    [LoggerMessage(EventId = 4129, Level = LogLevel.Information, Message = "Database migration and seeding skipped because ApplyMigrationsOnStartup is disabled.")]
-    private static partial void InitializationSkipped(ILogger logger);
+    [LoggerMessage(EventId = 4129, Level = LogLevel.Information, Message = "Database migration skipped.")]
+    private static partial void MigrationSkipped(ILogger logger);
 
     [LoggerMessage(EventId = 4130, Level = LogLevel.Information, Message = "Compiled migrations discovered: {MigrationCount}.")]
     private static partial void CompiledMigrationsDiscovered(ILogger logger, int migrationCount);
@@ -133,4 +148,7 @@ internal sealed partial class DatabaseInitializationHostedService(
 
     [LoggerMessage(EventId = 4138, Level = LogLevel.Error, Message = "Database seeding failed.")]
     private static partial void DatabaseSeedingFailed(ILogger logger);
+
+    [LoggerMessage(EventId = 4140, Level = LogLevel.Information, Message = "Database seeding skipped.")]
+    private static partial void DatabaseSeedingSkipped(ILogger logger);
 }

@@ -24,14 +24,17 @@ public sealed record CreateConsultationRequestResponse(
 internal sealed class ConsultationRequestCreationService(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> lawyerReader,
     IReadRepository<LegalSpecialization, LawyerPlatformReadPersistence> specializationReader,
-    IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> requestReader,
     IConsultationReferenceNumberGenerator referenceNumberGenerator,
+    IConsultationRequestCreationPersistence creationPersistence,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     ILawyerDocumentPolicy documentPolicy,
     IConsultationSchedulingTimeZone schedulingTimeZone,
     EmailNotificationCoordinator emailNotifications,
+    IFrontendUrlsProvider frontendUrls,
     IDateTimeProvider clock)
 {
+    private const int MaximumReferenceNumberAttempts = 5;
+
     public async Task<Result<CreateConsultationRequestResponse>> CreateGuestAsync(
         Guid lawyerId,
         ConsultationType consultationType,
@@ -55,6 +58,7 @@ internal sealed class ConsultationRequestCreationService(
             null,
             null,
             null,
+            null,
             cancellationToken);
 
     public async Task<Result<CreateConsultationRequestResponse>> CreateClientAsync(
@@ -64,6 +68,7 @@ internal sealed class ConsultationRequestCreationService(
         int? legalSpecializationId,
         string requesterName,
         string requesterEmail,
+        string requesterPhoneNumber,
         string description,
         DateTime? preferredAppointmentOnUtc,
         CancellationToken cancellationToken)
@@ -79,6 +84,7 @@ internal sealed class ConsultationRequestCreationService(
             preferredAppointmentOnUtc,
             requesterName,
             requesterEmail,
+            requesterPhoneNumber,
             clientProfileId.ToString("N"),
             cancellationToken);
 
@@ -94,6 +100,7 @@ internal sealed class ConsultationRequestCreationService(
         DateTime? preferredAppointmentOnUtc,
         string? persistedRequesterName,
         string? persistedRequesterEmail,
+        string? persistedRequesterPhoneNumber,
         string? requesterIdentity,
         CancellationToken cancellationToken)
     {
@@ -175,84 +182,74 @@ internal sealed class ConsultationRequestCreationService(
             }
         }
 
-        var referenceNumber = await GenerateAvailableReferenceAsync(cancellationToken);
-        if (referenceNumber is null)
+        for (var attempt = 0; attempt < MaximumReferenceNumberAttempts; attempt++)
         {
-            return Result<CreateConsultationRequestResponse>.Fail(
-                ConsultationRequestErrors.ReferenceNumberConflict);
-        }
-
-        var creation = clientProfileId is { } clientId
-            ? ConsultationRequest.CreateForClient(
-                referenceNumber,
-                clientId,
-                lawyerId,
-                consultationType,
-                legalSpecializationId,
-                description,
-                preferredAppointmentOnUtc,
-                nowUtc,
-                consultationType == ConsultationType.Online
-                    ? lawyer.OnlineConsultationPrice
-                    : null)
-            : ConsultationRequest.CreateForGuest(
-                referenceNumber,
-                guestFullName!,
-                guestPhoneNumber!,
-                guestEmail,
-                lawyerId,
-                consultationType,
-                legalSpecializationId,
-                description,
-                preferredAppointmentOnUtc,
-                nowUtc,
-                consultationType == ConsultationType.Online
-                    ? lawyer.OnlineConsultationPrice
-                    : null);
-        if (creation.IsFailure)
-        {
-            return Result<CreateConsultationRequestResponse>.Fail(creation.Errors);
-        }
-
-        var request = creation.Value;
-        await unitOfWork.WriteRepository<ConsultationRequest>().AddAsync(request, cancellationToken);
-        await emailNotifications.QueueConsultationCreatedAsync(
-            request,
-            new ConsultationCreationEmailContext(
-                lawyer.UserAccountId,
-                lawyer.FullName,
-                lawyer.Email,
-                persistedRequesterName ?? request.GuestFullName!,
-                persistedRequesterEmail ?? request.GuestEmail,
-                requesterIdentity ?? request.Id.ToString("N"),
-                specializationNameAr,
-                specializationNameEn,
-                lawyer.PrimaryOffice?.PublicPhoneNumber),
-            cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-        return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
-            request.Id,
-            request.ReferenceNumber,
-            request.ConsultationType.ToString(),
-            request.ConsultationPrice,
-            request.Status.ToString(),
-            request.CreatedOnUtc));
-    }
-
-    private async Task<string?> GenerateAvailableReferenceAsync(CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            var candidate = referenceNumberGenerator.Generate();
-            if (!await requestReader.AnyAsync(
-                    request => request.ReferenceNumber == candidate,
-                    cancellationToken))
+            var referenceNumber = referenceNumberGenerator.Generate();
+            var creation = clientProfileId is { } clientId
+                ? ConsultationRequest.CreateForClient(
+                    referenceNumber,
+                    clientId,
+                    lawyerId,
+                    consultationType,
+                    legalSpecializationId,
+                    description,
+                    preferredAppointmentOnUtc,
+                    nowUtc,
+                    consultationType == ConsultationType.Online
+                        ? lawyer.OnlineConsultationPrice
+                        : null)
+                : ConsultationRequest.CreateForGuest(
+                    referenceNumber,
+                    guestFullName!,
+                    guestPhoneNumber!,
+                    guestEmail,
+                    lawyerId,
+                    consultationType,
+                    legalSpecializationId,
+                    description,
+                    preferredAppointmentOnUtc,
+                    nowUtc,
+                    consultationType == ConsultationType.Online
+                        ? lawyer.OnlineConsultationPrice
+                        : null);
+            if (creation.IsFailure)
             {
-                return candidate;
+                return Result<CreateConsultationRequestResponse>.Fail(creation.Errors);
             }
+
+            var request = creation.Value;
+            if (!await creationPersistence.TryAddAsync(request, cancellationToken))
+            {
+                continue;
+            }
+
+            await emailNotifications.QueueConsultationCreatedAsync(
+                request,
+                new ConsultationCreationEmailContext(
+                    lawyer.UserAccountId,
+                    lawyer.FullName,
+                    lawyer.Email,
+                    persistedRequesterName ?? request.GuestFullName!,
+                    persistedRequesterEmail ?? request.GuestEmail,
+                    persistedRequesterPhoneNumber ?? request.GuestPhoneNumber!,
+                    requesterIdentity ?? request.Id.ToString("N"),
+                    specializationNameAr,
+                    specializationNameEn,
+                    lawyer.PrimaryOffice?.PublicPhoneNumber,
+                    frontendUrls.ConsultationTrackingUrl),
+                cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result<CreateConsultationRequestResponse>.Ok(new CreateConsultationRequestResponse(
+                request.Id,
+                request.ReferenceNumber,
+                request.ConsultationType.ToString(),
+                request.ConsultationPrice,
+                request.Status.ToString(),
+                request.CreatedOnUtc));
         }
 
-        return null;
+        return Result<CreateConsultationRequestResponse>.Fail(
+            ConsultationRequestErrors.ReferenceNumberConflict);
     }
 }
 

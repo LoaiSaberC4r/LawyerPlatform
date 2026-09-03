@@ -323,31 +323,62 @@ internal sealed class BilingualEmailNotificationFactory(
 
     private EmailNotificationContent ConsultationCreatedConfirmation(ConsultationEmailNotificationModel model)
     {
+        var trackingUrl = GetSafeTrackingUrl(model.ConsultationTrackingUrl)
+            ?? throw new ArgumentException(
+                "A safe consultation tracking URL is required for requester confirmation.",
+                nameof(model));
+        if (string.IsNullOrWhiteSpace(model.RequesterPhoneNumber))
+        {
+            throw new ArgumentException(
+                "A requester phone number is required for requester confirmation.",
+                nameof(model));
+        }
+
         var arabic = new List<string>
         {
             Lines($"مرحبًا {model.RequesterName}،"),
             Lines("تم استلام طلب الاستشارة الخاص بك بنجاح على Avokatoo."),
             Lines("رقم متابعة الطلب:", model.ReferenceNumber),
+            Lines("رقم الهاتف المستخدم للمتابعة:", model.RequesterPhoneNumber),
             Lines("المحامي:", model.LawyerName),
             Lines("التخصص:", model.SpecializationNameAr),
-            Lines("حالة الطلب:", "جديد")
+            Lines("حالة الطلب الحالية:", "جديد")
         };
         var english = new List<string>
         {
             Lines($"Hello {model.RequesterName},"),
             Lines("Your consultation request has been successfully received by Avokatoo."),
             Lines("Request Reference:", model.ReferenceNumber),
+            Lines("Phone Number used for tracking:", model.RequesterPhoneNumber),
             Lines("Lawyer:", model.LawyerName),
             Lines("Specialization:", model.SpecializationNameEn),
             Lines("Current status:", "New")
         };
         AddLawyerPublicPhone(model, arabic, english);
-        arabic.Add(Lines("في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك."));
-        arabic.Add(Lines("احتفظ برقم متابعة الطلب، فقد تحتاج إليه لمتابعة حالة طلبك."));
+        arabic.Add(Lines("يمكنك متابعة حالة طلب الاستشارة في أي وقت من خلال صفحة المتابعة:"));
+        arabic.Add(Link(trackingUrl, "متابعة طلب الاستشارة"));
+        arabic.Add(Lines(trackingUrl));
+        arabic.Add(Lines(
+            "عند فتح صفحة المتابعة، استخدم:",
+            "رقم الطلب:",
+            model.ReferenceNumber,
+            "رقم الهاتف:",
+            model.RequesterPhoneNumber));
+        arabic.Add(Lines("يرجى الاحتفاظ بهذه البيانات، حيث ستحتاج إليها لمتابعة حالة طلبك."));
+        arabic.Add(Lines("في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي وفق القواعد الحالية للنظام."));
         arabic.Add(Lines("سنقوم بإبلاغك عند حدوث تحديثات مهمة على حالة الطلب."));
         arabic.Add(Lines("مع تحيات،", "Avokatoo"));
-        english.Add(Lines("If the lawyer approves your consultation request, the lawyer's office location will be sent to you."));
-        english.Add(Lines("Please keep your request reference as you may need it to track your request."));
+        english.Add(Lines("You can track your consultation request at any time using the following page:"));
+        english.Add(Link(trackingUrl, "Track Consultation Request"));
+        english.Add(Lines(trackingUrl));
+        english.Add(Lines(
+            "When opening the tracking page, use:",
+            "Request Reference:",
+            model.ReferenceNumber,
+            "Phone Number:",
+            model.RequesterPhoneNumber));
+        english.Add(Lines("Please keep these details as you will need them to track your request."));
+        english.Add(Lines("If the lawyer approves your consultation request, the lawyer's office location will be sent according to the platform's current rules."));
         english.Add(Lines("We will notify you when important updates are made to your request status."));
         english.Add(Lines("Regards,", "Avokatoo"));
         return BuildConsultation(
@@ -630,6 +661,22 @@ internal sealed class BilingualEmailNotificationFactory(
             !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
             uri.Scheme != Uri.UriSchemeHttps ||
             !string.Equals(uri.Host, "www.google.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    private static string? GetSafeTrackingUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
         {
             return null;
         }

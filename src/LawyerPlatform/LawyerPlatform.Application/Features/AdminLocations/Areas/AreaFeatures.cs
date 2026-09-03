@@ -6,6 +6,7 @@ using BuildingBlock.Domain.SharedDto;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.ReferenceData;
 using LawyerPlatform.Application.Features.AdminLocations.Common;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
@@ -100,6 +101,7 @@ internal sealed class GetAdminAreaQueryHandler(
 internal sealed class CreateAreaCommandHandler(
     IReadRepository<City, LawyerPlatformReadPersistence> cities,
     IReadRepository<Area, LawyerPlatformReadPersistence> areas,
+    IReferenceDataIdGenerator idGenerator,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork)
     : ICommandHandler<CreateAreaCommand, AdminAreaResponse>
 {
@@ -110,8 +112,8 @@ internal sealed class CreateAreaCommandHandler(
         var conflict = await LocationConflictChecker.FindAreaConflictAsync(
             areas, command.CityId, command.NameAr, command.NameEn, null, cancellationToken);
         if (conflict is not null) return Result<AdminAreaResponse>.Fail(conflict);
-        var ids = await areas.ListAsync(new AreaIdsSpecification(), cancellationToken);
-        var creation = Area.Create(ids.Count == 0 ? 1 : checked(ids.Max() + 1),
+        var id = await idGenerator.NextAreaIdAsync(cancellationToken);
+        var creation = Area.Create(id,
             command.CityId, command.NameAr, command.NameEn, command.DisplayOrder);
         if (creation.IsFailure) return Result<AdminAreaResponse>.Fail(creation.Errors);
         var item = creation.Value;

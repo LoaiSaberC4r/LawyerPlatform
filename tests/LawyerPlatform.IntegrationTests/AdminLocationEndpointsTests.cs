@@ -26,6 +26,9 @@ public sealed class AdminLocationEndpointsTests
         var adminToken = await LoginAndChangeAdminPasswordAsync(client);
         SetToken(client, adminToken);
 
+        var commandCounter = factory.Services.GetRequiredService<TestDbCommandCounter>();
+        commandCounter.Reset();
+
         var firstGovernorate = await CreateAsync(client, "/api/v1/admin/governorates", new
         {
             nameAr = "  محافظة الاختبار الأولى  ", nameEn = "  First Test Governorate  ", displayOrder = 900
@@ -33,11 +36,31 @@ public sealed class AdminLocationEndpointsTests
         Assert.Equal("محافظة الاختبار الأولى", firstGovernorate.GetProperty("nameAr").GetString());
         Assert.Equal("First Test Governorate", firstGovernorate.GetProperty("nameEn").GetString());
         var firstGovernorateId = firstGovernorate.GetProperty("id").GetInt32();
+        Assert.True(firstGovernorateId >= 10_000);
+        var governorateConflictQuery = Assert.Single(
+            commandCounter.Commands,
+            command =>
+                command.Contains("FROM \"Governorates\"", StringComparison.Ordinal) &&
+                command.Contains("NameAr", StringComparison.Ordinal) &&
+                command.Contains("NameEn", StringComparison.Ordinal));
+        Assert.Contains("WHERE", governorateConflictQuery, StringComparison.Ordinal);
+        Assert.Contains(" OR ", governorateConflictQuery, StringComparison.Ordinal);
         var secondGovernorate = await CreateAsync(client, "/api/v1/admin/governorates", new
         {
             nameAr = "محافظة الاختبار الثانية", nameEn = "Second Test Governorate", displayOrder = 901
         });
         var secondGovernorateId = secondGovernorate.GetProperty("id").GetInt32();
+        var selfExcludedUpdate = await client.PutAsJsonAsync(
+            $"/api/v1/admin/governorates/{secondGovernorateId}",
+            new
+            {
+                nameAr = "محافظة الاختبار الثانية",
+                nameEn = "Second Test Governorate",
+                displayOrder = 910,
+                rowVersion = secondGovernorate.GetProperty("rowVersion").GetString()
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, selfExcludedUpdate.StatusCode);
 
         await AssertErrorAsync(await client.PostAsJsonAsync("/api/v1/admin/governorates", new
         {

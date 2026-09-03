@@ -54,9 +54,25 @@ public sealed class AdminLegalSpecializationEndpointsTests
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         var id = created.GetProperty("id").GetInt32();
+        Assert.True(id >= 10_000);
         var originalRowVersion = created.GetProperty("rowVersion").GetString()!;
         Assert.Equal("قانون الطاقة", created.GetProperty("nameAr").GetString());
         Assert.Equal("Energy Law", created.GetProperty("nameEn").GetString());
+
+        var selfExcludedUpdate = await client.PutAsJsonAsync(
+            $"/api/v1/admin/legal-specializations/{id}",
+            new
+            {
+                nameAr = "قانون الطاقة",
+                nameEn = "Energy Law",
+                displayOrder = 191,
+                rowVersion = originalRowVersion
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, selfExcludedUpdate.StatusCode);
+        var selfUpdated = await selfExcludedUpdate.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        originalRowVersion = selfUpdated.GetProperty("rowVersion").GetString()!;
 
         var duplicateArabic = await client.PostAsJsonAsync("/api/v1/admin/legal-specializations", new
         {

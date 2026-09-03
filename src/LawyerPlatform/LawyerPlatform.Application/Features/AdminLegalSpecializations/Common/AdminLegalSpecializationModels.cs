@@ -44,22 +44,21 @@ internal sealed class LegalSpecializationByIdSpecification
     }
 }
 
-internal sealed class LegalSpecializationIdsSpecification : Specification<LegalSpecialization, int>
-{
-    public LegalSpecializationIdsSpecification()
-    {
-        UseNoTracking();
-        Select(item => item.Id);
-    }
-}
-
 internal sealed record LegalSpecializationNameSnapshot(int Id, string NameAr, string NameEn);
 
-internal sealed class LegalSpecializationNamesSpecification
+internal sealed class LegalSpecializationNameConflictSpecification
     : Specification<LegalSpecialization, LegalSpecializationNameSnapshot>
 {
-    public LegalSpecializationNamesSpecification()
+    public LegalSpecializationNameConflictSpecification(
+        string nameAr,
+        string nameEn,
+        int? excludedId)
     {
+        var normalizedArabic = nameAr.Trim();
+        var normalizedEnglish = nameEn.Trim();
+        AddCriteria(item =>
+            (!excludedId.HasValue || item.Id != excludedId.Value) &&
+            (item.NameAr == normalizedArabic || item.NameEn == normalizedEnglish));
         UseNoTracking();
         Select(item => new LegalSpecializationNameSnapshot(item.Id, item.NameAr, item.NameEn));
     }
@@ -77,7 +76,7 @@ internal static class LegalSpecializationNameConflictChecker
         var normalizedArabic = nameAr.Trim();
         var normalizedEnglish = nameEn.Trim();
         var names = await repository.ListAsync(
-            new LegalSpecializationNamesSpecification(),
+            new LegalSpecializationNameConflictSpecification(nameAr, nameEn, excludedId),
             cancellationToken);
         var candidates = excludedId.HasValue
             ? names.Where(item => item.Id != excludedId.Value)

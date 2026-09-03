@@ -257,11 +257,11 @@ public sealed class LawyerConsultationRequestEndpointsTests
         Assert.Contains("رقم هاتف المحامي:", createdConfirmation.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Lawyer Phone Number:", createdConfirmation.HtmlBody, StringComparison.Ordinal);
         Assert.Contains(
-            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+                "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي وفق القواعد الحالية للنظام.",
             createdConfirmation.HtmlBody,
             StringComparison.Ordinal);
         Assert.Contains(
-            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+                "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent according to the platform&#39;s current rules.",
             createdConfirmation.HtmlBody,
             StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", createdConfirmation.HtmlBody, StringComparison.OrdinalIgnoreCase);

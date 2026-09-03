@@ -1,10 +1,6 @@
 using BuildingBlock.Application.Abstraction;
-using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Results;
-using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Domain.Clients;
-using LawyerPlatform.Domain.Consultations;
-using LawyerPlatform.Domain.Lawyers;
+using LawyerPlatform.Application.Abstractions.Dashboards;
 
 namespace LawyerPlatform.Application.Features.AdminDashboard;
 
@@ -35,52 +31,29 @@ public sealed record AdminDashboardResponse(
 public sealed record GetAdminDashboardQuery : IQuery<AdminDashboardResponse>;
 
 internal sealed class GetAdminDashboardQueryHandler(
-    IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> lawyerRepository,
-    IReadRepository<ClientProfile, LawyerPlatformReadPersistence> clientRepository,
-    IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> requestRepository)
+    IDashboardStatisticsReader statisticsReader)
     : IQueryHandler<GetAdminDashboardQuery, AdminDashboardResponse>
 {
     public async Task<Result<AdminDashboardResponse>> Handle(
         GetAdminDashboardQuery query,
         CancellationToken cancellationToken)
     {
-        var lawyersTotal = await lawyerRepository.LongCountAsync(cancellationToken: cancellationToken);
-        var pendingLawyers = await lawyerRepository.LongCountAsync(
-            profile => profile.ApprovalStatus == LawyerApprovalStatus.PendingApproval,
-            cancellationToken);
-        var approvedLawyers = await lawyerRepository.LongCountAsync(
-            profile => profile.ApprovalStatus == LawyerApprovalStatus.Approved,
-            cancellationToken);
-        var suspendedLawyers = await lawyerRepository.LongCountAsync(
-            profile => profile.ApprovalStatus == LawyerApprovalStatus.Suspended,
-            cancellationToken);
-        var clientsTotal = await clientRepository.LongCountAsync(cancellationToken: cancellationToken);
-        var requestsTotal = await requestRepository.LongCountAsync(cancellationToken: cancellationToken);
-        var newRequests = await CountStatusAsync(ConsultationRequestStatus.New, cancellationToken);
-        var underReviewRequests = await CountStatusAsync(ConsultationRequestStatus.UnderReview, cancellationToken);
-        var approvedRequests = await CountStatusAsync(ConsultationRequestStatus.Approved, cancellationToken);
-        var rejectedRequests = await CountStatusAsync(ConsultationRequestStatus.Rejected, cancellationToken);
-        var completedRequests = await CountStatusAsync(ConsultationRequestStatus.Completed, cancellationToken);
+        var statistics = await statisticsReader.ReadAdminAsync(cancellationToken);
 
         return Result<AdminDashboardResponse>.Ok(new AdminDashboardResponse(
             new AdminLawyerDashboardResponse(
-                lawyersTotal,
-                pendingLawyers,
-                approvedLawyers,
-                suspendedLawyers),
-            new AdminClientDashboardResponse(clientsTotal),
+                statistics.Lawyers.Total,
+                statistics.Lawyers.PendingApproval,
+                statistics.Lawyers.Approved,
+                statistics.Lawyers.Suspended),
+            new AdminClientDashboardResponse(statistics.ClientsTotal),
             new AdminConsultationDashboardResponse(
-                requestsTotal,
+                statistics.ConsultationRequests.Total,
                 new AdminConsultationStatusDashboardResponse(
-                    newRequests,
-                    underReviewRequests,
-                    approvedRequests,
-                    rejectedRequests,
-                    completedRequests))));
+                    statistics.ConsultationRequests.New,
+                    statistics.ConsultationRequests.UnderReview,
+                    statistics.ConsultationRequests.Approved,
+                    statistics.ConsultationRequests.Rejected,
+                    statistics.ConsultationRequests.Completed))));
     }
-
-    private Task<long> CountStatusAsync(
-        ConsultationRequestStatus status,
-        CancellationToken cancellationToken)
-        => requestRepository.LongCountAsync(request => request.Status == status, cancellationToken);
 }

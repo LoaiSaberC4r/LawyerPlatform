@@ -1,6 +1,8 @@
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Clients;
+using LawyerPlatform.Application.Abstractions.ReferenceData;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.ReferenceData;
 using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +19,47 @@ public sealed class LawyerPlatformSqlServerTestGroup : ICollectionFixture<Lawyer
 [Collection(LawyerPlatformSqlServerTestGroup.Name)]
 public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFixture fixture)
 {
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task MigrationCreatesFourReferenceDataSequencesAtVerifiedSafeBoundaries()
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT name, CONVERT(bigint, start_value) FROM sys.sequences WHERE schema_id = SCHEMA_ID('dbo') AND name LIKE 'SEQ_%_Id'";
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var sequences = new Dictionary<string, long>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            sequences.Add(reader.GetString(0), reader.GetInt64(1));
+        }
+
+        Assert.Equal(10_000, sequences["SEQ_Governorates_Id"]);
+        Assert.Equal(100_000, sequences["SEQ_Cities_Id"]);
+        Assert.Equal(1_000_000_000, sequences["SEQ_Areas_Id"]);
+        Assert.Equal(10_000, sequences["SEQ_LegalSpecializations_Id"]);
+    }
+
+    [Fact]
+    [Trait("Category", "SqlServerIntegration")]
+    public async Task ReferenceDataSequencesAllocateDistinctIdsAcrossConcurrentContexts()
+    {
+        var governorateIds = await AllocateConcurrentlyAsync(
+            (generator, token) => generator.NextGovernorateIdAsync(token));
+        var cityIds = await AllocateConcurrentlyAsync(
+            (generator, token) => generator.NextCityIdAsync(token));
+        var areaIds = await AllocateConcurrentlyAsync(
+            (generator, token) => generator.NextAreaIdAsync(token));
+        var specializationIds = await AllocateConcurrentlyAsync(
+            (generator, token) => generator.NextLegalSpecializationIdAsync(token));
+
+        AssertUniqueAtOrAbove(governorateIds, 10_000);
+        AssertUniqueAtOrAbove(cityIds, 100_000);
+        AssertUniqueAtOrAbove(areaIds, 1_000_000_000);
+        AssertUniqueAtOrAbove(specializationIds, 10_000);
+    }
+
     [Fact]
     [Trait("Category", "SqlServerIntegration")]
     public async Task Migration_CreatesAllIdentityAndReferenceTables()
@@ -249,6 +292,24 @@ public sealed class SqlServerIdentityPersistenceTests(LawyerPlatformSqlServerFix
             await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
                 staleAccountContext.SaveChangesAsync(TestContext.Current.CancellationToken));
         }
+    }
+
+    private Task<int[]> AllocateConcurrentlyAsync(
+        Func<IReferenceDataIdGenerator, CancellationToken, Task<int>> allocate)
+    {
+        var token = TestContext.Current.CancellationToken;
+        return Task.WhenAll(Enumerable.Range(0, 12).Select(async _ =>
+        {
+            await using var context = fixture.CreateContext();
+            var generator = new SqlServerReferenceDataIdGenerator(context);
+            return await allocate(generator, token);
+        }));
+    }
+
+    private static void AssertUniqueAtOrAbove(int[] values, int minimum)
+    {
+        Assert.Equal(values.Length, values.Distinct().Count());
+        Assert.All(values, value => Assert.True(value >= minimum));
     }
 
     private static UserAccount CreateClientAccount(

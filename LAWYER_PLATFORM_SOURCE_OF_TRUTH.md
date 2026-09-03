@@ -34,3 +34,15 @@
 - Later Lawyer price changes never modify old Consultation Requests. Request details always use the historical snapshot, while public Lawyer APIs use the current price.
 - Consultation Settings are operational settings with independent optimistic concurrency and do not modify Lawyer approval or public-eligibility state.
 - Slots, slot generation, appointment duration, reserved-time detection, and double-booking prevention are not included in this phase. Multiple requests may use the same preferred time.
+
+---
+
+## Approved Post-Baseline Changes — September 2026
+
+1. Consultation request references use `AV-XXXXXX`, where the six-character uppercase suffix is generated cryptographically from `23456789ABCDEFGHJKLMNPQRSTUVWXYZ`. The database unique index remains authoritative, and confirmed reference collisions are retried at most five times before returning `ConsultationRequest.ReferenceNumberConflict`.
+2. Guest and Client consultation confirmation emails include the persisted tracking phone, the consultation reference, and the configuration-driven credential-free `FrontendUrls:ConsultationTrackingUrl`. The existing public POST tracking endpoint accepts reference and phone in its body and verifies Guest requests against `GuestPhoneNumber` and Client requests against the persisted account phone while returning the same generic failure for every invalid pair.
+3. The supported Lawyer availability uniqueness object is `UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek`; violations map to `Lawyer.DuplicateAvailabilityDay`.
+4. Runtime IDs for Governorates, Cities, Areas, and Legal Specializations come from independent SQL Server sequences. Seed maxima were verified as 27, 27008, 270080001, and 18 respectively, so sequence starts are 10000, 100000, 1000000000, and 10000. Sequence gaps are valid and IDs are not display ordering.
+5. Admin, Lawyer, and Client dashboards use no-tracking grouped aggregate reads behind an Application abstraction. Response contracts, ownership rules, missing-profile behavior, and zero-state counts are unchanged.
+6. Reference-data duplicate checks use scoped, self-excluding targeted specifications for Arabic or English name candidates. Existing unique indexes remain the final concurrency guarantee and preserve stable duplicate-name errors.
+7. `DatabaseInitialization:ApplyMigrationsOnStartup` and `DatabaseInitialization:ApplySeedingOnStartup` are independent and both default to `false`. Enabled migration or seeding failures remain fail-fast; when both are enabled migration completes before seeding. Production startup keeps both switches disabled and schema changes are applied once as a controlled deployment operation.

@@ -187,8 +187,14 @@ public sealed class ConsultationRequestTests
         Assert.Equal(values.Length, values.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(values, value =>
         {
-            Assert.StartsWith("CR-", value, StringComparison.Ordinal);
-            Assert.InRange(value.Length, 4, ConsultationRequest.MaximumReferenceNumberLength);
+            Assert.StartsWith("AV-", value, StringComparison.Ordinal);
+            Assert.Equal(9, value.Length);
+            Assert.Matches("^AV-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$", value);
+            Assert.DoesNotContain('0', value);
+            Assert.DoesNotContain('O', value);
+            Assert.DoesNotContain('1', value);
+            Assert.DoesNotContain('I', value);
+            Assert.Equal(value.ToUpperInvariant(), value);
         });
     }
 

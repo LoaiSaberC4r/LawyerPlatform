@@ -22,6 +22,18 @@ namespace LawyerPlatform.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence<int>("SEQ_Areas_Id", "dbo")
+                .StartsAt(1000000000L);
+
+            modelBuilder.HasSequence<int>("SEQ_Cities_Id", "dbo")
+                .StartsAt(100000L);
+
+            modelBuilder.HasSequence<int>("SEQ_Governorates_Id", "dbo")
+                .StartsAt(10000L);
+
+            modelBuilder.HasSequence<int>("SEQ_LegalSpecializations_Id", "dbo")
+                .StartsAt(10000L);
+
             modelBuilder.Entity("LawyerPlatform.Domain.Accounts.PasswordResetChallenge", b =>
                 {
                     b.Property<Guid>("Id")

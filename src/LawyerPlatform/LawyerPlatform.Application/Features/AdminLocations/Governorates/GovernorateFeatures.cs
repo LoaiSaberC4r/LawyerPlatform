@@ -6,6 +6,7 @@ using BuildingBlock.Domain.SharedDto;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.ReferenceData;
 using LawyerPlatform.Application.Features.AdminLocations.Common;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
@@ -98,6 +99,7 @@ internal sealed class GetAdminGovernorateQueryHandler(
 
 internal sealed class CreateGovernorateCommandHandler(
     IReadRepository<Governorate, LawyerPlatformReadPersistence> reader,
+    IReferenceDataIdGenerator idGenerator,
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork)
     : ICommandHandler<CreateGovernorateCommand, AdminGovernorateResponse>
 {
@@ -107,8 +109,8 @@ internal sealed class CreateGovernorateCommandHandler(
         var conflict = await LocationConflictChecker.FindGovernorateConflictAsync(
             reader, command.NameAr, command.NameEn, null, cancellationToken);
         if (conflict is not null) return Result<AdminGovernorateResponse>.Fail(conflict);
-        var ids = await reader.ListAsync(new GovernorateIdsSpecification(), cancellationToken);
-        var creation = Governorate.Create(ids.Count == 0 ? 1 : checked(ids.Max() + 1),
+        var id = await idGenerator.NextGovernorateIdAsync(cancellationToken);
+        var creation = Governorate.Create(id,
             command.NameAr, command.NameEn, command.DisplayOrder);
         if (creation.IsFailure) return Result<AdminGovernorateResponse>.Fail(creation.Errors);
         var item = creation.Value;

@@ -3,7 +3,7 @@ using FluentValidation.Results;
 using LawyerPlatform.Application.Features.Auth.RegisterClient;
 using LawyerPlatform.Application.Features.Auth.RegisterLawyer;
 using LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
-using LawyerPlatform.Application.Features.ConsultationRequests.Guest.TrackRequest;
+using LawyerPlatform.Application.Features.ConsultationRequests.PublicTracking;
 using LawyerPlatform.Application.Features.Lawyers.UpsertPrimaryOffice;
 using LawyerPlatform.Domain.Consultations;
 
@@ -49,7 +49,7 @@ public sealed class EgyptianMobileNumberValidationTests
         Assert.True(ValidateClientRegistration(phoneNumber).IsValid);
         Assert.True(ValidateLawyerRegistration(phoneNumber).IsValid);
         Assert.True(ValidateGuestCreation(phoneNumber).IsValid);
-        Assert.True(ValidateGuestTracking(phoneNumber).IsValid);
+        Assert.True(ValidateConsultationTracking(phoneNumber).IsValid);
         Assert.True(ValidateOffice(phoneNumber).IsValid);
     }
 
@@ -70,8 +70,8 @@ public sealed class EgyptianMobileNumberValidationTests
             nameof(CreateGuestConsultationRequestCommand.PhoneNumber),
             "ConsultationRequest.InvalidPhoneNumber");
         AssertSinglePhoneError(
-            ValidateGuestTracking(phoneNumber),
-            nameof(TrackGuestConsultationRequestQuery.PhoneNumber),
+            ValidateConsultationTracking(phoneNumber),
+            nameof(TrackConsultationRequestQuery.PhoneNumber),
             "ConsultationRequest.InvalidPhoneNumber");
         AssertSinglePhoneError(
             ValidateOffice(phoneNumber),
@@ -95,8 +95,8 @@ public sealed class EgyptianMobileNumberValidationTests
             nameof(CreateGuestConsultationRequestCommand.PhoneNumber),
             "ConsultationRequest.PhoneNumberRequired");
         AssertSinglePhoneError(
-            ValidateGuestTracking(string.Empty),
-            nameof(TrackGuestConsultationRequestQuery.PhoneNumber),
+            ValidateConsultationTracking(string.Empty),
+            nameof(TrackConsultationRequestQuery.PhoneNumber),
             "ConsultationRequest.PhoneNumberRequired");
     }
 
@@ -149,9 +149,9 @@ public sealed class EgyptianMobileNumberValidationTests
                 "Consultation description",
                 null));
 
-    private static ValidationResult ValidateGuestTracking(string phoneNumber)
-        => new TrackGuestConsultationRequestQueryValidator().Validate(
-            new TrackGuestConsultationRequestQuery("CR-VALID", phoneNumber));
+    private static ValidationResult ValidateConsultationTracking(string phoneNumber)
+        => new TrackConsultationRequestQueryValidator().Validate(
+            new TrackConsultationRequestQuery("AV-234567", phoneNumber));
 
     private static ValidationResult ValidateOffice(string? phoneNumber)
         => new UpsertPrimaryOfficeCommandValidator().Validate(

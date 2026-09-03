@@ -5,15 +5,19 @@ using BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Abstractions.Consultations;
 using LawyerPlatform.Application.Abstractions.ContactInquiries;
+using LawyerPlatform.Application.Abstractions.Dashboards;
 using LawyerPlatform.Application.Abstractions.Media;
+using LawyerPlatform.Application.Abstractions.ReferenceData;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Application.Features.Auth.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Infrastructure.Authentication;
 using LawyerPlatform.Infrastructure.Consultations;
 using LawyerPlatform.Infrastructure.ContactInquiries;
+using LawyerPlatform.Infrastructure.Dashboards;
 using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
+using LawyerPlatform.Infrastructure.ReferenceData;
 using LawyerPlatform.Infrastructure.Seeding;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Infrastructure.Lawyers;
@@ -106,6 +110,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(EmailBrandingOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<EmailBrandingOptions>, EmailBrandingOptionsValidator>();
+        services.AddOptions<FrontendUrlsOptions>()
+            .Bind(configuration.GetSection(FrontendUrlsOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<FrontendUrlsOptions>, FrontendUrlsOptionsValidator>();
         services.AddOptions<ContactUsOptions>()
             .Bind(configuration.GetSection(ContactUsOptions.SectionName))
             .Validate(
@@ -126,11 +134,15 @@ public static class DependencyInjection
         services.AddSingleton<IConsultationSchedulingTimeZone, ConsultationSchedulingTimeZone>();
         services.AddSingleton<IContactUsRecipientProvider, ContactUsRecipientProvider>();
         services.AddScoped<IConsultationAggregatePersistence, ConsultationAggregatePersistence>();
+        services.AddScoped<IConsultationRequestCreationPersistence, ConsultationRequestCreationPersistence>();
+        services.AddScoped<IDashboardStatisticsReader, DashboardStatisticsReader>();
+        services.AddScoped<IReferenceDataIdGenerator, SqlServerReferenceDataIdGenerator>();
         services.AddSingleton<IStoredFileReader, StoredFileReader>();
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
         services.AddScoped<IEmailNotificationOutbox, EmailNotificationOutbox>();
         services.AddSingleton<IEmailBrandingProvider, EmailBrandingProvider>();
+        services.AddSingleton<IFrontendUrlsProvider, FrontendUrlsProvider>();
         services.AddScoped<EmailOutboxProcessor>();
 
         services.AddScoped<EgyptLocationSeedCoordinator>();

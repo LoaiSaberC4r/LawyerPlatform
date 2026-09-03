@@ -8,12 +8,12 @@ using LawyerPlatform.Application.Features.ConsultationRequests.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Consultations;
 
-namespace LawyerPlatform.Application.Features.ConsultationRequests.Guest.TrackRequest;
+namespace LawyerPlatform.Application.Features.ConsultationRequests.PublicTracking;
 
-public sealed record TrackGuestConsultationRequestQuery(string ReferenceNumber, string PhoneNumber)
-    : IQuery<GuestConsultationTrackingResponse>;
+public sealed record TrackConsultationRequestQuery(string ReferenceNumber, string PhoneNumber)
+    : IQuery<ConsultationTrackingResponse>;
 
-public sealed record GuestConsultationTrackingResponse(
+public sealed record ConsultationTrackingResponse(
     string ReferenceNumber,
     ConsultationLawyerSummaryResponse Lawyer,
     ConsultationReferenceSummaryResponse? LegalSpecialization,
@@ -25,12 +25,14 @@ public sealed record GuestConsultationTrackingResponse(
     DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc);
 
-internal sealed class TrackGuestConsultationRequestQueryValidator
-    : AbstractValidator<TrackGuestConsultationRequestQuery>
+internal sealed class TrackConsultationRequestQueryValidator
+    : AbstractValidator<TrackConsultationRequestQuery>
 {
-    public TrackGuestConsultationRequestQueryValidator()
+    public TrackConsultationRequestQueryValidator()
     {
-        RuleFor(query => query.ReferenceNumber).NotEmpty().MaximumLength(ConsultationRequest.MaximumReferenceNumberLength);
+        RuleFor(query => query.ReferenceNumber)
+            .NotEmpty()
+            .MaximumLength(ConsultationRequest.MaximumReferenceNumberLength);
         RuleFor(query => query.PhoneNumber)
             .Cascade(CascadeMode.Stop)
             .NotEmpty().WithErrorCode("ConsultationRequest.PhoneNumberRequired")
@@ -38,27 +40,27 @@ internal sealed class TrackGuestConsultationRequestQueryValidator
     }
 }
 
-internal sealed class TrackGuestConsultationRequestQueryHandler(
+internal sealed class TrackConsultationRequestQueryHandler(
     IReadRepository<ConsultationRequest, LawyerPlatformReadPersistence> repository)
-    : IQueryHandler<TrackGuestConsultationRequestQuery, GuestConsultationTrackingResponse>
+    : IQueryHandler<TrackConsultationRequestQuery, ConsultationTrackingResponse>
 {
-    public async Task<Result<GuestConsultationTrackingResponse>> Handle(
-        TrackGuestConsultationRequestQuery query,
+    public async Task<Result<ConsultationTrackingResponse>> Handle(
+        TrackConsultationRequestQuery query,
         CancellationToken cancellationToken)
     {
         var item = await repository.FirstOrDefaultAsync(
-            new GuestConsultationTrackingSpecification(
+            new ConsultationTrackingSpecification(
                 query.ReferenceNumber.Trim().ToUpperInvariant(),
                 query.PhoneNumber.Trim()),
             cancellationToken);
         return item is null
-            ? Result<GuestConsultationTrackingResponse>.Fail(
+            ? Result<ConsultationTrackingResponse>.Fail(
                 ConsultationRequestErrors.ReferenceVerificationFailed)
-            : Result<GuestConsultationTrackingResponse>.Ok(item.ToResponse());
+            : Result<ConsultationTrackingResponse>.Ok(item.ToResponse());
     }
 }
 
-internal sealed record GuestConsultationTrackingSnapshot(
+internal sealed record ConsultationTrackingSnapshot(
     string ReferenceNumber,
     Guid LawyerId,
     string LawyerFullName,
@@ -74,7 +76,7 @@ internal sealed record GuestConsultationTrackingSnapshot(
     DateTime? ModifiedOnUtc,
     DateTime? CompletedOnUtc)
 {
-    public GuestConsultationTrackingResponse ToResponse()
+    public ConsultationTrackingResponse ToResponse()
         => new(
             ReferenceNumber,
             new ConsultationLawyerSummaryResponse(LawyerId, LawyerFullName, LawyerProfessionalTitle),
@@ -93,17 +95,18 @@ internal sealed record GuestConsultationTrackingSnapshot(
             CompletedOnUtc);
 }
 
-internal sealed class GuestConsultationTrackingSpecification
-    : Specification<ConsultationRequest, GuestConsultationTrackingSnapshot>
+internal sealed class ConsultationTrackingSpecification
+    : Specification<ConsultationRequest, ConsultationTrackingSnapshot>
 {
-    public GuestConsultationTrackingSpecification(string referenceNumber, string phoneNumber)
+    public ConsultationTrackingSpecification(string referenceNumber, string phoneNumber)
     {
         AddCriteria(request =>
-            request.ClientProfileId == null &&
             request.ReferenceNumber == referenceNumber &&
-            request.GuestPhoneNumber == phoneNumber);
+            (request.ClientProfileId == null
+                ? request.GuestPhoneNumber == phoneNumber
+                : request.ClientProfile!.UserAccount.PhoneNumber == phoneNumber));
         UseNoTracking();
-        Select(request => new GuestConsultationTrackingSnapshot(
+        Select(request => new ConsultationTrackingSnapshot(
             request.ReferenceNumber,
             request.LawyerProfileId,
             request.LawyerProfile.FullName,

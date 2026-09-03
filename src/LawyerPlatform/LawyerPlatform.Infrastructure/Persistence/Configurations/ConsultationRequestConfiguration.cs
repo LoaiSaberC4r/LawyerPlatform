@@ -40,7 +40,7 @@ internal sealed class ConsultationRequestConfiguration : IWriteEntityConfigurati
 
         builder.HasIndex(request => request.ReferenceNumber)
             .IsUnique()
-            .HasDatabaseName("UX_ConsultationRequests_ReferenceNumber");
+            .HasDatabaseName(LawyerPlatformDatabaseObjectNames.ConsultationRequestReferenceNumberUniqueIndex);
         builder.HasIndex(request => new { request.LawyerProfileId, request.Status, request.CreatedOnUtc })
             .HasDatabaseName("IX_ConsultationRequests_LawyerProfileId_Status_CreatedOnUtc");
         builder.HasIndex(request => new { request.ClientProfileId, request.CreatedOnUtc })
