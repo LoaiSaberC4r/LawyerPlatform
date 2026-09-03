@@ -2,7 +2,7 @@ using Asp.Versioning;
 using BuildingBlock.Api;
 using LawyerPlatform.Api.Contracts.Consultations;
 using LawyerPlatform.Application.Features.ConsultationRequests.CreateGuest;
-using LawyerPlatform.Application.Features.ConsultationRequests.Guest.TrackRequest;
+using LawyerPlatform.Application.Features.ConsultationRequests.PublicTracking;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -39,9 +39,9 @@ public sealed class PublicConsultationRequestsController(ISender sender) : Contr
     [HttpPost("track")]
     [EnableRateLimiting("consultation-track")]
     public async Task<IActionResult> Track(
-        GuestTrackingRequest request,
+        ConsultationTrackingRequest request,
         CancellationToken cancellationToken)
-        => (await sender.Send(new TrackGuestConsultationRequestQuery(
+        => (await sender.Send(new TrackConsultationRequestQuery(
             request.ReferenceNumber,
             request.PhoneNumber), cancellationToken)).ToIActionResult(cancellationToken);
 }

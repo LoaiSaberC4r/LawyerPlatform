@@ -9,6 +9,8 @@ public sealed class BilingualEmailNotificationFactoryTests
 {
     private const string FooterImageUrl =
         "https://cdn.example.test/email-assets/avokatoo-email-footer.png";
+    private const string TrackingUrl =
+        "https://frontend.example.test/consultation/track";
     private static readonly Guid LawyerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private readonly BilingualEmailNotificationFactory _factory = new(
         new FixedClock(new DateTime(2026, 8, 16, 9, 0, 0, DateTimeKind.Utc)),
@@ -407,12 +409,17 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.Contains("رقم هاتف المحامي:", created.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Lawyer Phone Number:", created.HtmlBody, StringComparison.Ordinal);
         Assert.Contains(publicPhoneNumber, created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Phone Number used for tracking:", created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("01055555555", created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains(TrackingUrl, created.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Track Consultation Request", created.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("?reference", created.HtmlBody, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
-            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي وفق القواعد الحالية للنظام.",
             created.HtmlBody,
             StringComparison.Ordinal);
         Assert.Contains(
-            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent according to the platform&#39;s current rules.",
             created.HtmlBody,
             StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", created.HtmlBody, StringComparison.OrdinalIgnoreCase);
@@ -434,11 +441,11 @@ public sealed class BilingualEmailNotificationFactoryTests
         Assert.DoesNotContain("رقم هاتف المحامي:", result.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Lawyer Phone Number:", result.HtmlBody, StringComparison.Ordinal);
         Assert.Contains(
-            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي وفق القواعد الحالية للنظام.",
             result.HtmlBody,
             StringComparison.Ordinal);
         Assert.Contains(
-            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent according to the platform&#39;s current rules.",
             result.HtmlBody,
             StringComparison.Ordinal);
     }
@@ -518,7 +525,9 @@ public sealed class BilingualEmailNotificationFactoryTests
             "REF-2026-001",
             "قانون مدني",
             "Civil Law",
-            Reason: reason);
+            Reason: reason,
+            RequesterPhoneNumber: "01055555555",
+            ConsultationTrackingUrl: TrackingUrl);
 
     private static ClientEmailNotificationModel Client()
         => new("العميل Client");

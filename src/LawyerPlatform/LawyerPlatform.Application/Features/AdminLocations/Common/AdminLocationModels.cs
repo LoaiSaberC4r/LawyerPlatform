@@ -88,43 +88,49 @@ internal sealed class AreaByIdSpecification : Specification<Area, AreaSnapshot>
     }
 }
 
-internal sealed class GovernorateIdsSpecification : Specification<Governorate, int>
+internal sealed class GovernorateNameConflictSpecification : Specification<Governorate, LocationNameSnapshot>
 {
-    public GovernorateIdsSpecification() { UseNoTracking(); Select(item => item.Id); }
-}
-
-internal sealed class CityIdsSpecification : Specification<City, int>
-{
-    public CityIdsSpecification() { UseNoTracking(); Select(item => item.Id); }
-}
-
-internal sealed class AreaIdsSpecification : Specification<Area, int>
-{
-    public AreaIdsSpecification() { UseNoTracking(); Select(item => item.Id); }
-}
-
-internal sealed class GovernorateNamesSpecification : Specification<Governorate, LocationNameSnapshot>
-{
-    public GovernorateNamesSpecification()
+    public GovernorateNameConflictSpecification(string nameAr, string nameEn, int? excludedId)
     {
+        var normalizedNameAr = nameAr.Trim();
+        var normalizedNameEn = nameEn.Trim();
+        AddCriteria(item =>
+            (!excludedId.HasValue || item.Id != excludedId.Value) &&
+            (item.NameAr == normalizedNameAr || item.NameEn == normalizedNameEn));
         UseNoTracking();
         Select(item => new LocationNameSnapshot(item.Id, null, item.NameAr, item.NameEn));
     }
 }
 
-internal sealed class CityNamesSpecification : Specification<City, LocationNameSnapshot>
+internal sealed class CityNameConflictSpecification : Specification<City, LocationNameSnapshot>
 {
-    public CityNamesSpecification()
+    public CityNameConflictSpecification(
+        int governorateId,
+        string nameAr,
+        string nameEn,
+        int? excludedId)
     {
+        var normalizedNameAr = nameAr.Trim();
+        var normalizedNameEn = nameEn.Trim();
+        AddCriteria(item =>
+            item.GovernorateId == governorateId &&
+            (!excludedId.HasValue || item.Id != excludedId.Value) &&
+            (item.NameAr == normalizedNameAr || item.NameEn == normalizedNameEn));
         UseNoTracking();
         Select(item => new LocationNameSnapshot(item.Id, item.GovernorateId, item.NameAr, item.NameEn));
     }
 }
 
-internal sealed class AreaNamesSpecification : Specification<Area, LocationNameSnapshot>
+internal sealed class AreaNameConflictSpecification : Specification<Area, LocationNameSnapshot>
 {
-    public AreaNamesSpecification()
+    public AreaNameConflictSpecification(int cityId, string nameAr, string nameEn, int? excludedId)
     {
+        var normalizedNameAr = nameAr.Trim();
+        var normalizedNameEn = nameEn.Trim();
+        AddCriteria(item =>
+            item.CityId == cityId &&
+            (!excludedId.HasValue || item.Id != excludedId.Value) &&
+            (item.NameAr == normalizedNameAr || item.NameEn == normalizedNameEn));
         UseNoTracking();
         Select(item => new LocationNameSnapshot(item.Id, item.CityId, item.NameAr, item.NameEn));
     }
@@ -158,7 +164,9 @@ internal static class LocationConflictChecker
         IReadRepository<Governorate, LawyerPlatformReadPersistence> repository,
         string nameAr, string nameEn, int? excludedId, CancellationToken cancellationToken)
         => FindConflict(
-            await repository.ListAsync(new GovernorateNamesSpecification(), cancellationToken),
+            await repository.ListAsync(
+                new GovernorateNameConflictSpecification(nameAr, nameEn, excludedId),
+                cancellationToken),
             null, nameAr, nameEn, excludedId,
             GovernorateErrors.DuplicateNameAr, GovernorateErrors.DuplicateNameEn);
 
@@ -166,7 +174,9 @@ internal static class LocationConflictChecker
         IReadRepository<City, LawyerPlatformReadPersistence> repository,
         int governorateId, string nameAr, string nameEn, int? excludedId, CancellationToken cancellationToken)
         => FindConflict(
-            await repository.ListAsync(new CityNamesSpecification(), cancellationToken),
+            await repository.ListAsync(
+                new CityNameConflictSpecification(governorateId, nameAr, nameEn, excludedId),
+                cancellationToken),
             governorateId, nameAr, nameEn, excludedId,
             CityErrors.DuplicateNameAr, CityErrors.DuplicateNameEn);
 
@@ -174,7 +184,9 @@ internal static class LocationConflictChecker
         IReadRepository<Area, LawyerPlatformReadPersistence> repository,
         int cityId, string nameAr, string nameEn, int? excludedId, CancellationToken cancellationToken)
         => FindConflict(
-            await repository.ListAsync(new AreaNamesSpecification(), cancellationToken),
+            await repository.ListAsync(
+                new AreaNameConflictSpecification(cityId, nameAr, nameEn, excludedId),
+                cancellationToken),
             cityId, nameAr, nameEn, excludedId,
             AreaErrors.DuplicateNameAr, AreaErrors.DuplicateNameEn);
 

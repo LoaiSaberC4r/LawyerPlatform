@@ -20,7 +20,9 @@ public sealed record ConsultationEmailNotificationModel(
     string? LawyerPublicPhoneNumber = null,
     string? LawyerOfficeMapUrl = null,
     ConsultationType ConsultationType = ConsultationType.Online,
-    decimal? ConsultationPrice = null) : EmailNotificationModel;
+    decimal? ConsultationPrice = null,
+    string? RequesterPhoneNumber = null,
+    string? ConsultationTrackingUrl = null) : EmailNotificationModel;
 
 public sealed record ClientEmailNotificationModel(
     string ClientName) : EmailNotificationModel;

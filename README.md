@@ -100,6 +100,11 @@ The verification script restores, builds, runs the non-Docker test suite, instal
 
 Before deployment:
 
+- Build and publish the Release artifact, verify production configuration and secrets, and take and verify a SQL Server backup.
+- Apply pending EF Core migrations once as a controlled deployment step; run approved seeding separately only when needed.
+- Start every API instance with `DatabaseInitialization__ApplyMigrationsOnStartup=false` and `DatabaseInitialization__ApplySeedingOnStartup=false` so multiple instances never race to mutate the schema.
+- Verify `/health`, database connectivity, the Outbox worker, a controlled smoke test, and startup logs after deployment.
+
 - Move the JWT signing key to a secret store.
 - Replace or integrate the authentication authority.
 - Require authorization on business endpoints.

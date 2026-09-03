@@ -11,6 +11,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Application.Abstractions.Consultations;
+using LawyerPlatform.Application.Abstractions.Seeding;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -81,7 +84,9 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Equal("New", created.GetProperty("status").GetString());
         Assert.Equal("Online", created.GetProperty("consultationType").GetString());
         Assert.Equal(500m, created.GetProperty("consultationPrice").GetDecimal());
-        Assert.StartsWith("CR-", created.GetProperty("referenceNumber").GetString(), StringComparison.Ordinal);
+        Assert.Matches(
+            "^AV-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$",
+            created.GetProperty("referenceNumber").GetString()!);
         Assert.DoesNotContain("smtp", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("emailSent", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
 
@@ -121,6 +126,11 @@ public sealed class ConsultationRequestCreationEndpointsTests
             var lawyerNotification = Assert.Single(withEmailNotifications, message =>
                 message.NotificationType == EmailNotificationType.ConsultationRequestCreatedForLawyer);
             AssertCreationContactBehavior(confirmation.HtmlBody);
+            Assert.Contains(
+                created.GetProperty("referenceNumber").GetString()!,
+                confirmation.HtmlBody,
+                StringComparison.Ordinal);
+            Assert.Contains("01012345678", confirmation.HtmlBody, StringComparison.Ordinal);
             Assert.DoesNotContain(LawyerPublicPhoneNumber, lawyerNotification.HtmlBody, StringComparison.Ordinal);
             Assert.DoesNotContain("Lawyer Phone Number:", lawyerNotification.HtmlBody, StringComparison.Ordinal);
             Assert.DoesNotContain(withEmailNotifications, message =>
@@ -287,11 +297,75 @@ public sealed class ConsultationRequestCreationEndpointsTests
         var confirmation = Assert.Single(notifications, message =>
             message.NotificationType == EmailNotificationType.ConsultationRequestCreatedConfirmation);
         AssertCreationContactBehavior(confirmation.HtmlBody);
+        Assert.Contains(body.GetProperty("referenceNumber").GetString()!, confirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("01085858585", confirmation.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("01099999999", confirmation.HtmlBody, StringComparison.Ordinal);
         Assert.All(notifications, message =>
         {
             Assert.DoesNotContain("Authenticated client request", message.HtmlBody, StringComparison.Ordinal);
             Assert.DoesNotContain("Impersonated Name", message.HtmlBody, StringComparison.Ordinal);
         });
+    }
+
+    [Fact]
+    public async Task ReferenceNumberDatabaseCollisionRetriesWithANewBoundedCandidate()
+    {
+        await using var rootFactory = new CustomWebApplicationFactory();
+        await using var factory = rootFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IConsultationReferenceNumberGenerator>();
+                services.AddSingleton<IConsultationReferenceNumberGenerator>(
+                    new DeterministicReferenceNumberGenerator("AV-222222", "AV-333333"));
+            }));
+        await SeedFactoryAsync(factory);
+        var lawyerId = await CreateLawyerAsync(
+            factory, "collision.retry", complete: true, approved: true, accountActive: true);
+        await ConfigureAllWeekAvailabilityAsync(factory, lawyerId);
+        await SeedReferenceCollisionAsync(factory, lawyerId, "AV-222222");
+        using var client = CreateClient(factory);
+
+        var response = await PostGuestAsync(client, lawyerId, specializationId: null);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("AV-333333", body.GetProperty("referenceNumber").GetString());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        Assert.Equal(1, await context.ConsultationRequests.CountAsync(
+            request => request.ReferenceNumber == "AV-333333",
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ExhaustedReferenceNumberDatabaseCollisionsReturnStableConflictWithoutA500()
+    {
+        await using var rootFactory = new CustomWebApplicationFactory();
+        await using var factory = rootFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IConsultationReferenceNumberGenerator>();
+                services.AddSingleton<IConsultationReferenceNumberGenerator>(
+                    new DeterministicReferenceNumberGenerator("AV-222222"));
+            }));
+        await SeedFactoryAsync(factory);
+        var lawyerId = await CreateLawyerAsync(
+            factory, "collision.exhausted", complete: true, approved: true, accountActive: true);
+        await ConfigureAllWeekAvailabilityAsync(factory, lawyerId);
+        await SeedReferenceCollisionAsync(factory, lawyerId, "AV-222222");
+        using var client = CreateClient(factory);
+
+        var response = await PostGuestAsync(client, lawyerId, specializationId: null);
+
+        await AssertErrorAsync(
+            response,
+            HttpStatusCode.Conflict,
+            "ConsultationRequest.ReferenceNumberConflict");
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        Assert.Equal(1, await context.ConsultationRequests.CountAsync(
+            request => request.ReferenceNumber == "AV-222222",
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -316,7 +390,37 @@ public sealed class ConsultationRequestCreationEndpointsTests
         return factory;
     }
 
-    private static HttpClient CreateClient(CustomWebApplicationFactory factory)
+    private static async Task SeedFactoryAsync(WebApplicationFactory<Program> factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IEnsureSeeding>()
+            .SeedDatabaseAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task SeedReferenceCollisionAsync(
+        WebApplicationFactory<Program> factory,
+        Guid lawyerId,
+        string referenceNumber)
+    {
+        var request = ConsultationRequest.CreateForGuest(
+            referenceNumber,
+            "Existing Guest",
+            "01044444444",
+            null,
+            lawyerId,
+            ConsultationType.Online,
+            null,
+            "Existing collision record",
+            null,
+            DateTime.UtcNow,
+            500m).Value;
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+        context.ConsultationRequests.Add(request);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
         => factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
@@ -366,7 +470,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
     }
 
     private static async Task<Guid> CreateLawyerAsync(
-        CustomWebApplicationFactory factory,
+        WebApplicationFactory<Program> factory,
         string userName,
         bool complete,
         bool approved,
@@ -420,7 +524,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
     }
 
     private static async Task SetSpecializationActiveAsync(
-        CustomWebApplicationFactory factory,
+        WebApplicationFactory<Program> factory,
         int id,
         bool isActive)
     {
@@ -432,7 +536,7 @@ public sealed class ConsultationRequestCreationEndpointsTests
     }
 
     private static async Task ConfigureAllWeekAvailabilityAsync(
-        CustomWebApplicationFactory factory,
+        WebApplicationFactory<Program> factory,
         Guid lawyerId)
     {
         var periods = Enum.GetValues<DayOfWeek>()
@@ -472,15 +576,31 @@ public sealed class ConsultationRequestCreationEndpointsTests
         Assert.Contains("Lawyer Phone Number:", htmlBody, StringComparison.Ordinal);
         Assert.Contains(LawyerPublicPhoneNumber, htmlBody, StringComparison.Ordinal);
         Assert.Contains(
-            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي إليك.",
+            "في حالة موافقة المحامي على طلب الاستشارة، سيتم إرسال موقع مكتب المحامي وفق القواعد الحالية للنظام.",
             htmlBody,
             StringComparison.Ordinal);
         Assert.Contains(
-            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent to you.",
+            "If the lawyer approves your consultation request, the lawyer&#39;s office location will be sent according to the platform&#39;s current rules.",
             htmlBody,
             StringComparison.Ordinal);
         Assert.DoesNotContain("google.com/maps", htmlBody, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("30.044420", htmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("31.235712", htmlBody, StringComparison.Ordinal);
+        Assert.Contains("https://frontend.example.test/consultation/track", htmlBody, StringComparison.Ordinal);
+        Assert.Contains("Track Consultation Request", htmlBody, StringComparison.Ordinal);
+        Assert.Contains("متابعة طلب الاستشارة", htmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("track?", htmlBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class DeterministicReferenceNumberGenerator(params string[] values)
+        : IConsultationReferenceNumberGenerator
+    {
+        private int _index = -1;
+
+        public string Generate()
+        {
+            var index = Interlocked.Increment(ref _index);
+            return values[Math.Min(index, values.Length - 1)];
+        }
     }
 }

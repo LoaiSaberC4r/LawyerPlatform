@@ -8,9 +8,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Collections.Concurrent;
+using System.Data.Common;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -73,6 +76,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["ConsultationScheduling:TimeZoneId"] = "Africa/Cairo",
                 ["ContactUs:SupportEmail"] = "Support@avokatoo.com",
                 ["DatabaseInitialization:ApplyMigrationsOnStartup"] = "false",
+                ["DatabaseInitialization:ApplySeedingOnStartup"] = "false",
+                ["FrontendUrls:ConsultationTrackingUrl"] = "https://frontend.example.test/consultation/track",
                 ["EmailOutbox:Enabled"] = "false",
                 ["Cors:AllowAnyOrigin"] = "false",
                 ["Cors:AllowCredentials"] = "false",
@@ -108,6 +113,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IEmailSender>();
 
             services.AddSingleton<TestPasswordResetEmailSender>();
+            services.AddSingleton<TestDbCommandCounter>();
             services.AddSingleton<IEmailSender>(provider =>
                 provider.GetRequiredService<TestPasswordResetEmailSender>());
             services.AddScoped<ISeeder, SuperAdminSeeder>();
@@ -122,6 +128,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.AddDbContext<LawyerPlatformDbContext>((serviceProvider, options) =>
                 options
                     .UseSqlite(serviceProvider.GetRequiredService<SqliteConnection>())
+                    .AddInterceptors(serviceProvider.GetRequiredService<TestDbCommandCounter>())
                     .UseBuildingBlockInterceptors(serviceProvider));
 
             using var provider = services.BuildServiceProvider();
@@ -131,6 +138,39 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 .Database
                 .EnsureCreated();
         });
+    }
+}
+
+public sealed class TestDbCommandCounter : DbCommandInterceptor
+{
+    private readonly ConcurrentQueue<string> _commands = new();
+
+    public IReadOnlyCollection<string> Commands => _commands.ToArray();
+
+    public void Reset()
+    {
+        while (_commands.TryDequeue(out _))
+        {
+        }
+    }
+
+    public override InterceptionResult<DbDataReader> ReaderExecuting(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result)
+    {
+        _commands.Enqueue(command.CommandText);
+        return result;
+    }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        _commands.Enqueue(command.CommandText);
+        return ValueTask.FromResult(result);
     }
 }
 

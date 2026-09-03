@@ -58,7 +58,7 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_LawyerProfiles_UserAccountId", StringComparison.Ordinal) => Error.Conflict("LawyerProfile.AccountAlreadyLinked", ErrorMessage.LawyerProfileAlreadyLinked),
             var message when message.Contains("UX_LawyerProfiles_ProfessionalRegistrationNumber", StringComparison.Ordinal) => LawyerErrors.RegistrationNumberAlreadyExists,
             var message when message.Contains("UX_LawyerConsultationSettings_LawyerProfileId", StringComparison.Ordinal) => LawyerErrors.ConsultationSettingsConcurrencyConflict,
-            var message when message.Contains("UX_LawyerAvailabilities_SettingsId_DayOfWeek", StringComparison.Ordinal) => LawyerErrors.DuplicateAvailabilityDay,
+            var message when message.Contains(LawyerPlatformDatabaseObjectNames.LawyerAvailabilityUniqueIndex, StringComparison.Ordinal) => LawyerErrors.DuplicateAvailabilityDay,
             var message when message.Contains("UX_LawyerOffices_LawyerProfileId_Primary", StringComparison.Ordinal) => Error.Conflict("Lawyer.OfficeEditNotAllowed", ErrorMessage.PrimaryOfficeAlreadyExists),
             var message when message.Contains("UX_LegalSpecializations_NameAr", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameAr,
             var message when message.Contains("UX_LegalSpecializations_NameEn", StringComparison.Ordinal) => LegalSpecializationErrors.DuplicateNameEn,
@@ -68,7 +68,7 @@ internal sealed class LawyerPlatformUniqueConstraintExceptionMapper : IException
             var message when message.Contains("UX_Cities_GovernorateId_NameEn", StringComparison.Ordinal) => CityErrors.DuplicateNameEn,
             var message when message.Contains("UX_Areas_CityId_NameAr", StringComparison.Ordinal) => AreaErrors.DuplicateNameAr,
             var message when message.Contains("UX_Areas_CityId_NameEn", StringComparison.Ordinal) => AreaErrors.DuplicateNameEn,
-            var message when message.Contains("UX_ConsultationRequests_ReferenceNumber", StringComparison.Ordinal) => ConsultationRequestErrors.ReferenceNumberConflict,
+            var message when message.Contains(LawyerPlatformDatabaseObjectNames.ConsultationRequestReferenceNumberUniqueIndex, StringComparison.Ordinal) => ConsultationRequestErrors.ReferenceNumberConflict,
             _ => null!
         };
 

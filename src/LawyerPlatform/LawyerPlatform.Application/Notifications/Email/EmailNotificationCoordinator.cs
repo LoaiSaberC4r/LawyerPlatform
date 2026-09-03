@@ -16,10 +16,12 @@ internal sealed record ConsultationCreationEmailContext(
     string LawyerEmail,
     string RequesterName,
     string? RequesterEmail,
+    string RequesterPhoneNumber,
     string RequesterIdentity,
     string SpecializationNameAr,
     string SpecializationNameEn,
-    string? LawyerPublicPhoneNumber);
+    string? LawyerPublicPhoneNumber,
+    string ConsultationTrackingUrl);
 
 internal sealed class EmailNotificationCoordinator(
     IEmailNotificationFactory factory,
@@ -182,7 +184,9 @@ internal sealed class EmailNotificationCoordinator(
             request.PreferredAppointmentOnUtc,
             LawyerPublicPhoneNumber: context.LawyerPublicPhoneNumber,
             ConsultationType: request.ConsultationType,
-            ConsultationPrice: request.ConsultationPrice);
+            ConsultationPrice: request.ConsultationPrice,
+            RequesterPhoneNumber: context.RequesterPhoneNumber,
+            ConsultationTrackingUrl: context.ConsultationTrackingUrl);
         var eventId = request.Id.ToString("N");
 
         await QueueAsync(

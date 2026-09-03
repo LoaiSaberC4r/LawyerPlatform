@@ -36,6 +36,6 @@ internal sealed class LawyerAvailabilityConfiguration : IWriteEntityConfiguratio
                 availability.DayOfWeek
             })
             .IsUnique()
-            .HasDatabaseName("UX_LawyerAvailabilities_SettingsId_Type_DayOfWeek");
+            .HasDatabaseName(LawyerPlatformDatabaseObjectNames.LawyerAvailabilityUniqueIndex);
     }
 }

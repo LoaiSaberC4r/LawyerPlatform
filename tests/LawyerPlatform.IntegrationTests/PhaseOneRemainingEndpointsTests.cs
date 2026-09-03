@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Application.Abstractions.Dashboards;
 
 namespace LawyerPlatform.IntegrationTests;
 
@@ -346,6 +347,62 @@ public sealed class DashboardEndpointsTests(CustomWebApplicationFactory factory)
         Assert.Equal(1, byStatus.GetProperty("approved").GetInt64());
         Assert.Equal(1, byStatus.GetProperty("rejected").GetInt64());
         Assert.Equal(2, byStatus.GetProperty("completed").GetInt64());
+
+        client.DefaultRequestHeaders.Authorization = null;
+        var emptyClient = await PhaseOneTestHelpers.RegisterClientAsync(
+            client,
+            "dashboard.empty.client",
+            "dashboard.empty.client@example.test",
+            "01200000005",
+            "Empty Dashboard Client",
+            cancellationToken);
+        var emptyLawyer = await PhaseOneTestHelpers.RegisterLawyerAsync(
+            client,
+            "dashboard.empty.lawyer",
+            "dashboard.empty.lawyer@example.test",
+            "01200000006",
+            "Empty Dashboard Lawyer",
+            cancellationToken);
+
+        await using var statisticsScope = factory.Services.CreateAsyncScope();
+        var statisticsReader = statisticsScope.ServiceProvider
+            .GetRequiredService<IDashboardStatisticsReader>();
+        var commandCounter = statisticsScope.ServiceProvider
+            .GetRequiredService<TestDbCommandCounter>();
+
+        commandCounter.Reset();
+        var clientStatistics = await statisticsReader.ReadClientAsync(
+            currentClient.UserAccountId,
+            cancellationToken);
+        Assert.NotNull(clientStatistics);
+        Assert.True(commandCounter.Commands.Count <= 2);
+
+        var emptyClientStatistics = await statisticsReader.ReadClientAsync(
+            emptyClient.UserAccountId,
+            cancellationToken);
+        Assert.NotNull(emptyClientStatistics);
+        Assert.Equal(0, emptyClientStatistics.Total);
+
+        commandCounter.Reset();
+        var lawyerStatistics = await statisticsReader.ReadLawyerAsync(
+            lawyerA.UserAccountId,
+            cancellationToken);
+        Assert.NotNull(lawyerStatistics);
+        Assert.True(commandCounter.Commands.Count <= 2);
+
+        var emptyLawyerStatistics = await statisticsReader.ReadLawyerAsync(
+            emptyLawyer.UserAccountId,
+            cancellationToken);
+        Assert.NotNull(emptyLawyerStatistics);
+        Assert.Equal(0, emptyLawyerStatistics.Total);
+
+        Assert.Null(await statisticsReader.ReadClientAsync(Guid.NewGuid(), cancellationToken));
+        Assert.Null(await statisticsReader.ReadLawyerAsync(Guid.NewGuid(), cancellationToken));
+
+        commandCounter.Reset();
+        var adminStatistics = await statisticsReader.ReadAdminAsync(cancellationToken);
+        Assert.Equal(8, adminStatistics.ConsultationRequests.Total);
+        Assert.True(commandCounter.Commands.Count <= 3);
     }
 
     private async Task SeedDashboardDataAsync(

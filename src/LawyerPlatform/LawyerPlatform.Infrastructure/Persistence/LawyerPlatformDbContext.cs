@@ -52,6 +52,26 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
         modelBuilder.ApplyWriteConfigurations(typeof(LawyerPlatformDbContext).Assembly);
         modelBuilder.ApplySoftDeleteQueryFilter();
 
+        if (string.Equals(Database.ProviderName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
+        {
+            modelBuilder.HasSequence<int>(
+                    LawyerPlatformDatabaseObjectNames.GovernorateIdSequence,
+                    LawyerPlatformDatabaseObjectNames.Schema)
+                .StartsAt(LawyerPlatformDatabaseObjectNames.GovernorateIdSequenceStart);
+            modelBuilder.HasSequence<int>(
+                    LawyerPlatformDatabaseObjectNames.CityIdSequence,
+                    LawyerPlatformDatabaseObjectNames.Schema)
+                .StartsAt(LawyerPlatformDatabaseObjectNames.CityIdSequenceStart);
+            modelBuilder.HasSequence<int>(
+                    LawyerPlatformDatabaseObjectNames.AreaIdSequence,
+                    LawyerPlatformDatabaseObjectNames.Schema)
+                .StartsAt(LawyerPlatformDatabaseObjectNames.AreaIdSequenceStart);
+            modelBuilder.HasSequence<int>(
+                    LawyerPlatformDatabaseObjectNames.LegalSpecializationIdSequence,
+                    LawyerPlatformDatabaseObjectNames.Schema)
+                .StartsAt(LawyerPlatformDatabaseObjectNames.LegalSpecializationIdSequenceStart);
+        }
+
         if (string.Equals(Database.ProviderName, "Microsoft.EntityFrameworkCore.Sqlite", StringComparison.Ordinal))
         {
             ConfigureSqliteConcurrencyFallback(modelBuilder);
@@ -60,6 +80,19 @@ public sealed class LawyerPlatformDbContext(DbContextOptions<LawyerPlatformDbCon
 
     private static void ConfigureSqliteConcurrencyFallback(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Governorate>()
+            .Property(item => item.NameEn)
+            .UseCollation("NOCASE");
+        modelBuilder.Entity<City>()
+            .Property(item => item.NameEn)
+            .UseCollation("NOCASE");
+        modelBuilder.Entity<Area>()
+            .Property(item => item.NameEn)
+            .UseCollation("NOCASE");
+        modelBuilder.Entity<LegalSpecialization>()
+            .Property(item => item.NameEn)
+            .UseCollation("NOCASE");
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             var rowVersion = entityType.FindProperty("RowVersion");
