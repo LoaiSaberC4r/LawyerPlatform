@@ -3,6 +3,7 @@ using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Application.Features.AdminLawyers.GetLawyers;
@@ -27,7 +28,7 @@ public sealed record AdminProfessionalProfileResponse(
     int? YearsOfExperience,
     string? ProfessionalRegistrationNumber,
     bool HasProfileImage,
-    string? ProfileImageContentUrl);
+    string? ProfileImagePath);
 
 public sealed record LawyerApprovalHistoryResponse(
     Guid Id,
@@ -56,7 +57,8 @@ public sealed record AdminLawyerDetailsResponse(
 
 internal sealed class GetLawyerDetailsQueryHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<GetLawyerDetailsQuery, AdminLawyerDetailsResponse>
 {
     public async Task<Result<AdminLawyerDetailsResponse>> Handle(GetLawyerDetailsQuery query, CancellationToken cancellationToken)
@@ -78,6 +80,7 @@ internal sealed class GetLawyerDetailsQueryHandler(
             item.Documents.Select(document => document.DocumentType).ToArray(),
             item.AccountStatus == AccountStatus.Active,
             documentPolicy);
+        var profileImagePath = profileImagePathResolver.Resolve(item.ProfileImageStorageKey);
 
         return Result<AdminLawyerDetailsResponse>.Ok(new AdminLawyerDetailsResponse(
             item.Id,
@@ -88,8 +91,8 @@ internal sealed class GetLawyerDetailsQueryHandler(
                 item.Biography,
                 item.YearsOfExperience,
                 item.ProfessionalRegistrationNumber,
-                item.HasProfileImage,
-                item.HasProfileImage ? $"/api/v1/admin/lawyers/{item.Id}/profile-image" : null),
+                profileImagePath is not null,
+                profileImagePath),
             item.Office?.ToResponse(),
             item.Specializations.Select(specialization => new LawyerSpecializationResponse(
                 specialization.Id,
@@ -141,7 +144,7 @@ internal sealed class AdminLawyerDetailsSpecification : Specification<LawyerProf
             profile.Biography,
             profile.YearsOfExperience,
             profile.ProfessionalRegistrationNumber,
-            profile.ProfileImageStorageKey != null,
+            profile.ProfileImageStorageKey,
             profile.Offices.Where(office => office.IsPrimary && office.IsActive)
                 .Select(office => new AdminOfficeDetailsSnapshot(
                     office.Id,
@@ -209,7 +212,7 @@ internal sealed record AdminLawyerDetailsSnapshot(
     string? Biography,
     int? YearsOfExperience,
     string? ProfessionalRegistrationNumber,
-    bool HasProfileImage,
+    string? ProfileImageStorageKey,
     AdminOfficeDetailsSnapshot? Office,
     bool OfficeComplete,
     IReadOnlyList<AdminSpecializationSnapshot> Specializations,

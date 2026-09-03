@@ -2,6 +2,7 @@ using BuildingBlock.Application.Abstraction;
 using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Results;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.PublicLawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -12,7 +13,8 @@ public sealed record GetPublicLawyerDetailsQuery(Guid LawyerId) : IQuery<PublicL
 
 internal sealed class GetPublicLawyerDetailsQueryHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<GetPublicLawyerDetailsQuery, PublicLawyerResponse>
 {
     public async Task<Result<PublicLawyerResponse>> Handle(GetPublicLawyerDetailsQuery query, CancellationToken cancellationToken)
@@ -22,7 +24,7 @@ internal sealed class GetPublicLawyerDetailsQueryHandler(
             cancellationToken);
         return item is null
             ? Result<PublicLawyerResponse>.Fail(LawyerErrors.NotFound)
-            : Result<PublicLawyerResponse>.Ok(item.ToResponse());
+            : Result<PublicLawyerResponse>.Ok(item.ToResponse(profileImagePathResolver));
     }
 }
 

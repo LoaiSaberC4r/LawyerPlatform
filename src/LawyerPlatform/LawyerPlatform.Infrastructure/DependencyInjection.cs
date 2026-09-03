@@ -5,6 +5,7 @@ using BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Abstractions.Consultations;
 using LawyerPlatform.Application.Abstractions.ContactInquiries;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Application.Features.Auth.Common;
 using LawyerPlatform.Application.Persistence;
@@ -16,12 +17,15 @@ using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Infrastructure.Lawyers;
+using LawyerPlatform.Infrastructure.Media;
 using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using BuildingBlock.Infrastructure.Options;
 using System.Text;
 
 namespace LawyerPlatform.Infrastructure;
@@ -50,6 +54,9 @@ public static class DependencyInjection
         services.AddBuildingBlockCaching();
         services.AddBuildingBlockPasswordHashing(configuration);
         services.AddBuildingBlockMedia(configuration);
+        services.AddOptions<MediaStorageOptions>()
+            .Configure<IHostEnvironment>((options, environment) =>
+                options.ContentRootPath = environment.ContentRootPath);
         services.AddBuildingBlockFileSystemMediaStorage();
         services.AddBuildingBlockMailKitEmail(configuration);
         services.AddBuildingBlockSqlServerExceptionMapping();
@@ -76,6 +83,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(LawyerDocumentOptions.SectionName))
             .Validate(ValidateLawyerDocuments, "Lawyer document options are invalid.")
             .ValidateOnStart();
+        services.AddOptions<ProfileImagesOptions>()
+            .Bind(configuration.GetSection(ProfileImagesOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<ProfileImagesOptions>, ProfileImagesOptionsValidator>();
         services.AddOptions<ConsultationSchedulingOptions>()
             .Bind(configuration.GetSection(ConsultationSchedulingOptions.SectionName))
             .Validate(
@@ -110,6 +121,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordResetTokenHasher, PasswordResetTokenHasher>();
         services.AddScoped<IUserAuthenticationStateReader, UserAuthenticationStateReader>();
         services.AddSingleton<ILawyerDocumentPolicy, LawyerDocumentPolicy>();
+        services.AddSingleton<IProfileImagePathResolver, ProfileImagePathResolver>();
         services.AddSingleton<IConsultationReferenceNumberGenerator, ConsultationReferenceNumberGenerator>();
         services.AddSingleton<IConsultationSchedulingTimeZone, ConsultationSchedulingTimeZone>();
         services.AddSingleton<IContactUsRecipientProvider, ContactUsRecipientProvider>();

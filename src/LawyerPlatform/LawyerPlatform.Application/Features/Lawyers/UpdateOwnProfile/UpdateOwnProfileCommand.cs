@@ -6,6 +6,7 @@ using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Features.Lawyers.GetOwnProfile;
 using LawyerPlatform.Application.Persistence;
@@ -43,6 +44,7 @@ internal sealed class UpdateOwnProfileCommandHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> reader,
     IConcurrencyTokenManager concurrencyTokenManager,
     ILawyerDocumentPolicy documentPolicy,
+    IProfileImagePathResolver profileImagePathResolver,
     IDateTimeProvider clock)
     : ICommandHandler<UpdateOwnProfileCommand, LawyerOwnProfileResponse>
 {
@@ -93,6 +95,9 @@ internal sealed class UpdateOwnProfileCommandHandler(
         var snapshot = await reader.FirstOrDefaultAsync(new OwnProfileSpecification(userId), cancellationToken);
         return snapshot is null
             ? Result<LawyerOwnProfileResponse>.Fail(LawyerErrors.NotFound)
-            : Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(snapshot, documentPolicy));
+            : Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(
+                snapshot,
+                documentPolicy,
+                profileImagePathResolver));
     }
 }

@@ -16,6 +16,12 @@ namespace LawyerPlatform.IntegrationTests;
 
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly string _webRootPath = Path.Combine(
+        Path.GetTempPath(),
+        "LawyerPlatformTests",
+        Guid.NewGuid().ToString("N"),
+        "wwwroot");
+
     public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -26,7 +32,23 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        var contentRootPath = builder.GetSetting(WebHostDefaults.ContentRootKey)
+            ?? throw new InvalidOperationException("The test content root is unavailable.");
+        Directory.CreateDirectory(_webRootPath);
+        var sourceFooterImagePath = Path.Combine(
+            contentRootPath,
+            "wwwroot",
+            "email-assets",
+            "avokatoo-email-footer.png");
+        var testFooterImagePath = Path.Combine(
+            _webRootPath,
+            "email-assets",
+            "avokatoo-email-footer.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(testFooterImagePath)!);
+        File.Copy(sourceFooterImagePath, testFooterImagePath, overwrite: true);
+
         builder.UseEnvironment("Development");
+        builder.UseWebRoot(_webRootPath);
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -56,7 +78,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Cors:AllowCredentials"] = "false",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:4200",
                 ["Cors:AllowedOrigins:1"] = "https://localhost:4200",
-                ["MediaStorage:RootPath"] = Path.Combine(Path.GetTempPath(), "LawyerPlatformTests", Guid.NewGuid().ToString("N")),
+                ["MediaStorage:RootPath"] = Path.Combine(_webRootPath, "uploads"),
                 ["MediaStorage:MaxFileSizeBytes"] = "1048576",
                 ["MediaStorage:AllowedExtensions:0"] = ".jpg",
                 ["MediaStorage:AllowedExtensions:1"] = ".jpeg",
@@ -65,6 +87,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["MediaStorage:AllowedMimeTypes:0"] = "image/jpeg",
                 ["MediaStorage:AllowedMimeTypes:1"] = "image/png",
                 ["MediaStorage:AllowedMimeTypes:2"] = "application/pdf",
+                ["ProfileImages:PublicPathBase"] = "/uploads",
                 ["LawyerDocuments:RequiredDocumentTypes:0"] = "IdentityVerification",
                 ["LawyerDocuments:RequiredDocumentTypes:1"] = "ProfessionalMembership",
                 ["LawyerDocuments:AllowedExtensions:0"] = ".jpg",

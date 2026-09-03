@@ -4,6 +4,7 @@ using BuildingBlock.Application.Repositories;
 using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -22,7 +23,7 @@ public sealed record LawyerOwnProfileResponse(
     int? YearsOfExperience,
     string? ProfessionalRegistrationNumber,
     bool HasProfileImage,
-    string? ProfileImageContentUrl,
+    string? ProfileImagePath,
     string ApprovalStatus,
     string AccountStatus,
     LawyerOfficeResponse? PrimaryOffice,
@@ -34,7 +35,8 @@ public sealed record LawyerOwnProfileResponse(
 internal sealed class GetOwnProfileQueryHandler(
     ICurrentUser currentUser,
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<GetOwnProfileQuery, LawyerOwnProfileResponse>
 {
     public async Task<Result<LawyerOwnProfileResponse>> Handle(GetOwnProfileQuery request, CancellationToken cancellationToken)
@@ -47,13 +49,19 @@ internal sealed class GetOwnProfileQueryHandler(
         var snapshot = await repository.FirstOrDefaultAsync(new OwnProfileSpecification(userId), cancellationToken);
         return snapshot is null
             ? Result<LawyerOwnProfileResponse>.Fail(LawyerErrors.NotFound)
-            : Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(snapshot, documentPolicy));
+            : Result<LawyerOwnProfileResponse>.Ok(OwnProfileMapper.Map(
+                snapshot,
+                documentPolicy,
+                profileImagePathResolver));
     }
 }
 
 internal static class OwnProfileMapper
 {
-    public static LawyerOwnProfileResponse Map(OwnProfileSnapshot snapshot, ILawyerDocumentPolicy documentPolicy)
+    public static LawyerOwnProfileResponse Map(
+        OwnProfileSnapshot snapshot,
+        ILawyerDocumentPolicy documentPolicy,
+        IProfileImagePathResolver profileImagePathResolver)
     {
         var completion = LawyerProfileCompletionCalculator.Calculate(
             snapshot.ApprovalStatus,
@@ -66,6 +74,7 @@ internal static class OwnProfileMapper
             snapshot.ActiveDocumentTypes,
             snapshot.AccountStatus == AccountStatus.Active,
             documentPolicy);
+        var profileImagePath = profileImagePathResolver.Resolve(snapshot.ProfileImageStorageKey);
 
         return new LawyerOwnProfileResponse(
             snapshot.Id,
@@ -75,8 +84,8 @@ internal static class OwnProfileMapper
             snapshot.Biography,
             snapshot.YearsOfExperience,
             snapshot.ProfessionalRegistrationNumber,
-            snapshot.HasProfileImage,
-            snapshot.HasProfileImage ? "/api/v1/lawyer/profile/image" : null,
+            profileImagePath is not null,
+            profileImagePath,
             snapshot.ApprovalStatus.ToString(),
             snapshot.AccountStatus.ToString(),
             snapshot.PrimaryOffice is null ? null : new LawyerOfficeResponse(
@@ -117,7 +126,7 @@ internal sealed class OwnProfileSpecification : Specification<LawyerProfile, Own
             profile.Biography,
             profile.YearsOfExperience,
             profile.ProfessionalRegistrationNumber,
-            profile.ProfileImageStorageKey != null,
+            profile.ProfileImageStorageKey,
             profile.ApprovalStatus,
             profile.UserAccount.Status,
             profile.Offices
@@ -167,7 +176,7 @@ internal sealed record OwnProfileSnapshot(
     string? Biography,
     int? YearsOfExperience,
     string? ProfessionalRegistrationNumber,
-    bool HasProfileImage,
+    string? ProfileImageStorageKey,
     LawyerApprovalStatus ApprovalStatus,
     AccountStatus AccountStatus,
     OwnOfficeSnapshot? PrimaryOffice,

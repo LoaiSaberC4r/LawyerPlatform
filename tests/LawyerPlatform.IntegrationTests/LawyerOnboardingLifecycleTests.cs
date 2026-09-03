@@ -52,6 +52,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
 
         var initialProfile = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
         Assert.Equal("Draft", initialProfile.GetProperty("approvalStatus").GetString());
+        Assert.False(initialProfile.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, initialProfile.GetProperty("profileImagePath").ValueKind);
+        AssertObsoleteProfileImageFieldsAreAbsent(initialProfile);
         Assert.False(initialProfile.GetProperty("completion").GetProperty("profileIsComplete").GetBoolean());
         var initialRowVersion = initialProfile.GetProperty("rowVersion").GetString()!;
 
@@ -70,7 +73,48 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         }, cancellationToken);
         Assert.Equal(HttpStatusCode.OK, profileUpdate.StatusCode);
         var updatedProfile = await profileUpdate.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.False(updatedProfile.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, updatedProfile.GetProperty("profileImagePath").ValueKind);
+        AssertObsoleteProfileImageFieldsAreAbsent(updatedProfile);
         var profileRowVersion = updatedProfile.GetProperty("rowVersion").GetString()!;
+
+        var (profileImageUpload, profileImageBytes) = await UploadProfileImageAsync(
+            client,
+            profileRowVersion,
+            cancellationToken);
+        Assert.True(profileImageUpload.GetProperty("hasProfileImage").GetBoolean());
+        var profileImagePath = profileImageUpload.GetProperty("profileImagePath").GetString()!;
+        Assert.StartsWith($"/uploads/lawyers/{lawyerId:N}/profile/", profileImagePath, StringComparison.Ordinal);
+        Assert.EndsWith(".png", profileImagePath, StringComparison.Ordinal);
+        AssertObsoleteProfileImageFieldsAreAbsent(profileImageUpload);
+        profileRowVersion = profileImageUpload.GetProperty("rowVersion").GetString()!;
+
+        client.DefaultRequestHeaders.Authorization = null;
+        using (var staticImage = await client.GetAsync(profileImagePath, cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, staticImage.StatusCode);
+            Assert.Equal("image/png", staticImage.Content.Headers.ContentType?.MediaType);
+            Assert.Equal(profileImageBytes, await staticImage.Content.ReadAsByteArrayAsync(cancellationToken));
+        }
+
+        var missingImagePath = profileImagePath[..(profileImagePath.LastIndexOf('/') + 1)] + "missing.png";
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await client.GetAsync(missingImagePath, cancellationToken)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", lawyerToken);
+
+        using (var legacyOwnProfileImage = await client.GetAsync(
+                   "/api/v1/lawyer/profile/image",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, legacyOwnProfileImage.StatusCode);
+            Assert.Equal(profileImageBytes, await legacyOwnProfileImage.Content.ReadAsByteArrayAsync(cancellationToken));
+        }
+
+        var ownProfileWithImage = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
+        Assert.True(ownProfileWithImage.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, ownProfileWithImage.GetProperty("profileImagePath").GetString());
+        AssertObsoleteProfileImageFieldsAreAbsent(ownProfileWithImage);
 
         var office = await client.PutAsJsonAsync("/api/v1/lawyer/office", new
         {
@@ -110,6 +154,8 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         }
 
         var ownProfileWithCoordinates = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
+        Assert.True(ownProfileWithCoordinates.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, ownProfileWithCoordinates.GetProperty("profileImagePath").GetString());
         Assert.Equal(
             30.044420m,
             ownProfileWithCoordinates.GetProperty("primaryOffice").GetProperty("latitude").GetDecimal());
@@ -142,6 +188,23 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.False(identityDocument.TryGetProperty("storageKey", out _));
         var membershipDocument = await UploadPdfAsync(client, "ProfessionalMembership", "membership.pdf", cancellationToken);
         Assert.False(membershipDocument.TryGetProperty("storageKey", out _));
+
+        string privateDocumentStorageKey;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
+            var membershipDocumentId = membershipDocument.GetProperty("id").GetGuid();
+            privateDocumentStorageKey = await dbContext.LawyerDocuments
+                .Where(document => document.Id == membershipDocumentId)
+                .Select(document => document.StorageKey)
+                .SingleAsync(cancellationToken);
+        }
+
+        client.DefaultRequestHeaders.Authorization = null;
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await client.GetAsync($"/uploads/{privateDocumentStorageKey}", cancellationToken)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", lawyerToken);
 
         var deletedDocumentId = identityDocument.GetProperty("id").GetGuid();
         using (var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/lawyer/documents/{deletedDocumentId}"))
@@ -195,6 +258,9 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         }, cancellationToken);
         Assert.Equal(HttpStatusCode.OK, clarification.StatusCode);
         var clarificationBody = await clarification.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        Assert.True(clarificationBody.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, clarificationBody.GetProperty("profileImagePath").GetString());
+        AssertObsoleteProfileImageFieldsAreAbsent(clarificationBody);
 
         using var resubmitRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/lawyer/submit-for-approval");
         resubmitRequest.Headers.TryAddWithoutValidation("If-Match", clarificationBody.GetProperty("rowVersion").GetString());
@@ -213,17 +279,45 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
 
         var adminDetails = await GetJsonAsync(client, $"/api/v1/admin/lawyers/{lawyerId}", cancellationToken);
         var adminJson = adminDetails.GetRawText();
+        var adminProfessionalProfile = adminDetails.GetProperty("professionalProfile");
+        Assert.True(adminProfessionalProfile.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, adminProfessionalProfile.GetProperty("profileImagePath").GetString());
+        AssertObsoleteProfileImageFieldsAreAbsent(adminProfessionalProfile);
         Assert.DoesNotContain("storageKey", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("passwordHash", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("fileBytes", adminJson, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(30.044420m, adminDetails.GetProperty("primaryOffice").GetProperty("latitude").GetDecimal());
         Assert.Equal(31.235712m, adminDetails.GetProperty("primaryOffice").GetProperty("longitude").GetDecimal());
         Assert.True(adminDetails.GetProperty("statusHistory").GetArrayLength() >= 4);
+        Assert.All(adminDetails.GetProperty("documents").EnumerateArray(), document =>
+        {
+            Assert.StartsWith(
+                $"/api/v1/admin/lawyers/{lawyerId}/documents/",
+                document.GetProperty("contentUrl").GetString(),
+                StringComparison.Ordinal);
+            Assert.Contains("/content", document.GetProperty("contentUrl").GetString(), StringComparison.Ordinal);
+        });
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.GetAsync($"/api/v1/admin/lawyers/{lawyerId}/profile-image", cancellationToken)).StatusCode);
+
+        var adminList = await GetJsonAsync(
+            client,
+            "/api/v1/admin/lawyers?pageNumber=1&pageSize=100",
+            cancellationToken);
+        var adminListItem = adminList.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == lawyerId);
+        Assert.True(adminListItem.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, adminListItem.GetProperty("profileImagePath").GetString());
+        AssertObsoleteProfileImageFieldsAreAbsent(adminListItem);
 
         client.DefaultRequestHeaders.Authorization = null;
         Assert.True(await PublicSearchContainsAsync(client, lawyerId, cancellationToken));
         var publicDetails = await GetJsonAsync(client, $"/api/v1/public/lawyers/{lawyerId}", cancellationToken);
         var publicJson = publicDetails.GetRawText();
+        Assert.True(publicDetails.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, publicDetails.GetProperty("profileImagePath").GetString());
+        AssertObsoleteProfileImageFieldsAreAbsent(publicDetails);
         Assert.DoesNotContain("documents", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("storageKey", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("professionalRegistrationNumber", publicJson, StringComparison.OrdinalIgnoreCase);
@@ -232,10 +326,19 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain("longitude", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("lawyerOfficeMapUrl", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("googleMapsUrl", publicJson, StringComparison.OrdinalIgnoreCase);
-        var publicListJson = (await GetJsonAsync(
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.GetAsync($"/api/v1/public/lawyers/{lawyerId}/profile-image", cancellationToken)).StatusCode);
+        var publicList = await GetJsonAsync(
             client,
             "/api/v1/public/lawyers?pageNumber=1&pageSize=100",
-            cancellationToken)).GetRawText();
+            cancellationToken);
+        var publicListItem = publicList.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == lawyerId);
+        Assert.True(publicListItem.GetProperty("hasProfileImage").GetBoolean());
+        Assert.Equal(profileImagePath, publicListItem.GetProperty("profileImagePath").GetString());
+        AssertObsoleteProfileImageFieldsAreAbsent(publicListItem);
+        var publicListJson = publicList.GetRawText();
         Assert.DoesNotContain("latitude", publicListJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("longitude", publicListJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("lawyerOfficeMapUrl", publicListJson, StringComparison.OrdinalIgnoreCase);
@@ -463,6 +566,31 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         var response = await client.PostAsync("/api/v1/lawyer/documents", content, cancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+    }
+
+    private static async Task<(JsonElement Body, byte[] Bytes)> UploadProfileImageAsync(
+        HttpClient client,
+        string rowVersion,
+        CancellationToken cancellationToken)
+    {
+        var bytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(rowVersion), "rowVersion");
+        var image = new ByteArrayContent(bytes);
+        image.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        content.Add(image, "image", "profile.png");
+
+        var response = await client.PutAsync("/api/v1/lawyer/profile/image", content, cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken), bytes);
+    }
+
+    private static void AssertObsoleteProfileImageFieldsAreAbsent(JsonElement response)
+    {
+        Assert.False(response.TryGetProperty("profileImageUrl", out _));
+        Assert.False(response.TryGetProperty("profileImageContentUrl", out _));
+        Assert.False(response.TryGetProperty("profileImageStorageKey", out _));
     }
 
     private static async Task<string> LoginAndReadTokenAsync(

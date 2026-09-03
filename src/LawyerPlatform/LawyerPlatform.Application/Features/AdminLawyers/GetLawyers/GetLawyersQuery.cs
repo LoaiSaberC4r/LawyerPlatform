@@ -5,6 +5,7 @@ using BuildingBlock.Domain.SharedDto;
 using BuildingBlock.Domain.Specification;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -24,6 +25,8 @@ public sealed record GetLawyersQuery(
 public sealed record AdminLawyerListItemResponse(
     Guid Id,
     string FullName,
+    bool HasProfileImage,
+    string? ProfileImagePath,
     string? ProfessionalTitle,
     string ApprovalStatus,
     string AccountStatus,
@@ -49,7 +52,8 @@ internal sealed class GetLawyersQueryValidator : AbstractValidator<GetLawyersQue
 
 internal sealed class GetLawyersQueryHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<GetLawyersQuery, PagedResult<AdminLawyerListItemResponse>>
 {
     public async Task<Result<PagedResult<AdminLawyerListItemResponse>>> Handle(GetLawyersQuery query, CancellationToken cancellationToken)
@@ -68,9 +72,12 @@ internal sealed class GetLawyersQueryHandler(
                 item.ActiveDocumentTypes,
                 item.AccountStatus == AccountStatus.Active,
                 documentPolicy);
+            var profileImagePath = profileImagePathResolver.Resolve(item.ProfileImageStorageKey);
             return new AdminLawyerListItemResponse(
                 item.Id,
                 item.FullName,
+                profileImagePath is not null,
+                profileImagePath,
                 item.ProfessionalTitle,
                 item.ApprovalStatus.ToString(),
                 item.AccountStatus.ToString(),
@@ -130,6 +137,7 @@ internal sealed class AdminLawyersSpecification : Specification<LawyerProfile, A
         Select(profile => new AdminLawyerListSnapshot(
             profile.Id,
             profile.FullName,
+            profile.ProfileImageStorageKey,
             profile.ProfessionalTitle,
             profile.YearsOfExperience,
             profile.ProfessionalRegistrationNumber,
@@ -159,6 +167,7 @@ internal sealed class AdminLawyersSpecification : Specification<LawyerProfile, A
 internal sealed record AdminLawyerListSnapshot(
     Guid Id,
     string FullName,
+    string? ProfileImageStorageKey,
     string? ProfessionalTitle,
     int? YearsOfExperience,
     string? ProfessionalRegistrationNumber,

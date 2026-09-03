@@ -7,6 +7,7 @@ using BuildingBlock.Application.Time;
 using BuildingBlock.Domain.Results;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -17,7 +18,7 @@ namespace LawyerPlatform.Application.Features.Lawyers.UpdateProfileImage;
 public sealed record UpdateProfileImageCommand(MediaUpload Image, string RowVersion)
     : ICommand<UpdateProfileImageResponse>, ITransactionalCommand<LawyerPlatformWritePersistence>;
 
-public sealed record UpdateProfileImageResponse(bool HasProfileImage, string ProfileImageContentUrl, string RowVersion);
+public sealed record UpdateProfileImageResponse(bool HasProfileImage, string? ProfileImagePath, string RowVersion);
 
 internal sealed class UpdateProfileImageCommandValidator : AbstractValidator<UpdateProfileImageCommand>
 {
@@ -41,6 +42,7 @@ internal sealed class UpdateProfileImageCommandHandler(
     IUnitOfWork<LawyerPlatformWritePersistence> unitOfWork,
     IConcurrencyTokenManager concurrencyTokenManager,
     IMediaService mediaService,
+    IProfileImagePathResolver profileImagePathResolver,
     IDateTimeProvider clock,
     ILogger<UpdateProfileImageCommandHandler> logger)
     : ICommandHandler<UpdateProfileImageCommand, UpdateProfileImageResponse>
@@ -102,7 +104,7 @@ internal sealed class UpdateProfileImageCommandHandler(
 
         return Result<UpdateProfileImageResponse>.Ok(new UpdateProfileImageResponse(
             true,
-            "/api/v1/lawyer/profile/image",
+            profileImagePathResolver.Resolve(stored.Key),
             RowVersionCodec.Encode(profile.RowVersion)));
     }
 

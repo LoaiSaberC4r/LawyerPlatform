@@ -4,6 +4,7 @@ using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.SharedDto;
 using FluentValidation;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.PublicLawyers.Common;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Domain.Lawyers;
@@ -36,7 +37,8 @@ internal sealed class SearchLawyersQueryValidator : AbstractValidator<SearchLawy
 
 internal sealed class SearchLawyersQueryHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<SearchLawyersQuery, PagedResult<PublicLawyerResponse>>
 {
     public async Task<Result<PagedResult<PublicLawyerResponse>>> Handle(SearchLawyersQuery query, CancellationToken cancellationToken)
@@ -48,7 +50,7 @@ internal sealed class SearchLawyersQueryHandler(
             query.PageNumber,
             query.PageSize,
             count,
-            items.Select(item => item.ToResponse())));
+            items.Select(item => item.ToResponse(profileImagePathResolver))));
     }
 }
 
