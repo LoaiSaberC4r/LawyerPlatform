@@ -1,36 +1,36 @@
 using System.Net.Mail;
+using System.Text;
 using BuildingBlock.Application.Exceptions;
 using BuildingBlock.Infrastructure.Bootstrap;
 using BuildingBlock.Infrastructure.EntityFrameworkCore.SqlServer;
+using BuildingBlock.Infrastructure.Options;
 using LawyerPlatform.Application.Abstractions.Authentication;
 using LawyerPlatform.Application.Abstractions.Consultations;
 using LawyerPlatform.Application.Abstractions.ContactInquiries;
 using LawyerPlatform.Application.Abstractions.Dashboards;
+using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Abstractions.ReferenceData;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Application.Features.Auth.Common;
+using LawyerPlatform.Application.Notifications.Email;
 using LawyerPlatform.Application.Persistence;
 using LawyerPlatform.Infrastructure.Authentication;
 using LawyerPlatform.Infrastructure.Consultations;
 using LawyerPlatform.Infrastructure.ContactInquiries;
 using LawyerPlatform.Infrastructure.Dashboards;
+using LawyerPlatform.Infrastructure.Email;
+using LawyerPlatform.Infrastructure.Lawyers;
+using LawyerPlatform.Infrastructure.Media;
 using LawyerPlatform.Infrastructure.Options;
 using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.ReferenceData;
 using LawyerPlatform.Infrastructure.Seeding;
-using LawyerPlatform.Application.Abstractions.Lawyers;
-using LawyerPlatform.Infrastructure.Lawyers;
-using LawyerPlatform.Infrastructure.Media;
-using LawyerPlatform.Application.Notifications.Email;
-using LawyerPlatform.Infrastructure.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using BuildingBlock.Infrastructure.Options;
-using System.Text;
 
 namespace LawyerPlatform.Infrastructure;
 
@@ -60,7 +60,13 @@ public static class DependencyInjection
         services.AddBuildingBlockMedia(configuration);
         services.AddOptions<MediaStorageOptions>()
             .Configure<IHostEnvironment>((options, environment) =>
-                options.ContentRootPath = environment.ContentRootPath);
+            {
+                options.ContentRootPath = environment.ContentRootPath;
+                options.RootPath = MediaStoragePathResolver.ResolveRoot(
+                    options.RootPath,
+                    environment.ContentRootPath);
+            });
+        services.AddSingleton<IMediaStoragePathResolver, MediaStoragePathResolver>();
         services.AddBuildingBlockFileSystemMediaStorage();
         services.AddBuildingBlockMailKitEmail(configuration);
         services.AddBuildingBlockSqlServerExceptionMapping();
@@ -137,7 +143,9 @@ public static class DependencyInjection
         services.AddScoped<IConsultationRequestCreationPersistence, ConsultationRequestCreationPersistence>();
         services.AddScoped<IDashboardStatisticsReader, DashboardStatisticsReader>();
         services.AddScoped<IReferenceDataIdGenerator, SqlServerReferenceDataIdGenerator>();
-        services.AddSingleton<IStoredFileReader, StoredFileReader>();
+        services.AddSingleton<StoredFileReader>();
+        services.AddSingleton<IStoredFileReader>(provider => provider.GetRequiredService<StoredFileReader>());
+        services.AddSingleton<IStoredFileAvailability>(provider => provider.GetRequiredService<StoredFileReader>());
         services.AddScoped<IConcurrencyTokenManager, ConcurrencyTokenManager>();
         services.AddScoped<ILawyerAggregatePersistence, LawyerAggregatePersistence>();
         services.AddScoped<IEmailNotificationOutbox, EmailNotificationOutbox>();
@@ -166,6 +174,12 @@ public static class DependencyInjection
         services.AddBuildingBlockDbContext<LawyerPlatformWritePersistence, LawyerPlatformDbContext>();
 
         return services;
+    }
+
+    public static string GetLawyerPlatformMediaStorageRoot(this IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        return services.GetRequiredService<IMediaStoragePathResolver>().RootPath;
     }
 
     private static bool ValidateInitialSuperAdmin(InitialSuperAdminOptions options)

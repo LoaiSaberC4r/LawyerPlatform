@@ -10,7 +10,8 @@ namespace LawyerPlatform.Application.Features.Lawyers.Common;
 internal sealed class LawyerAggregateCompletionService(
     IReadRepository<Area, LawyerPlatformReadPersistence> areaReader,
     IReadRepository<LegalSpecialization, LawyerPlatformReadPersistence> specializationReader,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IStoredFileAvailability storedFileAvailability)
 {
     public async Task<LawyerProfileCompletionResponse> CalculateAsync(
         LawyerProfile profile,
@@ -34,6 +35,15 @@ internal sealed class LawyerAggregateCompletionService(
                 specialization => specializationIds.Contains(specialization.Id) && specialization.IsActive,
                 cancellationToken);
 
+        var availableDocumentTypes = await RequiredDocumentAvailability.GetAvailableTypesAsync(
+            profile.Documents
+                .Where(document => !document.IsDeleted)
+                .Select(document => new StoredDocumentReference(document.DocumentType, document.StorageKey))
+                .ToArray(),
+            documentPolicy,
+            storedFileAvailability,
+            cancellationToken);
+
         return LawyerProfileCompletionCalculator.Calculate(
             profile.ApprovalStatus,
             profile.FullName,
@@ -42,7 +52,7 @@ internal sealed class LawyerAggregateCompletionService(
             profile.ProfessionalRegistrationNumber,
             officeComplete,
             activeSpecializations > 0,
-            profile.Documents.Where(document => !document.IsDeleted).Select(document => document.DocumentType).ToArray(),
+            availableDocumentTypes,
             profile.UserAccount.Status == LawyerPlatform.Domain.Accounts.AccountStatus.Active,
             documentPolicy);
     }

@@ -3,21 +3,23 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using LawyerPlatform.Application.Notifications.Email;
+using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.ReferenceData;
 using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
-using LawyerPlatform.Application.Notifications.Email;
-using LawyerPlatform.Domain.Accounts;
-using LawyerPlatform.Domain.Lawyers;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LawyerPlatform.IntegrationTests;
 
 public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory factory)
     : IClassFixture<CustomWebApplicationFactory>
 {
+    private static readonly byte[] PdfBytes = Encoding.ASCII.GetBytes(
+        "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF");
     private static readonly int[] CivilLawSpecialization = [1];
     private static readonly AreaSeed OfficeArea = EgyptLocationSeedCatalog.Areas[0];
     private static readonly CitySeed OfficeCity = EgyptLocationSeedCatalog.Cities.Single(
@@ -86,8 +88,46 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         var profileImagePath = profileImageUpload.GetProperty("profileImagePath").GetString()!;
         Assert.StartsWith($"/uploads/lawyers/{lawyerId:N}/profile/", profileImagePath, StringComparison.Ordinal);
         Assert.EndsWith(".png", profileImagePath, StringComparison.Ordinal);
+        Assert.DoesNotContain("App_Data", profileImagePath, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(factory.TestRootPath, profileImagePath, StringComparison.OrdinalIgnoreCase);
         AssertObsoleteProfileImageFieldsAreAbsent(profileImageUpload);
         profileRowVersion = profileImageUpload.GetProperty("rowVersion").GetString()!;
+
+        string profileImageStorageKey;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            profileImageStorageKey = await scope.ServiceProvider
+                .GetRequiredService<LawyerPlatformDbContext>()
+                .LawyerProfiles
+                .Where(profile => profile.Id == lawyerId)
+                .Select(profile => profile.ProfileImageStorageKey!)
+                .SingleAsync(cancellationToken);
+        }
+        Assert.False(Path.IsPathRooted(profileImageStorageKey));
+        Assert.Equal($"/uploads/{profileImageStorageKey}", profileImagePath);
+        var profileImagePhysicalPath = ResolvePhysicalMediaPath(profileImageStorageKey);
+        Assert.Equal(profileImageBytes, await File.ReadAllBytesAsync(profileImagePhysicalPath, cancellationToken));
+
+        var oldProfileImagePhysicalPath = profileImagePhysicalPath;
+        var (replacementImageUpload, replacementImageBytes) = await UploadProfileImageAsync(
+            client,
+            profileRowVersion,
+            cancellationToken);
+        profileImageBytes = replacementImageBytes;
+        profileImagePath = replacementImageUpload.GetProperty("profileImagePath").GetString()!;
+        profileRowVersion = replacementImageUpload.GetProperty("rowVersion").GetString()!;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            profileImageStorageKey = await scope.ServiceProvider
+                .GetRequiredService<LawyerPlatformDbContext>()
+                .LawyerProfiles
+                .Where(profile => profile.Id == lawyerId)
+                .Select(profile => profile.ProfileImageStorageKey!)
+                .SingleAsync(cancellationToken);
+        }
+        profileImagePhysicalPath = ResolvePhysicalMediaPath(profileImageStorageKey);
+        Assert.False(File.Exists(oldProfileImagePhysicalPath));
+        Assert.Equal(profileImageBytes, await File.ReadAllBytesAsync(profileImagePhysicalPath, cancellationToken));
 
         client.DefaultRequestHeaders.Authorization = null;
         using (var staticImage = await client.GetAsync(profileImagePath, cancellationToken))
@@ -189,24 +229,88 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         var membershipDocument = await UploadPdfAsync(client, "ProfessionalMembership", "membership.pdf", cancellationToken);
         Assert.False(membershipDocument.TryGetProperty("storageKey", out _));
 
-        string privateDocumentStorageKey;
+        var identityDocumentId = identityDocument.GetProperty("id").GetGuid();
+        var membershipDocumentId = membershipDocument.GetProperty("id").GetGuid();
+        string identityDocumentStorageKey;
+        string membershipDocumentStorageKey;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>();
-            var membershipDocumentId = membershipDocument.GetProperty("id").GetGuid();
-            privateDocumentStorageKey = await dbContext.LawyerDocuments
+            identityDocumentStorageKey = await dbContext.LawyerDocuments
+                .Where(document => document.Id == identityDocumentId)
+                .Select(document => document.StorageKey)
+                .SingleAsync(cancellationToken);
+            membershipDocumentStorageKey = await dbContext.LawyerDocuments
                 .Where(document => document.Id == membershipDocumentId)
                 .Select(document => document.StorageKey)
                 .SingleAsync(cancellationToken);
         }
 
+        Assert.False(Path.IsPathRooted(identityDocumentStorageKey));
+        Assert.False(Path.IsPathRooted(membershipDocumentStorageKey));
+        var identityDocumentPath = ResolvePhysicalMediaPath(identityDocumentStorageKey);
+        var membershipDocumentPath = ResolvePhysicalMediaPath(membershipDocumentStorageKey);
+        Assert.Equal(PdfBytes, await File.ReadAllBytesAsync(identityDocumentPath, cancellationToken));
+        Assert.Equal(PdfBytes, await File.ReadAllBytesAsync(membershipDocumentPath, cancellationToken));
+        Assert.False(Directory.Exists(Path.Combine(factory.WebRootPath, "uploads")));
+
+        using (var ownDocument = await client.GetAsync(
+                   $"/api/v1/lawyer/documents/{membershipDocumentId}/content",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, ownDocument.StatusCode);
+            Assert.Equal("application/pdf", ownDocument.Content.Headers.ContentType?.MediaType);
+            Assert.Equal(PdfBytes, await ownDocument.Content.ReadAsByteArrayAsync(cancellationToken));
+        }
+
         client.DefaultRequestHeaders.Authorization = null;
         Assert.Equal(
             HttpStatusCode.NotFound,
-            (await client.GetAsync($"/uploads/{privateDocumentStorageKey}", cancellationToken)).StatusCode);
+            (await client.GetAsync($"/uploads/{membershipDocumentStorageKey}", cancellationToken)).StatusCode);
+        using (var emailAsset = await client.GetAsync(
+                   "/email-assets/avokatoo-email-footer.png",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, emailAsset.StatusCode);
+            Assert.Equal("image/png", emailAsset.Content.Headers.ContentType?.MediaType);
+        }
+        using (var angularAsset = await client.GetAsync("/main.test.js", cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, angularAsset.StatusCode);
+            Assert.Equal("text/javascript", angularAsset.Content.Headers.ContentType?.MediaType);
+            Assert.Contains(
+                "lawyerPlatformStaticAsset",
+                await angularAsset.Content.ReadAsStringAsync(cancellationToken),
+                StringComparison.Ordinal);
+        }
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", lawyerToken);
 
-        var deletedDocumentId = identityDocument.GetProperty("id").GetGuid();
+        File.Delete(membershipDocumentPath);
+        using (var missingDocument = await client.GetAsync(
+                   $"/api/v1/lawyer/documents/{membershipDocumentId}/content",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missingDocument.StatusCode);
+            var problem = await missingDocument.Content.ReadAsStringAsync(cancellationToken);
+            Assert.DoesNotContain(factory.MediaRootPath, problem, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("App_Data", problem, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var incompleteProfile = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
+        Assert.False(incompleteProfile.GetProperty("completion").GetProperty("profileIsComplete").GetBoolean());
+        using (var invalidSubmitRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/lawyer/submit-for-approval"))
+        {
+            invalidSubmitRequest.Headers.TryAddWithoutValidation(
+                "If-Match",
+                incompleteProfile.GetProperty("rowVersion").GetString());
+            var invalidSubmit = await client.SendAsync(invalidSubmitRequest, cancellationToken);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidSubmit.StatusCode);
+            await AssertProblemCodeAsync(invalidSubmit, "Lawyer.ProfileIncomplete", cancellationToken);
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(membershipDocumentPath)!);
+        await File.WriteAllBytesAsync(membershipDocumentPath, PdfBytes, cancellationToken);
+
+        var deletedDocumentId = identityDocumentId;
         using (var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/lawyer/documents/{deletedDocumentId}"))
         {
             deleteRequest.Headers.TryAddWithoutValidation("If-Match", identityDocument.GetProperty("rowVersion").GetString());
@@ -218,7 +322,11 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain(documentsAfterDelete.EnumerateArray(), item => item.GetProperty("id").GetGuid() == deletedDocumentId);
         Assert.Equal(HttpStatusCode.NotFound,
             (await client.GetAsync($"/api/v1/lawyer/documents/{deletedDocumentId}/content", cancellationToken)).StatusCode);
+        Assert.True(File.Exists(identityDocumentPath));
         identityDocument = await UploadPdfAsync(client, "IdentityVerification", "identity-replacement.pdf", cancellationToken);
+        identityDocumentId = identityDocument.GetProperty("id").GetGuid();
+        identityDocumentStorageKey = await GetDocumentStorageKeyAsync(identityDocumentId, cancellationToken);
+        identityDocumentPath = ResolvePhysicalMediaPath(identityDocumentStorageKey);
 
         var completeProfile = await GetJsonAsync(client, "/api/v1/lawyer/profile", cancellationToken);
         Assert.True(completeProfile.GetProperty("completion").GetProperty("profileIsComplete").GetBoolean());
@@ -269,6 +377,15 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         var resubmitBody = await resubmit.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        File.Delete(identityDocumentPath);
+        var invalidApprove = await client.PostAsJsonAsync($"/api/v1/admin/lawyers/{lawyerId}/approve", new
+        {
+            rowVersion = resubmitBody.GetProperty("rowVersion").GetString()
+        }, cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, invalidApprove.StatusCode);
+        await AssertProblemCodeAsync(invalidApprove, "Lawyer.ProfileIncomplete", cancellationToken);
+        await File.WriteAllBytesAsync(identityDocumentPath, PdfBytes, cancellationToken);
+
         var approve = await client.PostAsJsonAsync($"/api/v1/admin/lawyers/{lawyerId}/approve", new
         {
             rowVersion = resubmitBody.GetProperty("rowVersion").GetString()
@@ -297,9 +414,20 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
                 StringComparison.Ordinal);
             Assert.Contains("/content", document.GetProperty("contentUrl").GetString(), StringComparison.Ordinal);
         });
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await client.GetAsync($"/api/v1/admin/lawyers/{lawyerId}/profile-image", cancellationToken)).StatusCode);
+        using (var adminProfileImage = await client.GetAsync(
+                   $"/api/v1/admin/lawyers/{lawyerId}/profile-image",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, adminProfileImage.StatusCode);
+            Assert.Equal(profileImageBytes, await adminProfileImage.Content.ReadAsByteArrayAsync(cancellationToken));
+        }
+        using (var adminDocument = await client.GetAsync(
+                   $"/api/v1/admin/lawyers/{lawyerId}/documents/{membershipDocumentId}/content",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, adminDocument.StatusCode);
+            Assert.Equal(PdfBytes, await adminDocument.Content.ReadAsByteArrayAsync(cancellationToken));
+        }
 
         var adminList = await GetJsonAsync(
             client,
@@ -326,9 +454,13 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         Assert.DoesNotContain("longitude", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("lawyerOfficeMapUrl", publicJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("googleMapsUrl", publicJson, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await client.GetAsync($"/api/v1/public/lawyers/{lawyerId}/profile-image", cancellationToken)).StatusCode);
+        using (var publicProfileImage = await client.GetAsync(
+                   $"/api/v1/public/lawyers/{lawyerId}/profile-image",
+                   cancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, publicProfileImage.StatusCode);
+            Assert.Equal(profileImageBytes, await publicProfileImage.Content.ReadAsByteArrayAsync(cancellationToken));
+        }
         var publicList = await GetJsonAsync(
             client,
             "/api/v1/public/lawyers?pageNumber=1&pageSize=100",
@@ -370,6 +502,18 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
             (await client.GetAsync($"/api/v1/public/lawyers/{lawyerId}", cancellationToken)).StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        File.Delete(membershipDocumentPath);
+        var unavailableDocumentReactivate = await client.PostAsJsonAsync(
+            $"/api/v1/admin/lawyers/{lawyerId}/reactivate",
+            new
+            {
+                rowVersion = suspendBody.GetProperty("rowVersion").GetString()
+            },
+            cancellationToken);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, unavailableDocumentReactivate.StatusCode);
+        await AssertProblemCodeAsync(unavailableDocumentReactivate, "Lawyer.ProfileIncomplete", cancellationToken);
+        await File.WriteAllBytesAsync(membershipDocumentPath, PdfBytes, cancellationToken);
+
         var reactivate = await client.PostAsJsonAsync($"/api/v1/admin/lawyers/{lawyerId}/reactivate", new
         {
             rowVersion = suspendBody.GetProperty("rowVersion").GetString()
@@ -557,16 +701,32 @@ public sealed class LawyerOnboardingLifecycleTests(CustomWebApplicationFactory f
         string fileName,
         CancellationToken cancellationToken)
     {
-        var bytes = Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF");
         using var content = new MultipartFormDataContent();
         content.Add(new StringContent(documentType), "documentType");
-        var file = new ByteArrayContent(bytes);
+        var file = new ByteArrayContent(PdfBytes);
         file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         content.Add(file, "file", fileName);
         var response = await client.PostAsync("/api/v1/lawyer/documents", content, cancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
     }
+
+    private async Task<string> GetDocumentStorageKeyAsync(
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<LawyerPlatformDbContext>()
+            .LawyerDocuments
+            .Where(document => document.Id == documentId)
+            .Select(document => document.StorageKey)
+            .SingleAsync(cancellationToken);
+    }
+
+    private string ResolvePhysicalMediaPath(string storageKey)
+        => Path.GetFullPath(Path.Combine(
+            factory.MediaRootPath,
+            storageKey.Replace('/', Path.DirectorySeparatorChar)));
 
     private static async Task<(JsonElement Body, byte[] Bytes)> UploadProfileImageAsync(
         HttpClient client,

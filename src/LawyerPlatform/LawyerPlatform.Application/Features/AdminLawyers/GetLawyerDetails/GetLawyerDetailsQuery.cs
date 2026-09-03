@@ -4,11 +4,11 @@ using BuildingBlock.Domain.Results;
 using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Abstractions.Media;
+using LawyerPlatform.Application.Features.AdminLawyers.GetLawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Application.Features.AdminLawyers.GetLawyers;
-using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.AdminLawyers.GetLawyerDetails;
 
@@ -58,6 +58,7 @@ public sealed record AdminLawyerDetailsResponse(
 internal sealed class GetLawyerDetailsQueryHandler(
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
     ILawyerDocumentPolicy documentPolicy,
+    IStoredFileAvailability storedFileAvailability,
     IProfileImagePathResolver profileImagePathResolver)
     : IQueryHandler<GetLawyerDetailsQuery, AdminLawyerDetailsResponse>
 {
@@ -69,6 +70,13 @@ internal sealed class GetLawyerDetailsQueryHandler(
             return Result<AdminLawyerDetailsResponse>.Fail(LawyerErrors.NotFound);
         }
 
+        var availableDocumentTypes = await RequiredDocumentAvailability.GetAvailableTypesAsync(
+            item.Documents
+                .Select(document => new StoredDocumentReference(document.DocumentType, document.StorageKey))
+                .ToArray(),
+            documentPolicy,
+            storedFileAvailability,
+            cancellationToken);
         var completion = LawyerProfileCompletionCalculator.Calculate(
             item.ApprovalStatus,
             item.FullName,
@@ -77,7 +85,7 @@ internal sealed class GetLawyerDetailsQueryHandler(
             item.ProfessionalRegistrationNumber,
             item.OfficeComplete,
             item.Specializations.Any(specialization => specialization.IsActive),
-            item.Documents.Select(document => document.DocumentType).ToArray(),
+            availableDocumentTypes,
             item.AccountStatus == AccountStatus.Active,
             documentPolicy);
         var profileImagePath = profileImagePathResolver.Resolve(item.ProfileImageStorageKey);
@@ -176,6 +184,7 @@ internal sealed class AdminLawyerDetailsSpecification : Specification<LawyerProf
                 .Select(document => new AdminDocumentSnapshot(
                     document.Id,
                     document.DocumentType,
+                    document.StorageKey,
                     document.OriginalFileName,
                     document.ContentType,
                     document.FileSize,
@@ -253,6 +262,7 @@ internal sealed record AdminOfficeDetailsSnapshot(
 internal sealed record AdminDocumentSnapshot(
     Guid Id,
     string DocumentType,
+    string StorageKey,
     string OriginalFileName,
     string ContentType,
     long FileSize,

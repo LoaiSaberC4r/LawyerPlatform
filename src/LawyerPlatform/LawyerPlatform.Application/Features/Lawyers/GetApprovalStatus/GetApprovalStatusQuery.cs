@@ -6,8 +6,8 @@ using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Application.Persistence;
-using LawyerPlatform.Domain.Lawyers;
 using LawyerPlatform.Domain.Accounts;
+using LawyerPlatform.Domain.Lawyers;
 
 namespace LawyerPlatform.Application.Features.Lawyers.GetApprovalStatus;
 
@@ -27,7 +27,8 @@ public sealed record LawyerApprovalStatusResponse(
 internal sealed class GetApprovalStatusQueryHandler(
     ICurrentUser currentUser,
     IReadRepository<LawyerProfile, LawyerPlatformReadPersistence> repository,
-    ILawyerDocumentPolicy documentPolicy)
+    ILawyerDocumentPolicy documentPolicy,
+    IStoredFileAvailability storedFileAvailability)
     : IQueryHandler<GetApprovalStatusQuery, LawyerApprovalStatusResponse>
 {
     public async Task<Result<LawyerApprovalStatusResponse>> Handle(GetApprovalStatusQuery request, CancellationToken cancellationToken)
@@ -43,6 +44,11 @@ internal sealed class GetApprovalStatusQueryHandler(
             return Result<LawyerApprovalStatusResponse>.Fail(LawyerErrors.NotFound);
         }
 
+        var availableDocumentTypes = await RequiredDocumentAvailability.GetAvailableTypesAsync(
+            snapshot.ActiveDocuments,
+            documentPolicy,
+            storedFileAvailability,
+            cancellationToken);
         var completion = LawyerProfileCompletionCalculator.Calculate(
             snapshot.ApprovalStatus,
             snapshot.FullName,
@@ -51,7 +57,7 @@ internal sealed class GetApprovalStatusQueryHandler(
             snapshot.ProfessionalRegistrationNumber,
             snapshot.OfficeComplete,
             snapshot.SpecializationsComplete,
-            snapshot.ActiveDocumentTypes,
+            availableDocumentTypes,
             snapshot.AccountStatus == AccountStatus.Active,
             documentPolicy);
 
@@ -90,7 +96,9 @@ internal sealed class ApprovalStatusSpecification : Specification<LawyerProfile,
                 office.City.GovernorateId == office.GovernorateId && office.Area.CityId == office.CityId &&
                 office.DetailedAddress != ""),
             profile.Specializations.Any(item => item.LegalSpecialization.IsActive),
-            profile.Documents.Where(document => !document.IsDeleted).Select(document => document.DocumentType).ToArray(),
+            profile.Documents.Where(document => !document.IsDeleted)
+                .Select(document => new StoredDocumentReference(document.DocumentType, document.StorageKey))
+                .ToArray(),
             profile.UserAccount.Status,
             profile.RowVersion));
     }
@@ -108,6 +116,6 @@ internal sealed record ApprovalStatusSnapshot(
     string? ProfessionalRegistrationNumber,
     bool OfficeComplete,
     bool SpecializationsComplete,
-    IReadOnlyList<string> ActiveDocumentTypes,
+    IReadOnlyList<StoredDocumentReference> ActiveDocuments,
     AccountStatus AccountStatus,
     byte[] RowVersion);

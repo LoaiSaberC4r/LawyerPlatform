@@ -1,5 +1,7 @@
-using BuildingBlock.Infrastructure.Bootstrap;
+using System.Collections.Concurrent;
+using System.Data.Common;
 using BuildingBlock.Application.Email;
+using BuildingBlock.Infrastructure.Bootstrap;
 using LawyerPlatform.Application.Abstractions.Seeding;
 using LawyerPlatform.Infrastructure.Persistence;
 using LawyerPlatform.Infrastructure.Seeding;
@@ -7,23 +9,39 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using System.Collections.Concurrent;
-using System.Data.Common;
 
 namespace LawyerPlatform.IntegrationTests;
 
 public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _webRootPath = Path.Combine(
-        Path.GetTempPath(),
-        "LawyerPlatformTests",
-        Guid.NewGuid().ToString("N"),
-        "wwwroot");
+    private readonly string _webRootPath;
+
+    public CustomWebApplicationFactory()
+        : this(Path.Combine(
+            Path.GetTempPath(),
+            "LawyerPlatformTests",
+            Guid.NewGuid().ToString("N")))
+    {
+    }
+
+    internal CustomWebApplicationFactory(string testRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(testRootPath);
+        TestRootPath = testRootPath;
+        _webRootPath = Path.Combine(TestRootPath, "wwwroot");
+        MediaRootPath = Path.Combine(TestRootPath, "App_Data", "Media");
+    }
+
+    public string TestRootPath { get; }
+
+    public string MediaRootPath { get; }
+
+    public string WebRootPath => _webRootPath;
 
     public async Task SeedDatabaseAsync(CancellationToken cancellationToken)
     {
@@ -49,6 +67,9 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             "avokatoo-email-footer.png");
         Directory.CreateDirectory(Path.GetDirectoryName(testFooterImagePath)!);
         File.Copy(sourceFooterImagePath, testFooterImagePath, overwrite: true);
+        File.WriteAllText(
+            Path.Combine(_webRootPath, "main.test.js"),
+            "globalThis.lawyerPlatformStaticAsset = true;");
 
         builder.UseEnvironment("Development");
         builder.UseWebRoot(_webRootPath);
@@ -83,7 +104,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Cors:AllowCredentials"] = "false",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:4200",
                 ["Cors:AllowedOrigins:1"] = "https://localhost:4200",
-                ["MediaStorage:RootPath"] = Path.Combine(_webRootPath, "uploads"),
+                ["MediaStorage:RootPath"] = MediaRootPath,
                 ["MediaStorage:MaxFileSizeBytes"] = "1048576",
                 ["MediaStorage:AllowedExtensions:0"] = ".jpg",
                 ["MediaStorage:AllowedExtensions:1"] = ".jpeg",
