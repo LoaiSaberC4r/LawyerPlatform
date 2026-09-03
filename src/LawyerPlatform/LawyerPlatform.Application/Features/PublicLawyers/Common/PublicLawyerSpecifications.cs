@@ -1,5 +1,6 @@
 using BuildingBlock.Domain.Specification;
 using LawyerPlatform.Application.Abstractions.Lawyers;
+using LawyerPlatform.Application.Abstractions.Media;
 using LawyerPlatform.Application.Features.Lawyers.Common;
 using LawyerPlatform.Domain.Accounts;
 using LawyerPlatform.Domain.Consultations;
@@ -45,7 +46,8 @@ internal abstract class PublicLawyerSpecification<TResponse> : Specification<Law
 public sealed record PublicLawyerResponse(
     Guid Id,
     string FullName,
-    string? ProfileImageUrl,
+    bool HasProfileImage,
+    string? ProfileImagePath,
     string ProfessionalTitle,
     string? Biography,
     int YearsOfExperience,
@@ -73,7 +75,7 @@ public sealed record PublicLawyerAvailabilityResponse(
 internal sealed record PublicLawyerSnapshot(
     Guid Id,
     string FullName,
-    bool HasProfileImage,
+    string? ProfileImageStorageKey,
     string ProfessionalTitle,
     string? Biography,
     int YearsOfExperience,
@@ -82,27 +84,33 @@ internal sealed record PublicLawyerSnapshot(
     decimal? ConsultationPrice)
 {
     public PublicLawyerResponse ToResponse(
-        IReadOnlyList<PublicLawyerAvailabilityResponse>? availability = null) => new(
-        Id,
-        FullName,
-        HasProfileImage ? $"/api/v1/public/lawyers/{Id}/profile-image" : null,
-        ProfessionalTitle,
-        Biography,
-        YearsOfExperience,
-        Specializations.Select(item => new LawyerSpecializationResponse(item.Id, item.NameAr, item.NameEn)).ToArray(),
-        Office.GovernorateId,
-        Office.GovernorateNameAr,
-        Office.GovernorateNameEn,
-        Office.CityId,
-        Office.CityNameAr,
-        Office.CityNameEn,
-        Office.AreaId,
-        Office.AreaNameAr,
-        Office.AreaNameEn,
-        Office.DetailedAddress,
-        Office.PublicPhoneNumber,
-        ConsultationPrice,
-        availability);
+        IProfileImagePathResolver profileImagePathResolver,
+        IReadOnlyList<PublicLawyerAvailabilityResponse>? availability = null)
+    {
+        var profileImagePath = profileImagePathResolver.Resolve(ProfileImageStorageKey);
+        return new PublicLawyerResponse(
+            Id,
+            FullName,
+            profileImagePath is not null,
+            profileImagePath,
+            ProfessionalTitle,
+            Biography,
+            YearsOfExperience,
+            Specializations.Select(item => new LawyerSpecializationResponse(item.Id, item.NameAr, item.NameEn)).ToArray(),
+            Office.GovernorateId,
+            Office.GovernorateNameAr,
+            Office.GovernorateNameEn,
+            Office.CityId,
+            Office.CityNameAr,
+            Office.CityNameEn,
+            Office.AreaId,
+            Office.AreaNameAr,
+            Office.AreaNameEn,
+            Office.DetailedAddress,
+            Office.PublicPhoneNumber,
+            ConsultationPrice,
+            availability);
+    }
 }
 
 internal sealed record PublicAvailabilitySnapshot(
@@ -114,8 +122,8 @@ internal sealed record PublicLawyerDetailsSnapshot(
     PublicLawyerSnapshot Lawyer,
     IReadOnlyList<PublicAvailabilitySnapshot> Availability)
 {
-    public PublicLawyerResponse ToResponse()
-        => Lawyer.ToResponse(Availability
+    public PublicLawyerResponse ToResponse(IProfileImagePathResolver profileImagePathResolver)
+        => Lawyer.ToResponse(profileImagePathResolver, Availability
             .OrderBy(item => item.DayOfWeek)
             .Select(item => new PublicLawyerAvailabilityResponse(
                 item.DayOfWeek.ToString(),
@@ -145,7 +153,7 @@ internal static class PublicLawyerProjection
         => profile => new PublicLawyerSnapshot(
             profile.Id,
             profile.FullName,
-            profile.ProfileImageStorageKey != null,
+            profile.ProfileImageStorageKey,
             profile.ProfessionalTitle!,
             profile.Biography,
             profile.YearsOfExperience!.Value,
@@ -178,7 +186,7 @@ internal static class PublicLawyerProjection
             new PublicLawyerSnapshot(
                 profile.Id,
                 profile.FullName,
-                profile.ProfileImageStorageKey != null,
+                profile.ProfileImageStorageKey,
                 profile.ProfessionalTitle!,
                 profile.Biography,
                 profile.YearsOfExperience!.Value,

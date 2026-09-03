@@ -26,6 +26,8 @@ using LawyerPlatform.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 EnvironmentFileLoader.LoadIfDevelopment(args);
@@ -288,6 +290,42 @@ app.UseHttpsRedirection();
 
 app.UseBuildingBlockLocalization();
 
+var profileImagesOptions = app.Services
+    .GetRequiredService<IOptions<ProfileImagesOptions>>()
+    .Value;
+var webRootPath = app.Environment.WebRootPath ?? Path.Combine(
+    app.Environment.ContentRootPath,
+    "wwwroot");
+var profileImagesRoot = Path.GetFullPath(Path.Combine(
+    webRootPath,
+    profileImagesOptions.PublicPathBase.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+Directory.CreateDirectory(profileImagesRoot);
+var profileImagesFileProvider = new PhysicalFileProvider(profileImagesRoot);
+app.Lifetime.ApplicationStopped.Register(profileImagesFileProvider.Dispose);
+
+app.Map(profileImagesOptions.PublicPathBase, profileImageFiles =>
+{
+    profileImageFiles.Use(async (context, next) =>
+    {
+        if (!ProfileImageStaticPathPolicy.IsAllowed(context.Request.Path))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await next(context);
+    });
+    profileImageFiles.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = profileImagesFileProvider
+    });
+    profileImageFiles.Run(context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return Task.CompletedTask;
+    });
+});
+
 // Serve Angular index.html automatically for "/".
 app.UseDefaultFiles();
 
@@ -356,7 +394,7 @@ app.MapFallback(async context =>
         return;
     }
 
-    var webRootPath =
+    var fallbackWebRootPath =
         app.Environment.WebRootPath ??
         Path.Combine(
             app.Environment.ContentRootPath,
@@ -364,7 +402,7 @@ app.MapFallback(async context =>
 
     var indexFilePath =
         Path.Combine(
-            webRootPath,
+            fallbackWebRootPath,
             "index.html");
 
     if (!File.Exists(indexFilePath))
