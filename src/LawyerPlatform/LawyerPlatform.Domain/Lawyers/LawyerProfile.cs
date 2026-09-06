@@ -91,8 +91,10 @@ public sealed class LawyerProfile : AggregateRoot<Guid>, IAuditableEntity, ISoft
         var normalizedRegistrationNumber = Normalize(professionalRegistrationNumber);
 
         if (ApprovalStatus == LawyerApprovalStatus.Approved &&
-            (!string.Equals(FullName, normalizedFullName, StringComparison.Ordinal) ||
-             !string.Equals(ProfessionalTitle, normalizedTitle, StringComparison.Ordinal) ||
+            (
+             //!string.Equals(FullName, normalizedFullName, StringComparison.Ordinal)
+             //||
+             //!string.Equals(ProfessionalTitle, normalizedTitle, StringComparison.Ordinal) ||
              !string.Equals(ProfessionalRegistrationNumber, normalizedRegistrationNumber, StringComparison.Ordinal)))
         {
             return Result.Fail(LawyerErrors.SensitiveProfileEditNotAllowed);
